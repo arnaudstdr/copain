@@ -6,11 +6,3 @@ services:
     network_mode: host
     volumes:
       - ./data:/app/data
-
-  searxng:
-    image: searxng/searxng:latest
-    restart: unless-stopped
-    ports:
-      - "8080:8080"
-    volumes:
-      - ./searxng:/etc/searxng
