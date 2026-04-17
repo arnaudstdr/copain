@@ -33,6 +33,8 @@ class Settings:
     db_path: Path
     scheduler_db_path: Path
 
+    timezone: str
+
     env: str
 
     @property
@@ -74,5 +76,6 @@ def load_settings() -> Settings:
         scheduler_db_path=Path(
             os.getenv("SCHEDULER_DB_PATH", data_dir / "scheduler.db")
         ).resolve(),
+        timezone=os.getenv("TZ", "Europe/Paris"),
         env=os.getenv("ENV", "dev"),
     )

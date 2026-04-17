@@ -7,6 +7,7 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import datetime
 from typing import TYPE_CHECKING
+from zoneinfo import ZoneInfo
 
 import dateparser
 
@@ -115,8 +116,14 @@ async def _apply_side_effects(
         )
 
     if meta["intent"] == "task" and meta["task"]["content"]:
-        due_dt = _parse_due(meta["task"]["due_str"])
+        due_dt = _parse_due(meta["task"]["due_str"], deps.settings.timezone)
         task = await deps.tasks.create(content=meta["task"]["content"], due_at=due_dt)
+        log.info(
+            "task_created",
+            task_id=task.id,
+            due_str=meta["task"]["due_str"],
+            due_at=due_dt.isoformat() if due_dt else None,
+        )
         if due_dt is not None:
             deps.scheduler.add_reminder(
                 task_id=task.id,
@@ -126,12 +133,26 @@ async def _apply_side_effects(
             )
 
 
-def _parse_due(due_str: str | None) -> datetime | None:
+def _parse_due(due_str: str | None, tz_name: str) -> datetime | None:
+    """Parse une expression FR et retourne un datetime aware dans la timezone voulue.
+
+    Sans `TIMEZONE` + `RETURN_AS_TIMEZONE_AWARE`, dateparser renvoie un datetime
+    naïf, qu'APScheduler interprète en UTC → décalage en prod (le container est
+    souvent en UTC).
+    """
     if not due_str:
         return None
     parsed = dateparser.parse(
         due_str,
         languages=["fr"],
-        settings={"PREFER_DATES_FROM": "future"},
+        settings={
+            "PREFER_DATES_FROM": "future",
+            "TIMEZONE": tz_name,
+            "RETURN_AS_TIMEZONE_AWARE": True,
+        },
     )
+    if parsed is None:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=ZoneInfo(tz_name))
     return parsed

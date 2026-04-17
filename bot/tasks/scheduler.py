@@ -5,6 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
+from zoneinfo import ZoneInfo
 
 from apscheduler.jobstores.sqlalchemy import SQLAlchemyJobStore
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
@@ -34,10 +35,13 @@ async def _send_reminder(bot_token: str, chat_id: int, content: str) -> None:
 class ReminderScheduler:
     """Ajoute/supprime des jobs de rappel persistés entre redémarrages."""
 
-    def __init__(self, db_path: Path, bot_token: str) -> None:
+    def __init__(self, db_path: Path, bot_token: str, timezone: str = "Europe/Paris") -> None:
         db_path.parent.mkdir(parents=True, exist_ok=True)
         jobstore = SQLAlchemyJobStore(url=f"sqlite:///{db_path}")
-        self._scheduler = AsyncIOScheduler(jobstores={"default": jobstore})
+        self._scheduler = AsyncIOScheduler(
+            jobstores={"default": jobstore},
+            timezone=ZoneInfo(timezone),
+        )
         self._bot_token = bot_token
 
     def start(self) -> None:
