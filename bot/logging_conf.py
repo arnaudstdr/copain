@@ -30,10 +30,12 @@ def configure_logging(env: str = "dev", level: int = logging.INFO) -> None:
         processors=[*shared_processors, renderer],
         wrapper_class=structlog.make_filtering_bound_logger(level),
         context_class=dict,
-        logger_factory=structlog.PrintLoggerFactory(),
+        logger_factory=structlog.stdlib.LoggerFactory(),
         cache_logger_on_first_use=True,
     )
 
+    # Un seul handler root → stdout ; structlog délègue à stdlib via LoggerFactory,
+    # donc les lignes rendues par le renderer arrivent ici sans doublon.
     handler = logging.StreamHandler(sys.stdout)
     handler.setFormatter(logging.Formatter("%(message)s"))
     root = logging.getLogger()

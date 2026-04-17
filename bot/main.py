@@ -1,8 +1,12 @@
-"""Point d'entrée du bot : setup async complet + polling Telegram."""
+"""Point d'entrée du bot : setup + polling Telegram.
+
+`Application.run_polling()` (PTB v21) gère sa propre event loop. On évite donc
+d'appeler `asyncio.get_event_loop()` en amont : l'init asynchrone (schéma DB,
+scheduler start) est branchée via `post_init`, la libération via `post_shutdown`.
+"""
 
 from __future__ import annotations
 
-import asyncio
 from collections import deque
 
 from telegram.ext import Application, MessageHandler, filters
@@ -20,43 +24,45 @@ from bot.tasks.scheduler import ReminderScheduler
 log = get_logger(__name__)
 
 
-async def _build_application() -> tuple[Application, BotDeps]:
+def main() -> None:
     settings = load_settings()
     configure_logging(env=settings.env)
     log.info("startup", env=settings.env)
 
     embedder = Embedder(settings.ollama_base_url, settings.ollama_embed_model)
-    memory = MemoryManager(settings.chroma_dir, embedder)
-
-    tasks = TaskManager(settings.db_path)
-    await tasks.init_schema()
-
-    scheduler = ReminderScheduler(settings.scheduler_db_path, settings.telegram_bot_token)
-    scheduler.start()
-
-    llm = LLMClient(settings.ollama_base_url, settings.ollama_llm_model)
-    search = SearxngClient(settings.searxng_base_url)
-
     deps = BotDeps(
         settings=settings,
-        llm=llm,
-        memory=memory,
-        tasks=tasks,
-        scheduler=scheduler,
-        search=search,
+        llm=LLMClient(settings.ollama_base_url, settings.ollama_llm_model),
+        memory=MemoryManager(settings.chroma_dir, embedder),
+        tasks=TaskManager(settings.db_path),
+        scheduler=ReminderScheduler(settings.scheduler_db_path, settings.telegram_bot_token),
+        search=SearxngClient(settings.searxng_base_url),
         history=deque(),
     )
 
-    application = Application.builder().token(settings.telegram_bot_token).build()
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, make_handler(deps)))
-    scheduler.attach_application(application)
-    return application, deps
+    async def _post_init(app: Application) -> None:
+        await deps.tasks.init_schema()
+        deps.scheduler.start()
+        deps.scheduler.attach_application(app)
+        log.info("post_init_done")
 
+    async def _post_shutdown(_app: Application) -> None:
+        deps.scheduler.shutdown()
+        await deps.search.aclose()
+        await deps.tasks.dispose()
+        log.info("post_shutdown_done")
 
-def main() -> None:
-    """Entrée synchrone — `Application.run_polling` gère sa propre event loop."""
-    application, _deps = asyncio.get_event_loop().run_until_complete(_build_application())
-    application.run_polling(stop_signals=None)
+    application = (
+        Application.builder()
+        .token(settings.telegram_bot_token)
+        .post_init(_post_init)
+        .post_shutdown(_post_shutdown)
+        .build()
+    )
+    application.add_handler(
+        MessageHandler(filters.TEXT & ~filters.COMMAND, make_handler(deps))
+    )
+    application.run_polling()
 
 
 if __name__ == "__main__":
