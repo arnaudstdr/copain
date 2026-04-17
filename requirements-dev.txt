@@ -1,0 +1,9 @@
+-r requirements.txt
+
+pytest>=8
+pytest-asyncio>=0.23
+pytest-mock>=3.12
+ruff>=0.6
+mypy>=1.11
+pre-commit>=3.8
+types-dateparser
