@@ -25,6 +25,7 @@ from bot.logging_conf import configure_logging, get_logger
 from bot.memory.embeddings import Embedder
 from bot.memory.manager import MemoryManager
 from bot.proactivity import models as _proactivity_models  # noqa: F401 — enregistre la table
+from bot.proactivity.service import ProactivityService
 from bot.rss.fetcher import RssFetcher
 from bot.rss.manager import FeedAlreadyExists, FeedManager
 from bot.search.searxng import SearxngClient
@@ -39,6 +40,7 @@ DEFAULT_FEEDS: tuple[tuple[str, str, str], ...] = (
 )
 
 BRIEFING_JOB_ID = "daily-briefing"
+PROACTIVITY_JOB_ID = "proactivity-tick"
 
 
 async def _seed_default_feeds(rss: FeedManager) -> None:
@@ -78,6 +80,13 @@ def main() -> None:
         calendar_name=settings.icloud_calendar_name,
         timezone=settings.timezone,
     )
+    proactivity = ProactivityService(
+        settings=settings,
+        weather=weather,
+        calendar=calendar,
+        engine=engine,
+        chat_id=settings.allowed_user_id,
+    )
 
     deps = BotDeps(
         settings=settings,
@@ -103,6 +112,9 @@ def main() -> None:
 
     async def _daily_briefing_job() -> None:
         await deps.briefing.send_daily(chat_id=settings.allowed_user_id)
+
+    async def _proactivity_tick_job() -> None:
+        await proactivity.tick()
 
     async def _error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Soft-fail sur les erreurs réseau Telegram (DNS/TLS momentanés).
@@ -139,6 +151,18 @@ def main() -> None:
             hour=settings.briefing_hour,
             minute=settings.briefing_minute,
         )
+        if settings.proactivity_enabled:
+            deps.scheduler.add_interval_job(
+                job_id=PROACTIVITY_JOB_ID,
+                func=_proactivity_tick_job,
+                minutes=settings.proactivity_check_interval_min,
+            )
+            log.info(
+                "proactivity_job_scheduled",
+                interval_min=settings.proactivity_check_interval_min,
+                window=f"{settings.proactivity_window_start_hour}-{settings.proactivity_window_end_hour}",
+                budget=settings.proactivity_daily_budget,
+            )
         log.info("post_init_done")
 
     async def _post_shutdown(_app: Application[Any, Any, Any, Any, Any, Any]) -> None:
