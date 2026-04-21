@@ -60,7 +60,7 @@ HandlerFn = Callable[["Update", "ContextTypes.DEFAULT_TYPE"], Coroutine[Any, Any
 
 
 def make_handler(deps: BotDeps) -> HandlerFn:
-    """Retourne la coroutine handler à enregistrer dans python-telegram-bot."""
+    """Retourne la coroutine handler texte à enregistrer dans python-telegram-bot."""
 
     async def handle_message(update: Update, _context: ContextTypes.DEFAULT_TYPE) -> None:
         if not is_allowed(update, deps.settings.allowed_user_id):
@@ -85,14 +85,57 @@ def make_handler(deps: BotDeps) -> HandlerFn:
     return handle_message
 
 
-async def _process(user_text: str, chat_id: int, deps: BotDeps) -> str:
-    memory_context = await deps.memory.retrieve_context(user_text, top_k=5)
+def make_photo_handler(deps: BotDeps) -> HandlerFn:
+    """Retourne le handler pour les messages PHOTO (multimodal via Ollama)."""
+
+    async def handle_photo(update: Update, _context: ContextTypes.DEFAULT_TYPE) -> None:
+        if not is_allowed(update, deps.settings.allowed_user_id):
+            return
+
+        message = update.message
+        if message is None or not message.photo:
+            return
+
+        caption = message.caption or ""
+        chat_id = message.chat_id
+        # On télécharge la plus grande résolution disponible (dernière de la liste).
+        largest = message.photo[-1]
+        tg_file = await largest.get_file()
+        image_bytes = bytes(await tg_file.download_as_bytearray())
+        log.info(
+            "photo_received",
+            chat_id=chat_id,
+            size=len(image_bytes),
+            caption_preview=caption[:80],
+        )
+
+        try:
+            reply = await _process(caption, chat_id, deps, images=[image_bytes])
+        except Exception as exc:
+            log.exception("photo_handler_failed", error=str(exc))
+            reply = "Désolé, je n'ai pas réussi à analyser cette image."
+
+        await message.reply_text(reply)
+
+    return handle_photo
+
+
+async def _process(
+    user_text: str,
+    chat_id: int,
+    deps: BotDeps,
+    images: list[bytes] | None = None,
+) -> str:
+    memory_context = await deps.memory.retrieve_context(
+        user_text or "(image envoyée sans légende)", top_k=5
+    )
     system_prompt = build_system_prompt(
         memory_context=memory_context,
         recent_history=list(deps.history),
     )
 
-    raw = await deps.llm.call(system=system_prompt, user=user_text)
+    user_content = user_text if user_text else "Analyse cette image et propose une action pertinente."
+    raw = await deps.llm.call(system=system_prompt, user=user_content, images=images)
 
     try:
         text, meta = extract_meta(raw)
@@ -110,7 +153,10 @@ async def _process(user_text: str, chat_id: int, deps: BotDeps) -> str:
     elif meta["intent"] == "feed" and meta["feed"]["action"]:
         text = await _handle_feed(user_text, meta, deps, intro=text)
 
-    deps.history.append(f"user: {user_text}")
+    history_user = user_text if user_text else "(image envoyée)"
+    if images:
+        history_user = f"[photo] {history_user}"
+    deps.history.append(f"user: {history_user}")
     deps.history.append(f"assistant: {text}")
     while len(deps.history) > MAX_HISTORY:
         deps.history.popleft()

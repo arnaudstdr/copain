@@ -15,7 +15,7 @@ from telegram.ext import Application, MessageHandler, filters
 from bot.briefing.service import BriefingService
 from bot.briefing.weather import OpenMeteoClient
 from bot.config import load_settings
-from bot.handlers import BotDeps, make_handler
+from bot.handlers import BotDeps, make_handler, make_photo_handler
 from bot.llm.client import LLMClient
 from bot.logging_conf import configure_logging, get_logger
 from bot.memory.embeddings import Embedder
@@ -118,6 +118,7 @@ def main() -> None:
     application.add_handler(
         MessageHandler(filters.TEXT & ~filters.COMMAND, make_handler(deps))
     )
+    application.add_handler(MessageHandler(filters.PHOTO, make_photo_handler(deps)))
     application.run_polling()
 
 

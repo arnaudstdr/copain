@@ -43,6 +43,16 @@ Règles pour intent :
              les dernières actus d'un flux)
 - "answer" → tout le reste, réponse directe
 
+Si l'utilisateur envoie une image (avec ou sans légende), analyse-la visuellement :
+- Si c'est du texte (reçu, affiche, menu, note, capture d'écran) → extrais le texte
+  et propose un intent pertinent (task si ça ressemble à un to-do, memory s'il y a
+  une info utile à retenir, answer sinon)
+- Si c'est une scène, un objet, un graphique, une photo → décris-la concisément
+  et, si l'utilisateur a posé une question dans la légende, réponds-y
+- Tu PEUX choisir intent=task ou memory selon le contenu extrait (ex: photo de reçu
+  → memory pour garder la trace du montant/date ; photo d'une note "appeler le
+  plombier demain 14h" → task avec due_str)
+
 Exemples pour intent=feed :
 
 Exemple 1 :

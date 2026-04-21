@@ -40,16 +40,18 @@ Push Telegram quotidien à 8h : météo Sélestat + tâches du jour + top 5 item
 
 ---
 
-## Phase 3 — OCR photo
+## Phase 3 — Vision multimodale (photo) ✅
 
-Photo Telegram → Tesseract → texte injecté dans le pipeline standard (mémoire/tâche/search selon contenu).
+Photo Telegram → `gemma4:31b-cloud` analyse l'image (OCR + description + objets + graphiques) → pipeline standard (mémoire/tâche/search selon contenu).
 
-- [ ] `Dockerfile` — `apt-get install tesseract-ocr tesseract-ocr-fra`
-- [ ] `bot/ocr/client.py` — wrapper `pytesseract` + `Pillow`
-- [ ] `bot/handlers.py` — `make_photo_handler` + `BotDeps.ocr`
-- [ ] `bot/main.py` — `MessageHandler(filters.PHOTO, ...)`
-- [ ] `tests/test_ocr.py`
-- [ ] Commit atomique
+Approche révisée : plus de Tesseract, le modèle multimodal fait tout (texte + scènes + graphiques).
+
+- [x] `bot/llm/client.py` — `call(..., images=[bytes])` avec encodage base64 pour Ollama
+- [x] `bot/llm/prompt.py` — règles pour les images (intent pertinent selon contenu)
+- [x] `bot/handlers.py` — `make_photo_handler` + `_process(images=...)`
+- [x] `bot/main.py` — `MessageHandler(filters.PHOTO, ...)`
+- [x] `tests/test_llm_client.py` — encodage base64 + chat
+- [x] Commit atomique
 
 ---
 
@@ -90,4 +92,5 @@ Message vocal Telegram → Whisper base local → texte injecté dans le pipelin
 | 2026-04-17 | `6c4dd56` | fix: structlog LoggerFactory + async post_init/post_shutdown   |
 | 2026-04-17 | `637969b` | fix: timezone aware dateparser + APScheduler                   |
 | 2026-04-21 | `1d1af84` | feat(rss): Phase 1 — flux RSS avec intent=feed                |
-| 2026-04-21 | _Phase 2_ | feat(briefing): météo Sélestat + tâches + top 5 RSS à 8h      |
+| 2026-04-21 | `533387f` | feat(briefing): Phase 2 — météo + tâches + RSS à 8h           |
+| 2026-04-21 | _Phase 3_ | feat(vision): analyse photo via gemma4:31b-cloud multimodal   |

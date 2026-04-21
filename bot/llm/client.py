@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import base64
 from collections.abc import Iterable, Mapping
 from typing import Any
 
@@ -20,19 +21,29 @@ class LLMClient:
     """Enveloppe minimale autour de `ollama.AsyncClient`.
 
     Les appels retournent le texte brut ; l'extraction du bloc <meta> est faite
-    par `bot.llm.parser.extract_meta`.
+    par `bot.llm.parser.extract_meta`. Les images (bytes) sont transmises en
+    base64 via le champ `images` du message Ollama — supporté par les modèles
+    multimodaux comme `gemma4:31b-cloud`, `llava`, `moondream`.
     """
 
     def __init__(self, base_url: str, model: str) -> None:
         self._client = AsyncClient(host=base_url)
         self._model = model
 
-    async def call(self, system: str, user: str) -> str:
-        """Appelle le LLM avec un system prompt + un message utilisateur."""
+    async def call(
+        self,
+        system: str,
+        user: str,
+        images: list[bytes] | None = None,
+    ) -> str:
+        """Appelle le LLM avec un system prompt + un message utilisateur (+ images optionnelles)."""
+        user_msg: dict[str, Any] = {"role": "user", "content": user}
+        if images:
+            user_msg["images"] = [base64.b64encode(img).decode("ascii") for img in images]
         return await self.chat(
             messages=[
                 {"role": "system", "content": system},
-                {"role": "user", "content": user},
+                user_msg,
             ]
         )
 
@@ -63,7 +74,7 @@ class LLMClient:
             ]
         )
 
-    async def chat(self, messages: list[dict[str, str]]) -> str:
+    async def chat(self, messages: list[dict[str, Any]]) -> str:
         """Appel bas niveau : envoie une liste de messages OpenAI-style, retourne le texte."""
         try:
             response: Any = await self._client.chat(model=self._model, messages=messages)
