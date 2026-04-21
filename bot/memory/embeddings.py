@@ -21,9 +21,7 @@ class Embedder:
 
     DEFAULT_TIMEOUT_SEC = 15.0
 
-    def __init__(
-        self, base_url: str, model: str, timeout: float = DEFAULT_TIMEOUT_SEC
-    ) -> None:
+    def __init__(self, base_url: str, model: str, timeout: float = DEFAULT_TIMEOUT_SEC) -> None:
         # Les embeddings sont rapides (<1 s en temps normal). 15 s suffisent
         # largement ; au-delà, Ollama est probablement indisponible.
         self._client = AsyncClient(host=base_url, timeout=httpx.Timeout(timeout))

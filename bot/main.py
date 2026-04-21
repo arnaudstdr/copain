@@ -99,9 +99,7 @@ def main() -> None:
     async def _daily_briefing_job() -> None:
         await deps.briefing.send_daily(chat_id=settings.allowed_user_id)
 
-    async def _error_handler(
-        update: object, context: ContextTypes.DEFAULT_TYPE
-    ) -> None:
+    async def _error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Soft-fail sur les erreurs réseau Telegram (DNS/TLS momentanés).
 
         Sans ce handler, PTB laisse les stacktraces remonter au logger et l'erreur
@@ -152,9 +150,7 @@ def main() -> None:
         .post_shutdown(_post_shutdown)
         .build()
     )
-    application.add_handler(
-        MessageHandler(filters.TEXT & ~filters.COMMAND, make_handler(deps))
-    )
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, make_handler(deps)))
     application.add_handler(MessageHandler(filters.PHOTO, make_photo_handler(deps)))
     application.add_error_handler(_error_handler)
     application.run_polling()

@@ -14,9 +14,7 @@ from bot.llm.client import LLMClient, LLMError
 def fake_client() -> LLMClient:
     client = LLMClient(base_url="http://localhost:11434", model="gemma4:31b-cloud")
     client._client = AsyncMock()  # type: ignore[assignment]
-    client._client.chat = AsyncMock(
-        return_value={"message": {"content": "analyse OK"}}
-    )
+    client._client.chat = AsyncMock(return_value={"message": {"content": "analyse OK"}})
     return client
 
 

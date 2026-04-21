@@ -138,7 +138,9 @@ async def _process(
         recent_history=list(deps.history),
     )
 
-    user_content = user_text if user_text else "Analyse cette image et propose une action pertinente."
+    user_content = (
+        user_text if user_text else "Analyse cette image et propose une action pertinente."
+    )
     raw = await deps.llm.call(system=system_prompt, user=user_content, images=images)
 
     try:
@@ -220,10 +222,7 @@ async def _handle_feed(user_text: str, meta: Meta, deps: BotDeps, intro: str) ->
         feeds = await deps.rss.list(enabled_only=False)
         if not feeds:
             return "Aucun flux enregistré."
-        lines = [
-            f"- {f.name} [{f.category}] {'✓' if f.enabled else '✗'} — {f.url}"
-            for f in feeds
-        ]
+        lines = [f"- {f.name} [{f.category}] {'✓' if f.enabled else '✗'} — {f.url}" for f in feeds]
         return "Tes flux :\n" + "\n".join(lines)
 
     if action == "remove":
@@ -253,12 +252,9 @@ async def _handle_feed(user_text: str, meta: Meta, deps: BotDeps, intro: str) ->
     return intro
 
 
-async def _summarize_feed_items(
-    deps: BotDeps, user_text: str, items: Sequence[FeedItem]
-) -> str:
+async def _summarize_feed_items(deps: BotDeps, user_text: str, items: Sequence[FeedItem]) -> str:
     bullets = "\n".join(
-        f"- [{it.feed_name}] {it.title} ({it.url})\n  {it.summary[:300]}"
-        for it in items
+        f"- [{it.feed_name}] {it.title} ({it.url})\n  {it.summary[:300]}" for it in items
     )
     system = (
         "Tu es l'assistant personnel d'Arnaud. Tu reçois une liste d'articles RSS récents. "

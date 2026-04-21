@@ -103,9 +103,7 @@ def load_settings() -> Settings:
         data_dir=data_dir,
         chroma_dir=Path(os.getenv("CHROMA_DIR", data_dir / "chroma")).resolve(),
         db_path=Path(os.getenv("DB_PATH", data_dir / "tasks.db")).resolve(),
-        scheduler_db_path=Path(
-            os.getenv("SCHEDULER_DB_PATH", data_dir / "scheduler.db")
-        ).resolve(),
+        scheduler_db_path=Path(os.getenv("SCHEDULER_DB_PATH", data_dir / "scheduler.db")).resolve(),
         timezone=os.getenv("TZ", "Europe/Paris"),
         briefing_hour=_env_int("BRIEFING_HOUR", 8),
         briefing_minute=_env_int("BRIEFING_MINUTE", 0),

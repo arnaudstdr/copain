@@ -20,9 +20,7 @@ async def manager(tmp_data_dir: Path) -> FeedManager:
 
 
 async def test_add_feed(manager: FeedManager) -> None:
-    feed = await manager.add(
-        url="https://example.com/feed.xml", name="Example", category="tech"
-    )
+    feed = await manager.add(url="https://example.com/feed.xml", name="Example", category="tech")
     assert feed.id is not None
     assert feed.name == "Example"
     assert feed.category == "tech"

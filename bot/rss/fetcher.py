@@ -32,9 +32,7 @@ class RssFetcher:
         self._user_agent = user_agent
 
     async def fetch(self, feed: Feed, limit: int = 10) -> list[FeedItem]:
-        parsed = await asyncio.to_thread(
-            feedparser.parse, feed.url, agent=self._user_agent
-        )
+        parsed = await asyncio.to_thread(feedparser.parse, feed.url, agent=self._user_agent)
         if parsed.bozo and not parsed.entries:
             log.warning("rss_fetch_failed", feed=feed.name, error=str(parsed.bozo_exception))
             return []
@@ -53,9 +51,7 @@ class RssFetcher:
         log.info("rss_fetched", feed=feed.name, count=len(items))
         return items
 
-    async def fetch_many(
-        self, feeds: Sequence[Feed], per_feed: int = 10
-    ) -> list[FeedItem]:
+    async def fetch_many(self, feeds: Sequence[Feed], per_feed: int = 10) -> list[FeedItem]:
         if not feeds:
             return []
         results = await asyncio.gather(

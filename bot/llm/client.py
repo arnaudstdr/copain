@@ -29,9 +29,7 @@ class LLMClient:
 
     DEFAULT_TIMEOUT_SEC = 60.0
 
-    def __init__(
-        self, base_url: str, model: str, timeout: float = DEFAULT_TIMEOUT_SEC
-    ) -> None:
+    def __init__(self, base_url: str, model: str, timeout: float = DEFAULT_TIMEOUT_SEC) -> None:
         # Timeout explicite : Ollama cloud avec un 31B peut prendre 10-30 s.
         # Sans timeout, un freeze côté serveur bloque l'event loop Telegram.
         self._client = AsyncClient(host=base_url, timeout=httpx.Timeout(timeout))

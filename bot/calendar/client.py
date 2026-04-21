@@ -99,8 +99,7 @@ class ICloudCalendarClient:
 
         available = [getattr(c, "name", "?") for c in calendars]
         raise ICloudCalendarError(
-            f"Calendrier '{self._calendar_name}' introuvable. "
-            f"Disponibles : {available}"
+            f"Calendrier '{self._calendar_name}' introuvable. Disponibles : {available}"
         )
 
     def resolve_calendar(self, name: str | None) -> Any:
@@ -113,9 +112,7 @@ class ICloudCalendarClient:
         match = _find_calendar(self._all_calendars, name)
         if match is None:
             available = [getattr(c, "name", "?") for c in self._all_calendars]
-            raise ICloudCalendarError(
-                f"Calendrier '{name}' introuvable. Disponibles : {available}"
-            )
+            raise ICloudCalendarError(f"Calendrier '{name}' introuvable. Disponibles : {available}")
         return match
 
     async def create_event(
@@ -159,9 +156,7 @@ class ICloudCalendarClient:
             calendar_name=target_name,
         )
 
-    async def list_between(
-        self, start: datetime, end: datetime
-    ) -> list[CalendarEvent]:
+    async def list_between(self, start: datetime, end: datetime) -> list[CalendarEvent]:
         cal = self._require_connected()
         start_aware = _ensure_aware(start, self._tz)
         end_aware = _ensure_aware(end, self._tz)
@@ -192,9 +187,7 @@ class ICloudCalendarClient:
 
     def _require_connected(self) -> Any:
         if self._calendar is None:
-            raise ICloudCalendarError(
-                "Client iCloud non connecté. Appelle connect() d'abord."
-            )
+            raise ICloudCalendarError("Client iCloud non connecté. Appelle connect() d'abord.")
         return self._calendar
 
 
@@ -262,10 +255,7 @@ def _build_vevent(
 
     def _escape(value: str) -> str:
         return (
-            value.replace("\\", "\\\\")
-            .replace(",", "\\,")
-            .replace(";", "\\;")
-            .replace("\n", "\\n")
+            value.replace("\\", "\\\\").replace(",", "\\,").replace(";", "\\;").replace("\n", "\\n")
         )
 
     lines = [
@@ -287,9 +277,7 @@ def _build_vevent(
     return "\r\n".join(lines) + "\r\n"
 
 
-def _parse_vevent(
-    entry: Any, calendar_name: str, tz: ZoneInfo
-) -> CalendarEvent | None:
+def _parse_vevent(entry: Any, calendar_name: str, tz: ZoneInfo) -> CalendarEvent | None:
     try:
         ical = vobject.readOne(entry.data)
     except Exception as exc:
@@ -313,9 +301,7 @@ def _parse_vevent(
         return None
 
     location = str(vevent.location.value) if hasattr(vevent, "location") else None
-    description = (
-        str(vevent.description.value) if hasattr(vevent, "description") else None
-    )
+    description = str(vevent.description.value) if hasattr(vevent, "description") else None
 
     return CalendarEvent(
         uid=uid,

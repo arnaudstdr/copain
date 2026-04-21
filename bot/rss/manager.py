@@ -47,9 +47,7 @@ class FeedManager:
                 await session.commit()
             except IntegrityError as exc:
                 await session.rollback()
-                raise FeedAlreadyExists(
-                    f"Flux déjà présent (url ou nom) : {name} / {url}"
-                ) from exc
+                raise FeedAlreadyExists(f"Flux déjà présent (url ou nom) : {name} / {url}") from exc
             await session.refresh(feed)
         log.info("feed_added", feed_id=feed.id, name=name, url=url)
         return feed
@@ -107,9 +105,7 @@ class FeedManager:
         # L'engine est partagé : c'est main.py qui fait dispose() au shutdown.
         pass
 
-    async def _load(
-        self, session: AsyncSession, name_or_id: str | int
-    ) -> Feed | None:
+    async def _load(self, session: AsyncSession, name_or_id: str | int) -> Feed | None:
         if isinstance(name_or_id, int):
             feed: Feed | None = await session.get(Feed, name_or_id)
             return feed

@@ -25,9 +25,7 @@ class TaskManager:
     automatiquement le job de rappel associé (évite les rappels fantômes).
     """
 
-    def __init__(
-        self, engine: AsyncEngine, scheduler: ReminderScheduler | None = None
-    ) -> None:
+    def __init__(self, engine: AsyncEngine, scheduler: ReminderScheduler | None = None) -> None:
         self._engine = engine
         self._sessionmaker = async_sessionmaker(self._engine, expire_on_commit=False)
         self._scheduler = scheduler

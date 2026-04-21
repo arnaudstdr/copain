@@ -71,9 +71,7 @@ async def test_connect_is_idempotent(client: ICloudCalendarClient) -> None:
     dav_client = MagicMock()
     dav_client.principal.return_value = principal
 
-    with patch(
-        "bot.calendar.client.caldav.DAVClient", return_value=dav_client
-    ) as mock_dav:
+    with patch("bot.calendar.client.caldav.DAVClient", return_value=dav_client) as mock_dav:
         await client.connect()
         await client.connect()
     assert mock_dav.call_count == 1
@@ -102,9 +100,7 @@ async def test_create_event_calls_save_event(client: ICloudCalendarClient) -> No
 async def test_create_event_requires_connection(client: ICloudCalendarClient) -> None:
     start = datetime(2026, 4, 22, 15, 0, tzinfo=UTC)
     with pytest.raises(ICloudCalendarError, match="non connecté"):
-        await client.create_event(
-            title="Test", start=start, end=start + timedelta(hours=1)
-        )
+        await client.create_event(title="Test", start=start, end=start + timedelta(hours=1))
 
 
 async def test_create_event_routes_to_named_calendar(
