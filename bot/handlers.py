@@ -275,7 +275,15 @@ async def _summarize_feed_items(
 
 async def _handle_event(meta: Meta, deps: BotDeps, intro: str) -> str:
     action = meta["event"]["action"]
-    log.info("event_action", action=action)
+    log.info(
+        "event_action",
+        action=action,
+        title=meta["event"]["title"],
+        start_str=meta["event"]["start_str"],
+        end_str=meta["event"]["end_str"],
+        calendar_name=meta["event"]["calendar_name"],
+        range_str=meta["event"]["range_str"],
+    )
 
     if not deps.calendar.is_connected:
         return "Le calendrier iCloud n'est pas disponible pour le moment."
@@ -293,6 +301,13 @@ async def _handle_event(meta: Meta, deps: BotDeps, intro: str) -> str:
         end = _parse_due(meta["event"]["end_str"], tz_name)
         if end is None:
             end = start + timedelta(hours=1)
+        log.info(
+            "event_times_parsed",
+            start_str=start_str,
+            end_str=meta["event"]["end_str"],
+            start=start.isoformat(),
+            end=end.isoformat(),
+        )
         try:
             event = await deps.calendar.create_event(
                 title=title,

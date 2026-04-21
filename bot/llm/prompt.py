@@ -56,6 +56,10 @@ Règles pour intent :
              Apple Watch, etc.). À distinguer de "task" qui est un todo léger rappelé
              par Telegram. Règle : si l'utilisateur dit "RDV", "réunion", "meeting",
              "rendez-vous" ou équivalent AVEC une heure, c'est event. Sinon c'est task.
+             IMPORTANT pour start_str/end_str : recopie TEXTUELLEMENT l'expression
+             temporelle telle que donnée par l'utilisateur, y compris les mots comme
+             "midi" et "minuit" qui sont reconnus côté code. N'essaie PAS de
+             réinterpréter "midi" en "12h" — laisse le mot tel quel.
 - "answer" → tout le reste, réponse directe
 
 Si l'utilisateur envoie une image (avec ou sans légende), analyse-la visuellement :

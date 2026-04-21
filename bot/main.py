@@ -10,7 +10,9 @@ from __future__ import annotations
 from collections import deque
 from typing import Any
 
-from telegram.ext import Application, MessageHandler, filters
+from telegram import Update
+from telegram.error import NetworkError, TimedOut
+from telegram.ext import Application, ContextTypes, MessageHandler, filters
 
 from bot.briefing.service import BriefingService
 from bot.briefing.weather import OpenMeteoClient
@@ -95,6 +97,26 @@ def main() -> None:
     async def _daily_briefing_job() -> None:
         await deps.briefing.send_daily(chat_id=settings.allowed_user_id)
 
+    async def _error_handler(
+        update: object, context: ContextTypes.DEFAULT_TYPE
+    ) -> None:
+        """Soft-fail sur les erreurs réseau Telegram (DNS/TLS momentanés).
+
+        Sans ce handler, PTB laisse les stacktraces remonter au logger et l'erreur
+        paraît critique. En pratique les NetworkError/TimedOut sont rattrapés au
+        prochain poll, donc on log warning et on laisse tomber cet update.
+        """
+        err = context.error
+        if isinstance(err, NetworkError | TimedOut):
+            update_id = update.update_id if isinstance(update, Update) else None
+            log.warning(
+                "telegram_network_error",
+                error=type(err).__name__,
+                update_id=update_id,
+            )
+            return
+        log.exception("telegram_unhandled_error", error=str(err))
+
     async def _post_init(app: Application[Any, Any, Any, Any, Any, Any]) -> None:
         await deps.tasks.init_schema()
         await deps.rss.init_schema()
@@ -132,6 +154,7 @@ def main() -> None:
         MessageHandler(filters.TEXT & ~filters.COMMAND, make_handler(deps))
     )
     application.add_handler(MessageHandler(filters.PHOTO, make_photo_handler(deps)))
+    application.add_error_handler(_error_handler)
     application.run_polling()
 
 
