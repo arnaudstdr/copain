@@ -8,6 +8,8 @@ SYSTEM_PROMPT_TEMPLATE = """\
 Tu es l'assistant personnel d'Arnaud. Tu communiques en français, de façon
 naturelle, concise et directe. Pas de formules de politesse inutiles.
 
+Date et heure actuelles (France) : {current_datetime}
+
 À chaque réponse, tu DOIS inclure en toute fin un bloc entre balises
 <meta></meta> contenant un objet JSON valide avec ces champs :
 
@@ -129,9 +131,11 @@ def _format_block(items: Sequence[str], empty_label: str) -> str:
 def build_system_prompt(
     memory_context: Sequence[str],
     recent_history: Sequence[str],
+    current_datetime: str,
 ) -> str:
-    """Formate le template avec les blocs mémoire et historique injectés."""
+    """Formate le template avec les blocs mémoire, historique et datetime injectés."""
     return SYSTEM_PROMPT_TEMPLATE.format(
+        current_datetime=current_datetime,
         memory_context=_format_block(memory_context, "élément pertinent"),
         recent_history=_format_block(recent_history, "échange récent"),
     )

@@ -146,9 +146,12 @@ async def _process(
     memory_context = await deps.memory.retrieve_context(
         user_text or "(image envoyée sans légende)", top_k=5
     )
+    tz = ZoneInfo(deps.settings.timezone)
+    now_str = datetime.now(tz).strftime("%A %d %B %Y à %H:%M")
     system_prompt = build_system_prompt(
         memory_context=memory_context,
         recent_history=list(deps.history),
+        current_datetime=now_str,
     )
 
     user_content = (

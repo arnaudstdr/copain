@@ -38,6 +38,7 @@ class ReminderScheduler:
 
     def __init__(self, db_path: Path, timezone: str = "Europe/Paris") -> None:
         db_path.parent.mkdir(parents=True, exist_ok=True)
+        self._timezone = timezone
         # default = rappels one-shot persistés (SQLAlchemy)
         # memory = cron/recurrent (closures, non-sérialisables, re-planifiés au startup)
         self._scheduler = AsyncIOScheduler(
@@ -46,6 +47,9 @@ class ReminderScheduler:
                 "memory": MemoryJobStore(),
             },
             timezone=ZoneInfo(timezone),
+            job_defaults={
+                "misfire_grace_time": 3600,  # 1 h de tolérance : rappels persistés envoyés même après un redémarrage tardif
+            },
         )
 
     def start(self) -> None:
@@ -62,6 +66,14 @@ class ReminderScheduler:
         chat_id: int,
         content: str,
     ) -> None:
+        now = datetime.now(ZoneInfo(self._timezone))
+        if due_at <= now:
+            log.warning(
+                "reminder_due_in_past",
+                task_id=task_id,
+                due_at=due_at.isoformat(),
+                now=now.isoformat(),
+            )
         self._scheduler.add_job(
             _send_reminder,
             trigger="date",
