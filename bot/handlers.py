@@ -431,8 +431,19 @@ def _parse_due(due_str: str | None, tz_name: str) -> datetime | None:
 
 
 _FR_TIME_SUBSTITUTIONS: tuple[tuple[re.Pattern[str], str], ...] = (
+    # "après-midi" DOIT être traité avant "midi" pour éviter que "midi" soit
+    # substitué à l'intérieur du mot composé (après-12:00).
+    (re.compile(r"\bce\s+matin\b", re.IGNORECASE), "aujourd'hui"),
+    (re.compile(r"\bce\s+soir\b", re.IGNORECASE), "aujourd'hui"),
+    (re.compile(r"\bcet?\s+après-midi\b", re.IGNORECASE), "aujourd'hui"),
+    (re.compile(r"\baprès-midi\b", re.IGNORECASE), ""),
+    # "midi" / "minuit" après avoir éliminé "après-midi"
     (re.compile(r"\bmidi\b", re.IGNORECASE), "12:00"),
     (re.compile(r"\bminuit\b", re.IGNORECASE), "00:00"),
+    # Mots de moment isolés (ex: "demain matin", "lundi soir") : supprimés car
+    # l'heure explicite suffit à dateparser.
+    (re.compile(r"\bmatin\b", re.IGNORECASE), ""),
+    (re.compile(r"\bsoir\b", re.IGNORECASE), ""),
 )
 
 
@@ -440,4 +451,4 @@ def _normalize_fr_time_words(expr: str) -> str:
     """Remplace les mots FR que dateparser ignore par des expressions qu'il gère."""
     for pattern, repl in _FR_TIME_SUBSTITUTIONS:
         expr = pattern.sub(repl, expr)
-    return expr
+    return " ".join(expr.split())  # nettoie les espaces doubles laissés par les suppressions
