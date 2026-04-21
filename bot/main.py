@@ -24,6 +24,7 @@ from bot.llm.client import LLMClient
 from bot.logging_conf import configure_logging, get_logger
 from bot.memory.embeddings import Embedder
 from bot.memory.manager import MemoryManager
+from bot.proactivity import models as _proactivity_models  # noqa: F401 — enregistre la table
 from bot.rss.fetcher import RssFetcher
 from bot.rss.manager import FeedAlreadyExists, FeedManager
 from bot.search.searxng import SearxngClient
