@@ -46,6 +46,13 @@ class Settings:
     icloud_app_password: str
     icloud_calendar_name: str
 
+    proactivity_enabled: bool
+    proactivity_window_start_hour: int
+    proactivity_window_end_hour: int
+    proactivity_daily_budget: int
+    proactivity_check_interval_min: int
+    proactivity_rain_cooldown_hours: int
+
     env: str
 
     @property
@@ -88,6 +95,23 @@ def _env_float(key: str, default: float) -> float:
         raise ConfigError(f"{key} doit être un nombre, reçu : {raw!r}") from exc
 
 
+def _env_bool(key: str, default: bool) -> bool:
+    """Parse une variable d'env en booléen.
+
+    Accepte `1/true/yes/on` pour `True`, `0/false/no/off` pour `False`
+    (case-insensitive). Retourne `default` si absente ou vide.
+    """
+    raw = os.getenv(key)
+    if raw is None or raw == "":
+        return default
+    normalized = raw.strip().lower()
+    if normalized in ("1", "true", "yes", "on"):
+        return True
+    if normalized in ("0", "false", "no", "off"):
+        return False
+    raise ConfigError(f"{key} doit être un booléen (true/false), reçu : {raw!r}")
+
+
 def load_settings() -> Settings:
     """Charge `.env` (si présent) puis construit l'objet Settings validé."""
     load_dotenv()
@@ -115,5 +139,11 @@ def load_settings() -> Settings:
         icloud_username=_required("ICLOUD_USERNAME"),
         icloud_app_password=_required("ICLOUD_APP_PASSWORD"),
         icloud_calendar_name=os.getenv("ICLOUD_CALENDAR_NAME", "Personnel"),
+        proactivity_enabled=_env_bool("PROACTIVITY_ENABLED", False),
+        proactivity_window_start_hour=_env_int("PROACTIVITY_WINDOW_START_HOUR", 8),
+        proactivity_window_end_hour=_env_int("PROACTIVITY_WINDOW_END_HOUR", 21),
+        proactivity_daily_budget=_env_int("PROACTIVITY_DAILY_BUDGET", 3),
+        proactivity_check_interval_min=_env_int("PROACTIVITY_CHECK_INTERVAL_MIN", 30),
+        proactivity_rain_cooldown_hours=_env_int("PROACTIVITY_RAIN_COOLDOWN_HOURS", 3),
         env=os.getenv("ENV", "dev"),
     )
