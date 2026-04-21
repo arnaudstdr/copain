@@ -6,16 +6,17 @@ from pathlib import Path
 
 import pytest
 
+from bot.db import create_shared_engine
 from bot.rss.manager import FeedAlreadyExists, FeedManager
 
 
 @pytest.fixture
 async def manager(tmp_data_dir: Path) -> FeedManager:
-    db_path = tmp_data_dir / "feeds.db"
-    mgr = FeedManager(db_path)
+    engine = create_shared_engine(tmp_data_dir / "feeds.db")
+    mgr = FeedManager(engine)
     await mgr.init_schema()
     yield mgr
-    await mgr.dispose()
+    await engine.dispose()
 
 
 async def test_add_feed(manager: FeedManager) -> None:

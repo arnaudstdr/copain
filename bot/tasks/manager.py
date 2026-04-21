@@ -4,11 +4,10 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from datetime import datetime
-from pathlib import Path
 from typing import TYPE_CHECKING
 
 from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker, create_async_engine
+from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
 
 from bot.tasks.models import Base, Task
 
@@ -19,17 +18,17 @@ if TYPE_CHECKING:
 class TaskManager:
     """Wrapper async autour d'une base SQLite locale.
 
+    L'engine est injecté depuis `bot/db.py` (partagé avec `FeedManager` pour
+    éviter les contentions SQLite).
+
     Si un `ReminderScheduler` est injecté, `complete()` et `delete()` annulent
     automatiquement le job de rappel associé (évite les rappels fantômes).
     """
 
     def __init__(
-        self, db_path: Path, scheduler: ReminderScheduler | None = None
+        self, engine: AsyncEngine, scheduler: ReminderScheduler | None = None
     ) -> None:
-        db_path.parent.mkdir(parents=True, exist_ok=True)
-        self._engine: AsyncEngine = create_async_engine(
-            f"sqlite+aiosqlite:///{db_path}", future=True
-        )
+        self._engine = engine
         self._sessionmaker = async_sessionmaker(self._engine, expire_on_commit=False)
         self._scheduler = scheduler
 
@@ -78,4 +77,5 @@ class TaskManager:
         return True
 
     async def dispose(self) -> None:
-        await self._engine.dispose()
+        # L'engine est partagé : c'est main.py qui fait dispose() au shutdown.
+        pass

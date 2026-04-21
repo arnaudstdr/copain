@@ -123,10 +123,13 @@ def mock_calendar_disconnected() -> MagicMock:
 
 @pytest.fixture
 async def real_tasks(tmp_data_dir: Path) -> TaskManager:
-    mgr = TaskManager(tmp_data_dir / "tasks.db")
+    from bot.db import create_shared_engine
+
+    engine = create_shared_engine(tmp_data_dir / "tasks.db")
+    mgr = TaskManager(engine)
     await mgr.init_schema()
     yield mgr
-    await mgr.dispose()
+    await engine.dispose()
 
 
 async def test_build_contains_four_sections(

@@ -8,16 +8,17 @@ from unittest.mock import MagicMock
 
 import pytest
 
+from bot.db import create_shared_engine
 from bot.tasks.manager import TaskManager
 
 
 @pytest.fixture
 async def manager(tmp_data_dir: Path) -> TaskManager:
-    db_path = tmp_data_dir / "tasks.db"
-    mgr = TaskManager(db_path)
+    engine = create_shared_engine(tmp_data_dir / "tasks.db")
+    mgr = TaskManager(engine)
     await mgr.init_schema()
     yield mgr
-    await mgr.dispose()
+    await engine.dispose()
 
 
 async def test_create_task_without_due(manager: TaskManager) -> None:
@@ -67,34 +68,37 @@ async def test_delete_task(manager: TaskManager) -> None:
 
 async def test_complete_cancels_reminder_when_scheduler_injected(tmp_data_dir: Path) -> None:
     scheduler = MagicMock()
-    mgr = TaskManager(tmp_data_dir / "tasks.db", scheduler=scheduler)
+    engine = create_shared_engine(tmp_data_dir / "tasks.db")
+    mgr = TaskManager(engine, scheduler=scheduler)
     await mgr.init_schema()
     try:
         task = await mgr.create("appeler dentiste", due_at=datetime.now(UTC) + timedelta(hours=2))
         await mgr.complete(task.id)
         scheduler.cancel_reminder.assert_called_once_with(task.id)
     finally:
-        await mgr.dispose()
+        await engine.dispose()
 
 
 async def test_delete_cancels_reminder_when_scheduler_injected(tmp_data_dir: Path) -> None:
     scheduler = MagicMock()
-    mgr = TaskManager(tmp_data_dir / "tasks.db", scheduler=scheduler)
+    engine = create_shared_engine(tmp_data_dir / "tasks.db")
+    mgr = TaskManager(engine, scheduler=scheduler)
     await mgr.init_schema()
     try:
         task = await mgr.create("à supprimer", due_at=datetime.now(UTC) + timedelta(hours=2))
         await mgr.delete(task.id)
         scheduler.cancel_reminder.assert_called_once_with(task.id)
     finally:
-        await mgr.dispose()
+        await engine.dispose()
 
 
 async def test_complete_unknown_task_does_not_cancel_reminder(tmp_data_dir: Path) -> None:
     scheduler = MagicMock()
-    mgr = TaskManager(tmp_data_dir / "tasks.db", scheduler=scheduler)
+    engine = create_shared_engine(tmp_data_dir / "tasks.db")
+    mgr = TaskManager(engine, scheduler=scheduler)
     await mgr.init_schema()
     try:
         assert await mgr.complete(999) is False
         scheduler.cancel_reminder.assert_not_called()
     finally:
-        await mgr.dispose()
+        await engine.dispose()

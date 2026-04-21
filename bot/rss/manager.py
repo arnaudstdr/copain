@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
-from pathlib import Path
 
 from sqlalchemy import or_, select
 from sqlalchemy.exc import IntegrityError
@@ -11,7 +10,6 @@ from sqlalchemy.ext.asyncio import (
     AsyncEngine,
     AsyncSession,
     async_sessionmaker,
-    create_async_engine,
 )
 
 from bot.logging_conf import get_logger
@@ -26,13 +24,14 @@ class FeedAlreadyExists(ValueError):
 
 
 class FeedManager:
-    """Gère les entrées de la table `feeds`."""
+    """Gère les entrées de la table `feeds`.
 
-    def __init__(self, db_path: Path) -> None:
-        db_path.parent.mkdir(parents=True, exist_ok=True)
-        self._engine: AsyncEngine = create_async_engine(
-            f"sqlite+aiosqlite:///{db_path}", future=True
-        )
+    L'engine est partagé avec `TaskManager` (cf. `bot/db.py`) pour éviter
+    d'avoir deux pools concurrents sur le même fichier SQLite.
+    """
+
+    def __init__(self, engine: AsyncEngine) -> None:
+        self._engine = engine
         self._sessionmaker = async_sessionmaker(self._engine, expire_on_commit=False)
 
     async def init_schema(self) -> None:
@@ -99,7 +98,8 @@ class FeedManager:
             return len(result.scalars().all())
 
     async def dispose(self) -> None:
-        await self._engine.dispose()
+        # L'engine est partagé : c'est main.py qui fait dispose() au shutdown.
+        pass
 
     async def _load(
         self, session: AsyncSession, name_or_id: str | int

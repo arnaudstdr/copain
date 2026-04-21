@@ -18,6 +18,7 @@ from bot.briefing.service import BriefingService
 from bot.briefing.weather import OpenMeteoClient
 from bot.calendar.client import ICloudCalendarClient, ICloudCalendarError
 from bot.config import load_settings
+from bot.db import create_shared_engine, enable_wal_mode
 from bot.handlers import BotDeps, make_handler, make_photo_handler
 from bot.llm.client import LLMClient
 from bot.logging_conf import configure_logging, get_logger
@@ -61,8 +62,9 @@ def main() -> None:
         settings.scheduler_db_path,
         timezone=settings.timezone,
     )
-    tasks = TaskManager(settings.db_path, scheduler=scheduler)
-    rss = FeedManager(settings.db_path)
+    engine = create_shared_engine(settings.db_path)
+    tasks = TaskManager(engine, scheduler=scheduler)
+    rss = FeedManager(engine)
     rss_fetcher = RssFetcher()
     llm = LLMClient(settings.ollama_base_url, settings.ollama_llm_model)
     calendar = ICloudCalendarClient(
@@ -118,6 +120,7 @@ def main() -> None:
         log.exception("telegram_unhandled_error", error=str(err))
 
     async def _post_init(app: Application[Any, Any, Any, Any, Any, Any]) -> None:
+        await enable_wal_mode(engine)
         await deps.tasks.init_schema()
         await deps.rss.init_schema()
         await _seed_default_feeds(deps.rss)
@@ -139,8 +142,7 @@ def main() -> None:
         deps.scheduler.shutdown()
         await deps.search.aclose()
         await weather.aclose()
-        await deps.rss.dispose()
-        await deps.tasks.dispose()
+        await engine.dispose()
         log.info("post_shutdown_done")
 
     application = (
