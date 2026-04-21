@@ -43,6 +43,8 @@ module = [
     "telegram.*",
     "ollama.*",
     "feedparser.*",
+    "caldav.*",
+    "vobject.*",
 ]
 ignore_missing_imports = true
 

@@ -8,13 +8,16 @@ from typing import Any, Literal, TypedDict
 
 META_PATTERN = re.compile(r"<meta>\s*(\{.*?\})\s*</meta>", re.DOTALL)
 
-Intent = Literal["answer", "task", "search", "memory", "feed"]
+Intent = Literal["answer", "task", "search", "memory", "feed", "event"]
 VALID_INTENTS: frozenset[str] = frozenset(
-    {"answer", "task", "search", "memory", "feed"}
+    {"answer", "task", "search", "memory", "feed", "event"}
 )
 
 FeedAction = Literal["add", "list", "remove", "summarize"]
 VALID_FEED_ACTIONS: frozenset[str] = frozenset({"add", "list", "remove", "summarize"})
+
+EventAction = Literal["create", "list"]
+VALID_EVENT_ACTIONS: frozenset[str] = frozenset({"create", "list"})
 
 
 class TaskMeta(TypedDict):
@@ -28,12 +31,23 @@ class FeedMeta(TypedDict):
     url: str | None
 
 
+class EventMeta(TypedDict):
+    action: EventAction | None
+    title: str | None
+    start_str: str | None
+    end_str: str | None
+    location: str | None
+    description: str | None
+    range_str: str | None
+
+
 class Meta(TypedDict):
     intent: Intent
     store_memory: bool
     memory_content: str | None
     task: TaskMeta
     feed: FeedMeta
+    event: EventMeta
     search_query: str | None
 
 
@@ -98,6 +112,30 @@ def _validate(data: Any) -> Meta:
         "url": _opt_str(feed_raw.get("url"), "feed.url"),
     }
 
+    event_raw = data.get("event") or {
+        "action": None,
+        "title": None,
+        "start_str": None,
+        "end_str": None,
+        "location": None,
+        "description": None,
+        "range_str": None,
+    }
+    if not isinstance(event_raw, dict):
+        raise MetaParseError("event doit être un objet ou null")
+    event_action = event_raw.get("action")
+    if event_action is not None and event_action not in VALID_EVENT_ACTIONS:
+        raise MetaParseError(f"event.action invalide : {event_action!r}")
+    event: EventMeta = {
+        "action": event_action,
+        "title": _opt_str(event_raw.get("title"), "event.title"),
+        "start_str": _opt_str(event_raw.get("start_str"), "event.start_str"),
+        "end_str": _opt_str(event_raw.get("end_str"), "event.end_str"),
+        "location": _opt_str(event_raw.get("location"), "event.location"),
+        "description": _opt_str(event_raw.get("description"), "event.description"),
+        "range_str": _opt_str(event_raw.get("range_str"), "event.range_str"),
+    }
+
     search_query = _opt_str(data.get("search_query"), "search_query")
 
     return Meta(
@@ -106,6 +144,7 @@ def _validate(data: Any) -> Meta:
         memory_content=memory_content,
         task=task,
         feed=feed,
+        event=event,
         search_query=search_query,
     )
 

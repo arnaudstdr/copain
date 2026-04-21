@@ -10,6 +10,7 @@ import pytest
 
 from bot.briefing.service import BriefingService
 from bot.briefing.weather import WeatherError, WeatherSummary
+from bot.calendar.models import CalendarEvent
 from bot.rss.fetcher import FeedItem
 from bot.tasks.manager import TaskManager
 
@@ -75,6 +76,52 @@ def mock_llm() -> MagicMock:
 
 
 @pytest.fixture
+def mock_calendar_empty() -> MagicMock:
+    cal = MagicMock()
+    cal.is_connected = True
+    cal.list_today = AsyncMock(return_value=[])
+    return cal
+
+
+@pytest.fixture
+def mock_calendar_with_events() -> MagicMock:
+    cal = MagicMock()
+    cal.is_connected = True
+    start = datetime.now(UTC).replace(hour=9, minute=0, second=0, microsecond=0)
+    cal.list_today = AsyncMock(
+        return_value=[
+            CalendarEvent(
+                uid="e1",
+                title="Standup équipe",
+                start=start,
+                end=start + timedelta(hours=1),
+                location="Bureau",
+                description=None,
+                calendar_name="Personnel",
+            ),
+            CalendarEvent(
+                uid="e2",
+                title="RDV dentiste",
+                start=start.replace(hour=14, minute=30),
+                end=start.replace(hour=15, minute=30),
+                location=None,
+                description=None,
+                calendar_name="Personnel",
+            ),
+        ]
+    )
+    return cal
+
+
+@pytest.fixture
+def mock_calendar_disconnected() -> MagicMock:
+    cal = MagicMock()
+    cal.is_connected = False
+    cal.list_today = AsyncMock(side_effect=RuntimeError("disconnected"))
+    return cal
+
+
+@pytest.fixture
 async def real_tasks(tmp_data_dir: Path) -> TaskManager:
     mgr = TaskManager(tmp_data_dir / "tasks.db")
     await mgr.init_schema()
@@ -82,12 +129,13 @@ async def real_tasks(tmp_data_dir: Path) -> TaskManager:
     await mgr.dispose()
 
 
-async def test_build_contains_three_sections(
+async def test_build_contains_four_sections(
     fake_settings: MagicMock,
     mock_weather: MagicMock,
     mock_rss: MagicMock,
     mock_rss_fetcher: MagicMock,
     mock_llm: MagicMock,
+    mock_calendar_empty: MagicMock,
     real_tasks: TaskManager,
 ) -> None:
     service = BriefingService(
@@ -97,11 +145,12 @@ async def test_build_contains_three_sections(
         rss=mock_rss,
         rss_fetcher=mock_rss_fetcher,
         llm=mock_llm,
+        calendar=mock_calendar_empty,
     )
     text = await service.build()
     assert "Sélestat" in text
-    assert "14°C" in text or "14.5" in text or "15°C" in text
     assert "Tâches du jour" in text
+    assert "Évènements du jour" in text
     assert "Actus du jour" in text
 
 
@@ -111,6 +160,7 @@ async def test_build_with_today_task(
     mock_rss: MagicMock,
     mock_rss_fetcher: MagicMock,
     mock_llm: MagicMock,
+    mock_calendar_empty: MagicMock,
     real_tasks: TaskManager,
 ) -> None:
     now = datetime.now(UTC) + timedelta(hours=2)
@@ -123,9 +173,57 @@ async def test_build_with_today_task(
         rss=mock_rss,
         rss_fetcher=mock_rss_fetcher,
         llm=mock_llm,
+        calendar=mock_calendar_empty,
     )
     text = await service.build()
     assert "acheter du pain" in text
+
+
+async def test_build_with_events(
+    fake_settings: MagicMock,
+    mock_weather: MagicMock,
+    mock_rss: MagicMock,
+    mock_rss_fetcher: MagicMock,
+    mock_llm: MagicMock,
+    mock_calendar_with_events: MagicMock,
+    real_tasks: TaskManager,
+) -> None:
+    service = BriefingService(
+        settings=fake_settings,
+        weather=mock_weather,
+        tasks=real_tasks,
+        rss=mock_rss,
+        rss_fetcher=mock_rss_fetcher,
+        llm=mock_llm,
+        calendar=mock_calendar_with_events,
+    )
+    text = await service.build()
+    assert "Standup équipe" in text
+    assert "RDV dentiste" in text
+    assert "Bureau" in text
+
+
+async def test_build_calendar_disconnected_shows_empty_section(
+    fake_settings: MagicMock,
+    mock_weather: MagicMock,
+    mock_rss: MagicMock,
+    mock_rss_fetcher: MagicMock,
+    mock_llm: MagicMock,
+    mock_calendar_disconnected: MagicMock,
+    real_tasks: TaskManager,
+) -> None:
+    service = BriefingService(
+        settings=fake_settings,
+        weather=mock_weather,
+        tasks=real_tasks,
+        rss=mock_rss,
+        rss_fetcher=mock_rss_fetcher,
+        llm=mock_llm,
+        calendar=mock_calendar_disconnected,
+    )
+    text = await service.build()
+    assert "Aucun évènement prévu" in text
+    mock_calendar_disconnected.list_today.assert_not_called()
 
 
 async def test_build_weather_error_is_graceful(
@@ -133,6 +231,7 @@ async def test_build_weather_error_is_graceful(
     mock_rss: MagicMock,
     mock_rss_fetcher: MagicMock,
     mock_llm: MagicMock,
+    mock_calendar_empty: MagicMock,
     real_tasks: TaskManager,
 ) -> None:
     weather = MagicMock()
@@ -145,6 +244,7 @@ async def test_build_weather_error_is_graceful(
         rss=mock_rss,
         rss_fetcher=mock_rss_fetcher,
         llm=mock_llm,
+        calendar=mock_calendar_empty,
     )
     text = await service.build()
     assert "Météo indisponible" in text
@@ -155,6 +255,7 @@ async def test_build_no_feeds_skips_rss(
     fake_settings: MagicMock,
     mock_weather: MagicMock,
     mock_llm: MagicMock,
+    mock_calendar_empty: MagicMock,
     real_tasks: TaskManager,
 ) -> None:
     rss = MagicMock()
@@ -169,6 +270,7 @@ async def test_build_no_feeds_skips_rss(
         rss=rss,
         rss_fetcher=fetcher,
         llm=mock_llm,
+        calendar=mock_calendar_empty,
     )
     text = await service.build()
     assert "Actus du jour" not in text

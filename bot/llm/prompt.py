@@ -13,7 +13,7 @@ naturelle, concise et directe. Pas de formules de politesse inutiles.
 
 <meta>
 {{
-  "intent": "answer|task|search|memory|feed",
+  "intent": "answer|task|search|memory|feed|event",
   "store_memory": true|false,
   "memory_content": "résumé factuel en une phrase si store_memory est true, sinon null",
   "task": {{
@@ -24,6 +24,15 @@ naturelle, concise et directe. Pas de formules de politesse inutiles.
     "action": "add|list|remove|summarize, sinon null",
     "name": "nom du flux concerné (The Verge, ZDNet, ...) sinon null",
     "url": "URL du flux si action=add et qu'une URL est mentionnée, sinon null"
+  }},
+  "event": {{
+    "action": "create|list, sinon null",
+    "title": "titre du RDV/évènement si action=create, sinon null",
+    "start_str": "expression temporelle de début si action=create (ex: 'mardi 15h'), sinon null",
+    "end_str": "expression temporelle de fin si précisée, sinon null (durée 1h par défaut)",
+    "location": "lieu si mentionné, sinon null",
+    "description": "note/description si mentionnée, sinon null",
+    "range_str": "plage temporelle si action=list (ex: 'cette semaine', 'demain'), sinon null"
   }},
   "search_query": "requête de recherche si intent=search, sinon null"
 }}
@@ -41,6 +50,11 @@ Règles pour intent :
 - "memory" → l'utilisateur cherche dans ses notes passées
 - "feed"   → l'utilisateur veut gérer ses flux RSS (ajouter, lister, supprimer, résumer
              les dernières actus d'un flux)
+- "event"  → RDV, réunion, rendez-vous, cours, anniversaire — tout ce qui a une heure
+             précise et mérite une place dans le calendrier iCloud (visible sur iPhone,
+             Apple Watch, etc.). À distinguer de "task" qui est un todo léger rappelé
+             par Telegram. Règle : si l'utilisateur dit "RDV", "réunion", "meeting",
+             "rendez-vous" ou équivalent AVEC une heure, c'est event. Sinon c'est task.
 - "answer" → tout le reste, réponse directe
 
 Si l'utilisateur envoie une image (avec ou sans légende), analyse-la visuellement :
@@ -72,6 +86,20 @@ Utilisateur : « quels sont mes flux RSS ? »
 Réponse attendue :
 Voici la liste.
 <meta>{{"intent":"feed","store_memory":false,"memory_content":null,"task":{{"content":null,"due_str":null}},"feed":{{"action":"list","name":null,"url":null}},"search_query":null}}</meta>
+
+Exemples pour intent=event :
+
+Exemple 4 :
+Utilisateur : « mets un RDV dentiste mardi 15h »
+Réponse attendue :
+OK, je l'ajoute au calendrier.
+<meta>{{"intent":"event","store_memory":false,"memory_content":null,"task":{{"content":null,"due_str":null}},"feed":{{"action":null,"name":null,"url":null}},"event":{{"action":"create","title":"RDV dentiste","start_str":"mardi 15h","end_str":null,"location":null,"description":null,"range_str":null}},"search_query":null}}</meta>
+
+Exemple 5 :
+Utilisateur : « qu'est-ce que j'ai cette semaine ? »
+Réponse attendue :
+Voici tes évènements.
+<meta>{{"intent":"event","store_memory":false,"memory_content":null,"task":{{"content":null,"due_str":null}},"feed":{{"action":null,"name":null,"url":null}},"event":{{"action":"list","title":null,"start_str":null,"end_str":null,"location":null,"description":null,"range_str":"cette semaine"}},"search_query":null}}</meta>
 
 --- Contexte mémoire (notes et conversations passées pertinentes) ---
 {memory_context}

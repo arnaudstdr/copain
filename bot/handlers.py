@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections import deque
 from collections.abc import Callable, Coroutine, Sequence
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, time, timedelta
 from typing import TYPE_CHECKING, Any
 from zoneinfo import ZoneInfo
 
@@ -22,6 +22,7 @@ if TYPE_CHECKING:
     from telegram.ext import ContextTypes
 
     from bot.briefing.service import BriefingService
+    from bot.calendar.client import ICloudCalendarClient
     from bot.config import Settings
     from bot.llm.client import LLMClient
     from bot.memory.manager import MemoryManager
@@ -53,6 +54,7 @@ class BotDeps:
     rss: FeedManager
     rss_fetcher: RssFetcher
     briefing: BriefingService
+    calendar: ICloudCalendarClient
     history: deque[str]
 
 
@@ -152,6 +154,9 @@ async def _process(
 
     elif meta["intent"] == "feed" and meta["feed"]["action"]:
         text = await _handle_feed(user_text, meta, deps, intro=text)
+
+    elif meta["intent"] == "event" and meta["event"]["action"]:
+        text = await _handle_event(meta, deps, intro=text)
 
     history_user = user_text if user_text else "(image envoyée)"
     if images:
@@ -265,6 +270,106 @@ async def _summarize_feed_items(
             {"role": "user", "content": user},
         ]
     )
+
+
+async def _handle_event(meta: Meta, deps: BotDeps, intro: str) -> str:
+    action = meta["event"]["action"]
+    log.info("event_action", action=action)
+
+    if not deps.calendar.is_connected:
+        return "Le calendrier iCloud n'est pas disponible pour le moment."
+
+    if action == "create":
+        title = meta["event"]["title"]
+        start_str = meta["event"]["start_str"]
+        if not title or not start_str:
+            return "Il me faut au minimum un titre et une heure pour créer un événement."
+
+        tz_name = deps.settings.timezone
+        start = _parse_due(start_str, tz_name)
+        if start is None:
+            return f"Impossible d'interpréter « {start_str} » comme une date."
+        end = _parse_due(meta["event"]["end_str"], tz_name)
+        if end is None:
+            end = start + timedelta(hours=1)
+        try:
+            event = await deps.calendar.create_event(
+                title=title,
+                start=start,
+                end=end,
+                location=meta["event"]["location"],
+                description=meta["event"]["description"],
+            )
+        except Exception as exc:
+            log.error("calendar_create_failed", error=str(exc))
+            return f"Désolé, je n'ai pas pu créer l'évènement : {exc}"
+        confirm = (
+            f"📅 Ajouté au calendrier : {event.title} — "
+            f"{event.start.strftime('%A %d %B à %H:%M')} ({event.calendar_name})"
+        )
+        return confirm if intro.strip() in ("", FALLBACK_TEXT) else f"{intro}\n{confirm}"
+
+    if action == "list":
+        tz = ZoneInfo(deps.settings.timezone)
+        range_str = meta["event"]["range_str"]
+        start, end = _parse_range(range_str, tz)
+        try:
+            events = await deps.calendar.list_between(start, end)
+        except Exception as exc:
+            log.error("calendar_list_failed", error=str(exc))
+            return f"Désolé, lecture du calendrier échouée : {exc}"
+        if not events:
+            return f"Aucun évènement sur {range_str or 'la période demandée'}."
+        lines = [
+            f"- {e.start.strftime('%a %d/%m %H:%M')}-{e.end.strftime('%H:%M')} "
+            f"{e.title}" + (f" ({e.location})" if e.location else "")
+            for e in events
+        ]
+        header = f"📅 Évènements ({range_str or 'à venir'})"
+        return f"{header}\n" + "\n".join(lines)
+
+    return intro
+
+
+def _parse_range(range_str: str | None, tz: ZoneInfo) -> tuple[datetime, datetime]:
+    """Convertit une expression FR de plage en (start, end) timezone-aware.
+
+    Par défaut (range_str absent) : 7 jours à venir. Sinon on utilise dateparser
+    pour identifier un repère, et on étend symboliquement 'aujourd'hui', 'demain',
+    'cette semaine', 'ce mois', etc.
+    """
+    now = datetime.now(tz)
+    if not range_str:
+        return now, now + timedelta(days=7)
+
+    lowered = range_str.strip().lower()
+    today = datetime.combine(now.date(), time.min, tzinfo=tz)
+
+    if "aujourd" in lowered:
+        return today, today.replace(hour=23, minute=59, second=59)
+    if "demain" in lowered:
+        start = today + timedelta(days=1)
+        return start, start.replace(hour=23, minute=59, second=59)
+    if "semaine" in lowered:
+        return now, now + timedelta(days=7)
+    if "mois" in lowered:
+        return now, now + timedelta(days=30)
+
+    parsed = dateparser.parse(
+        range_str,
+        languages=["fr"],
+        settings={
+            "PREFER_DATES_FROM": "future",
+            "TIMEZONE": str(tz),
+            "RETURN_AS_TIMEZONE_AWARE": True,
+        },
+    )
+    if parsed is None:
+        return now, now + timedelta(days=7)
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=tz)
+    start = datetime.combine(parsed.date(), time.min, tzinfo=tz)
+    return start, start + timedelta(days=1)
 
 
 def _parse_due(due_str: str | None, tz_name: str) -> datetime | None:

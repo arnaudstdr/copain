@@ -61,6 +61,28 @@ Approche révisée : plus de Tesseract, le modèle multimodal fait tout (texte +
 
 ---
 
+## Phase 5 — iCloud Calendar (CalDAV) ✅
+
+Intent `event` distinct de `task` : les RDV vont directement dans le calendrier iCloud via CalDAV, visibles sur iPhone/Apple Watch/Mac en natif. Les tâches locales (avec rappels Telegram) restent inchangées.
+
+- [x] `bot/calendar/models.py` — dataclass `CalendarEvent`
+- [x] `bot/calendar/client.py` — `ICloudCalendarClient` async (connect, create_event, list_between, list_today, list_upcoming)
+- [x] `bot/llm/parser.py` — intent `event` + `EventMeta` (action create/list)
+- [x] `bot/llm/prompt.py` — règle + 2 exemples few-shot
+- [x] `bot/handlers.py` — `_handle_event` (create/list) + `_parse_range`
+- [x] `bot/main.py` — client dans `BotDeps`, connect tolérant dans `_post_init`
+- [x] `bot/briefing/service.py` — 4e section « Évènements du jour »
+- [x] `bot/config.py` — `ICLOUD_USERNAME`/`ICLOUD_APP_PASSWORD`/`ICLOUD_CALENDAR_NAME`
+- [x] `.env.example` — documente App-Specific Password
+- [x] `tests/test_calendar.py` + extension parser & briefing
+- [x] Commit atomique
+
+**Setup utilisateur** : créer un App-Specific Password sur appleid.apple.com (obligatoire avec 2FA), renseigner les 3 variables dans `.env`.
+
+**Scope v1** : create + list uniquement. Delete, modification, récurrence, conflits, Rappels Apple (VTODO) → itérations suivantes.
+
+---
+
 ## Budget RAM cumulé (Pi 5 8 Go — 7 Go utilisables)
 
 | Composant            | RAM    |
@@ -88,3 +110,4 @@ photo est gérée par le même modèle cloud multimodal.
 | 2026-04-21 | `533387f` | feat(briefing): Phase 2 — météo + tâches + RSS à 8h           |
 | 2026-04-21 | `6afdfd8` | feat(vision): Phase 3 — analyse photo via gemma4:31b-cloud    |
 | 2026-04-21 | _doc_     | docs: Phase 4 abandonnée (dictée native iOS/Telegram)         |
+| 2026-04-21 | _Phase 5_ | feat(calendar): iCloud CalDAV, intent=event, briefing étendu  |

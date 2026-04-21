@@ -127,3 +127,68 @@ def test_extract_meta_feed_optional_in_old_format() -> None:
     assert meta["feed"]["action"] is None
     assert meta["feed"]["name"] is None
     assert meta["feed"]["url"] is None
+
+
+def test_extract_meta_event_create() -> None:
+    raw = """\
+OK, je l'ajoute au calendrier.
+<meta>
+{
+  "intent": "event",
+  "store_memory": false,
+  "memory_content": null,
+  "task": {"content": null, "due_str": null},
+  "feed": {"action": null, "name": null, "url": null},
+  "event": {
+    "action": "create",
+    "title": "RDV dentiste",
+    "start_str": "mardi 15h",
+    "end_str": null,
+    "location": null,
+    "description": null,
+    "range_str": null
+  },
+  "search_query": null
+}
+</meta>"""
+    text, meta = extract_meta(raw)
+    assert text.strip() == "OK, je l'ajoute au calendrier."
+    assert meta["intent"] == "event"
+    assert meta["event"]["action"] == "create"
+    assert meta["event"]["title"] == "RDV dentiste"
+    assert meta["event"]["start_str"] == "mardi 15h"
+
+
+def test_extract_meta_event_list() -> None:
+    raw = """<meta>{"intent":"event","store_memory":false,"memory_content":null,
+"task":{"content":null,"due_str":null},
+"feed":{"action":null,"name":null,"url":null},
+"event":{"action":"list","title":null,"start_str":null,"end_str":null,
+"location":null,"description":null,"range_str":"cette semaine"},
+"search_query":null}</meta>"""
+    _, meta = extract_meta(raw)
+    assert meta["event"]["action"] == "list"
+    assert meta["event"]["range_str"] == "cette semaine"
+
+
+def test_extract_meta_event_invalid_action() -> None:
+    raw = """<meta>{"intent":"event","store_memory":false,"memory_content":null,
+"task":{"content":null,"due_str":null},
+"feed":{"action":null,"name":null,"url":null},
+"event":{"action":"delete","title":null,"start_str":null,"end_str":null,
+"location":null,"description":null,"range_str":null},
+"search_query":null}</meta>"""
+    with pytest.raises(MetaParseError, match=r"event\.action"):
+        extract_meta(raw)
+
+
+def test_extract_meta_event_optional_in_old_format() -> None:
+    """Rétrocompat : si le LLM oublie le champ event, on tolère via {action: null, ...}."""
+    raw = """<meta>{"intent": "answer", "store_memory": false, "memory_content": null,
+"task": {"content": null, "due_str": null},
+"feed": {"action": null, "name": null, "url": null},
+"search_query": null}</meta>"""
+    _, meta = extract_meta(raw)
+    assert meta["event"]["action"] is None
+    assert meta["event"]["title"] is None
+    assert meta["event"]["range_str"] is None

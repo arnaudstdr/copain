@@ -14,6 +14,7 @@ from telegram.ext import Application, MessageHandler, filters
 
 from bot.briefing.service import BriefingService
 from bot.briefing.weather import OpenMeteoClient
+from bot.calendar.client import ICloudCalendarClient, ICloudCalendarError
 from bot.config import load_settings
 from bot.handlers import BotDeps, make_handler, make_photo_handler
 from bot.llm.client import LLMClient
@@ -58,6 +59,12 @@ def main() -> None:
     rss = FeedManager(settings.db_path)
     rss_fetcher = RssFetcher()
     llm = LLMClient(settings.ollama_base_url, settings.ollama_llm_model)
+    calendar = ICloudCalendarClient(
+        username=settings.icloud_username,
+        app_password=settings.icloud_app_password,
+        calendar_name=settings.icloud_calendar_name,
+        timezone=settings.timezone,
+    )
 
     deps = BotDeps(
         settings=settings,
@@ -79,7 +86,9 @@ def main() -> None:
             rss=rss,
             rss_fetcher=rss_fetcher,
             llm=llm,
+            calendar=calendar,
         ),
+        calendar=calendar,
         history=deque(),
     )
 
@@ -90,6 +99,10 @@ def main() -> None:
         await deps.tasks.init_schema()
         await deps.rss.init_schema()
         await _seed_default_feeds(deps.rss)
+        try:
+            await deps.calendar.connect()
+        except ICloudCalendarError as exc:
+            log.warning("calendar_connect_failed", error=str(exc))
         deps.scheduler.start()
         deps.scheduler.attach_application(app)
         deps.scheduler.add_cron_job(

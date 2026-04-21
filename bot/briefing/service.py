@@ -11,6 +11,8 @@ from bot.briefing.weather import OpenMeteoClient, WeatherError, WeatherSummary
 from bot.logging_conf import get_logger
 
 if TYPE_CHECKING:
+    from bot.calendar.client import ICloudCalendarClient
+    from bot.calendar.models import CalendarEvent
     from bot.config import Settings
     from bot.llm.client import LLMClient
     from bot.rss.fetcher import FeedItem, RssFetcher
@@ -38,6 +40,7 @@ class BriefingService:
         rss: FeedManager,
         rss_fetcher: RssFetcher,
         llm: LLMClient,
+        calendar: ICloudCalendarClient,
     ) -> None:
         self._settings = settings
         self._weather = weather
@@ -45,6 +48,7 @@ class BriefingService:
         self._rss = rss
         self._rss_fetcher = rss_fetcher
         self._llm = llm
+        self._calendar = calendar
 
     async def build(self) -> str:
         parts: list[str] = ["☀️ Bonjour ! Voici ton briefing du jour."]
@@ -63,6 +67,9 @@ class BriefingService:
         today_tasks = await self._today_tasks()
         parts.append("\n" + _format_tasks(today_tasks))
 
+        today_events = await self._today_events()
+        parts.append("\n" + _format_events(today_events))
+
         rss_block = await self._rss_block()
         if rss_block:
             parts.append("\n" + rss_block)
@@ -78,6 +85,15 @@ class BriefingService:
         async with bot:
             await bot.send_message(chat_id=chat_id, text=text, disable_web_page_preview=True)
         log.info("briefing_sent", chat_id=chat_id, chars=len(text))
+
+    async def _today_events(self) -> list[CalendarEvent]:
+        if not self._calendar.is_connected:
+            return []
+        try:
+            return await self._calendar.list_today()
+        except Exception as exc:
+            log.warning("briefing_events_skipped", error=str(exc))
+            return []
 
     async def _today_tasks(self) -> list[Task]:
         pending = await self._tasks.list_pending()
@@ -141,3 +157,14 @@ def _format_tasks(tasks: Sequence[Task]) -> str:
             suffix = f" — {t.due_at.strftime('%H:%M')}"
         lines.append(f"- {t.content}{suffix}")
     return "📋 *Tâches du jour*\n" + "\n".join(lines)
+
+
+def _format_events(events: Sequence[CalendarEvent]) -> str:
+    if not events:
+        return "📅 *Évènements du jour*\nAucun évènement prévu."
+    lines = [
+        f"- {e.start.strftime('%H:%M')}-{e.end.strftime('%H:%M')} {e.title}"
+        + (f" ({e.location})" if e.location else "")
+        for e in events
+    ]
+    return "📅 *Évènements du jour*\n" + "\n".join(lines)
