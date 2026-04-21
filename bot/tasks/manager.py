@@ -5,22 +5,33 @@ from __future__ import annotations
 from collections.abc import Sequence
 from datetime import datetime
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker, create_async_engine
 
 from bot.tasks.models import Base, Task
 
+if TYPE_CHECKING:
+    from bot.tasks.scheduler import ReminderScheduler
+
 
 class TaskManager:
-    """Wrapper async autour d'une base SQLite locale."""
+    """Wrapper async autour d'une base SQLite locale.
 
-    def __init__(self, db_path: Path) -> None:
+    Si un `ReminderScheduler` est injecté, `complete()` et `delete()` annulent
+    automatiquement le job de rappel associé (évite les rappels fantômes).
+    """
+
+    def __init__(
+        self, db_path: Path, scheduler: ReminderScheduler | None = None
+    ) -> None:
         db_path.parent.mkdir(parents=True, exist_ok=True)
         self._engine: AsyncEngine = create_async_engine(
             f"sqlite+aiosqlite:///{db_path}", future=True
         )
         self._sessionmaker = async_sessionmaker(self._engine, expire_on_commit=False)
+        self._scheduler = scheduler
 
     async def init_schema(self) -> None:
         async with self._engine.begin() as conn:
@@ -51,7 +62,9 @@ class TaskManager:
                 return False
             task.completed = True
             await session.commit()
-            return True
+        if self._scheduler is not None:
+            self._scheduler.cancel_reminder(task_id)
+        return True
 
     async def delete(self, task_id: int) -> bool:
         async with self._sessionmaker() as session:
@@ -60,7 +73,9 @@ class TaskManager:
                 return False
             await session.delete(task)
             await session.commit()
-            return True
+        if self._scheduler is not None:
+            self._scheduler.cancel_reminder(task_id)
+        return True
 
     async def dispose(self) -> None:
         await self._engine.dispose()

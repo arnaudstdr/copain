@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -62,3 +63,38 @@ async def test_delete_task(manager: TaskManager) -> None:
     task = await manager.create("à supprimer")
     assert await manager.delete(task.id) is True
     assert await manager.delete(task.id) is False
+
+
+async def test_complete_cancels_reminder_when_scheduler_injected(tmp_data_dir: Path) -> None:
+    scheduler = MagicMock()
+    mgr = TaskManager(tmp_data_dir / "tasks.db", scheduler=scheduler)
+    await mgr.init_schema()
+    try:
+        task = await mgr.create("appeler dentiste", due_at=datetime.now(UTC) + timedelta(hours=2))
+        await mgr.complete(task.id)
+        scheduler.cancel_reminder.assert_called_once_with(task.id)
+    finally:
+        await mgr.dispose()
+
+
+async def test_delete_cancels_reminder_when_scheduler_injected(tmp_data_dir: Path) -> None:
+    scheduler = MagicMock()
+    mgr = TaskManager(tmp_data_dir / "tasks.db", scheduler=scheduler)
+    await mgr.init_schema()
+    try:
+        task = await mgr.create("à supprimer", due_at=datetime.now(UTC) + timedelta(hours=2))
+        await mgr.delete(task.id)
+        scheduler.cancel_reminder.assert_called_once_with(task.id)
+    finally:
+        await mgr.dispose()
+
+
+async def test_complete_unknown_task_does_not_cancel_reminder(tmp_data_dir: Path) -> None:
+    scheduler = MagicMock()
+    mgr = TaskManager(tmp_data_dir / "tasks.db", scheduler=scheduler)
+    await mgr.init_schema()
+    try:
+        assert await mgr.complete(999) is False
+        scheduler.cancel_reminder.assert_not_called()
+    finally:
+        await mgr.dispose()

@@ -57,7 +57,11 @@ def main() -> None:
 
     embedder = Embedder(settings.ollama_base_url, settings.ollama_embed_model)
     weather = OpenMeteoClient(timezone=settings.timezone)
-    tasks = TaskManager(settings.db_path)
+    scheduler = ReminderScheduler(
+        settings.scheduler_db_path,
+        timezone=settings.timezone,
+    )
+    tasks = TaskManager(settings.db_path, scheduler=scheduler)
     rss = FeedManager(settings.db_path)
     rss_fetcher = RssFetcher()
     llm = LLMClient(settings.ollama_base_url, settings.ollama_llm_model)
@@ -73,10 +77,7 @@ def main() -> None:
         llm=llm,
         memory=MemoryManager(settings.chroma_dir, embedder),
         tasks=tasks,
-        scheduler=ReminderScheduler(
-            settings.scheduler_db_path,
-            timezone=settings.timezone,
-        ),
+        scheduler=scheduler,
         search=SearxngClient(settings.searxng_base_url),
         rss=rss,
         rss_fetcher=rss_fetcher,
