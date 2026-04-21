@@ -1,5 +1,9 @@
 # copain — assistant Telegram personnel
 
+<p align="center">
+  <img src="copain_bot.png" alt="Logo copain" width="200">
+</p>
+
 Bot Telegram mono-utilisateur en langage naturel français.
 Hébergé partiellement sur Raspberry Pi 5 (services locaux) + LLM cloud.
 
