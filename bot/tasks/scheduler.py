@@ -13,31 +13,30 @@ from apscheduler.jobstores.sqlalchemy import SQLAlchemyJobStore
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 from bot.logging_conf import get_logger
+from bot.telegram_sender import send_message
 
 if TYPE_CHECKING:
     from telegram.ext import Application
 
 log = get_logger(__name__)
 
+REMINDER_PREFIX = "⏰ Rappel : "
 
-async def _send_reminder(bot_token: str, chat_id: int, content: str) -> None:
+
+async def _send_reminder(chat_id: int, content: str) -> None:
     """Envoie le message de rappel via l'API Telegram.
 
-    Cette fonction est rappelée par APScheduler à l'échéance. Elle ne peut pas
-    capturer directement `Application` (non sérialisable dans le JobStore), d'où
-    la construction d'un `Bot` éphémère à partir du token.
+    Cette fonction est rappelée par APScheduler à l'échéance. Le token n'est
+    PAS passé en argument (il serait picklé dans `scheduler.db`) ; il est lu
+    via `os.environ` dans `bot.telegram_sender.send_message`.
     """
-    from telegram import Bot
-
-    bot = Bot(token=bot_token)
-    async with bot:
-        await bot.send_message(chat_id=chat_id, text=f"⏰ Rappel : {content}")
+    await send_message(chat_id=chat_id, text=f"{REMINDER_PREFIX}{content}")
 
 
 class ReminderScheduler:
     """Ajoute/supprime des jobs de rappel persistés entre redémarrages."""
 
-    def __init__(self, db_path: Path, bot_token: str, timezone: str = "Europe/Paris") -> None:
+    def __init__(self, db_path: Path, timezone: str = "Europe/Paris") -> None:
         db_path.parent.mkdir(parents=True, exist_ok=True)
         # default = rappels one-shot persistés (SQLAlchemy)
         # memory = cron/recurrent (closures, non-sérialisables, re-planifiés au startup)
@@ -48,7 +47,6 @@ class ReminderScheduler:
             },
             timezone=ZoneInfo(timezone),
         )
-        self._bot_token = bot_token
 
     def start(self) -> None:
         self._scheduler.start()
@@ -68,7 +66,7 @@ class ReminderScheduler:
             _send_reminder,
             trigger="date",
             run_date=due_at,
-            args=[self._bot_token, chat_id, content],
+            args=[chat_id, content],
             id=f"task-{task_id}",
             replace_existing=True,
         )
@@ -78,6 +76,7 @@ class ReminderScheduler:
         job_id = f"task-{task_id}"
         if self._scheduler.get_job(job_id) is not None:
             self._scheduler.remove_job(job_id)
+            log.info("reminder_cancelled", task_id=task_id)
 
     def add_cron_job(
         self,

@@ -77,13 +77,11 @@ class BriefingService:
         return "\n".join(parts)
 
     async def send_daily(self, chat_id: int) -> None:
-        """Construit le briefing et l'envoie sur Telegram via un Bot éphémère."""
-        from telegram import Bot
+        """Construit le briefing et l'envoie sur Telegram via le helper partagé."""
+        from bot.telegram_sender import send_message
 
         text = await self.build()
-        bot = Bot(token=self._settings.telegram_bot_token)
-        async with bot:
-            await bot.send_message(chat_id=chat_id, text=text, disable_web_page_preview=True)
+        await send_message(chat_id=chat_id, text=text)
         log.info("briefing_sent", chat_id=chat_id, chars=len(text))
 
     async def _today_events(self) -> list[CalendarEvent]:

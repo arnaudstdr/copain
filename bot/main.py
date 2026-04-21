@@ -75,7 +75,6 @@ def main() -> None:
         tasks=tasks,
         scheduler=ReminderScheduler(
             settings.scheduler_db_path,
-            settings.telegram_bot_token,
             timezone=settings.timezone,
         ),
         search=SearxngClient(settings.searxng_base_url),
