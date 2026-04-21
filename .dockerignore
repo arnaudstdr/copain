@@ -1,0 +1,52 @@
+# Contexte build : tout ce qui n'est pas nécessaire à l'image finale.
+# Le Dockerfile ne copie que bot/, mais le contexte envoyé au daemon Docker
+# inclut tout le reste par défaut — c'est lent sur un Pi.
+
+# Git
+.git/
+.gitignore
+.github/
+
+# Environnements Python
+.venv/
+venv/
+env/
+__pycache__/
+*.py[cod]
+*.egg-info/
+
+# Caches outils
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Tests et docs (pas utiles en runtime)
+tests/
+docs/
+README.md
+ROADMAP.md
+CLAUDE.md
+CODE_REVIEW.md
+
+# Données runtime (volume monté à l'exécution)
+data/
+
+# Secrets (jamais dans une image)
+.env
+.env.*
+!.env.example
+
+# IDE / OS
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# Docker lui-même
+Dockerfile*
+docker-compose*.yml
+.dockerignore
