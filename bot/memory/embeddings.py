@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
+import httpx
 from ollama import AsyncClient
 
 from bot.logging_conf import get_logger
@@ -18,8 +19,14 @@ class EmbeddingError(RuntimeError):
 class Embedder:
     """Petit wrapper async autour de `ollama.AsyncClient.embeddings`."""
 
-    def __init__(self, base_url: str, model: str) -> None:
-        self._client = AsyncClient(host=base_url)
+    DEFAULT_TIMEOUT_SEC = 15.0
+
+    def __init__(
+        self, base_url: str, model: str, timeout: float = DEFAULT_TIMEOUT_SEC
+    ) -> None:
+        # Les embeddings sont rapides (<1 s en temps normal). 15 s suffisent
+        # largement ; au-delà, Ollama est probablement indisponible.
+        self._client = AsyncClient(host=base_url, timeout=httpx.Timeout(timeout))
         self._model = model
 
     async def embed(self, text: str) -> list[float]:

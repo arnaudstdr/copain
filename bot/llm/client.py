@@ -6,6 +6,7 @@ import base64
 from collections.abc import Iterable, Mapping
 from typing import Any
 
+import httpx
 from ollama import AsyncClient
 
 from bot.logging_conf import get_logger
@@ -26,8 +27,14 @@ class LLMClient:
     multimodaux comme `gemma4:31b-cloud`, `llava`, `moondream`.
     """
 
-    def __init__(self, base_url: str, model: str) -> None:
-        self._client = AsyncClient(host=base_url)
+    DEFAULT_TIMEOUT_SEC = 60.0
+
+    def __init__(
+        self, base_url: str, model: str, timeout: float = DEFAULT_TIMEOUT_SEC
+    ) -> None:
+        # Timeout explicite : Ollama cloud avec un 31B peut prendre 10-30 s.
+        # Sans timeout, un freeze côté serveur bloque l'event loop Telegram.
+        self._client = AsyncClient(host=base_url, timeout=httpx.Timeout(timeout))
         self._model = model
 
     async def call(

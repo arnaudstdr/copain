@@ -64,12 +64,15 @@ class ICloudCalendarClient:
         self._calendar = await asyncio.to_thread(self._sync_connect)
         log.info("calendar_connected", calendar=self._calendar_name)
 
+    CALDAV_TIMEOUT_SEC = 15
+
     def _sync_connect(self) -> Any:
         try:
             client: Any = caldav.DAVClient(  # type: ignore[operator]
                 url=ICLOUD_CALDAV_URL,
                 username=self._username,
                 password=self._password,
+                timeout=self.CALDAV_TIMEOUT_SEC,
             )
             principal = client.principal()
             calendars = list(principal.calendars())
