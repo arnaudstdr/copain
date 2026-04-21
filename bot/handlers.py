@@ -163,10 +163,10 @@ async def _process(
     history_user = user_text if user_text else "(image envoyée)"
     if images:
         history_user = f"[photo] {history_user}"
+    # deps.history est un deque(maxlen=MAX_HISTORY) créé dans main.py :
+    # la troncature est atomique, pas de boucle pop manuelle à maintenir.
     deps.history.append(f"user: {history_user}")
     deps.history.append(f"assistant: {text}")
-    while len(deps.history) > MAX_HISTORY:
-        deps.history.popleft()
 
     return text
 

@@ -19,7 +19,7 @@ from bot.briefing.weather import OpenMeteoClient
 from bot.calendar.client import ICloudCalendarClient, ICloudCalendarError
 from bot.config import load_settings
 from bot.db import create_shared_engine, enable_wal_mode
-from bot.handlers import BotDeps, make_handler, make_photo_handler
+from bot.handlers import MAX_HISTORY, BotDeps, make_handler, make_photo_handler
 from bot.llm.client import LLMClient
 from bot.logging_conf import configure_logging, get_logger
 from bot.memory.embeddings import Embedder
@@ -93,7 +93,7 @@ def main() -> None:
             calendar=calendar,
         ),
         calendar=calendar,
-        history=deque(),
+        history=deque(maxlen=MAX_HISTORY),
     )
 
     async def _daily_briefing_job() -> None:
