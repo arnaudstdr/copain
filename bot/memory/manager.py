@@ -48,7 +48,7 @@ class MemoryManager:
         await asyncio.to_thread(
             self._collection.add,
             ids=[entry_id],
-            embeddings=[vector],
+            embeddings=[vector],  # type: ignore[arg-type]
             documents=[memory_content],
             metadatas=[metadata],
         )
@@ -59,7 +59,7 @@ class MemoryManager:
         vector = await self._embedder.embed(query)
         result = await asyncio.to_thread(
             self._collection.query,
-            query_embeddings=[vector],
+            query_embeddings=[vector],  # type: ignore[arg-type]
             n_results=top_k,
         )
         documents = result.get("documents") or [[]]

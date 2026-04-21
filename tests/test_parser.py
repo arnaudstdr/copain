@@ -77,3 +77,53 @@ def test_extract_meta_store_memory_must_be_bool() -> None:
 "task": {"content": null, "due_str": null}, "search_query": null}</meta>"""
     with pytest.raises(MetaParseError, match="store_memory"):
         extract_meta(raw)
+
+
+def test_extract_meta_feed_add() -> None:
+    raw = """\
+OK, je l'ajoute.
+<meta>
+{
+  "intent": "feed",
+  "store_memory": false,
+  "memory_content": null,
+  "task": {"content": null, "due_str": null},
+  "feed": {"action": "add", "name": "The Verge", "url": "https://www.theverge.com/rss/index.xml"},
+  "search_query": null
+}
+</meta>"""
+    text, meta = extract_meta(raw)
+    assert text.strip() == "OK, je l'ajoute."
+    assert meta["intent"] == "feed"
+    assert meta["feed"]["action"] == "add"
+    assert meta["feed"]["name"] == "The Verge"
+    assert meta["feed"]["url"] == "https://www.theverge.com/rss/index.xml"
+
+
+def test_extract_meta_feed_summarize() -> None:
+    raw = """<meta>{"intent": "feed", "store_memory": false, "memory_content": null,
+"task": {"content": null, "due_str": null},
+"feed": {"action": "summarize", "name": "ZDNet", "url": null},
+"search_query": null}</meta>"""
+    _, meta = extract_meta(raw)
+    assert meta["feed"]["action"] == "summarize"
+    assert meta["feed"]["name"] == "ZDNet"
+
+
+def test_extract_meta_feed_action_invalid_raises() -> None:
+    raw = """<meta>{"intent": "feed", "store_memory": false, "memory_content": null,
+"task": {"content": null, "due_str": null},
+"feed": {"action": "dance", "name": null, "url": null},
+"search_query": null}</meta>"""
+    with pytest.raises(MetaParseError, match=r"feed\.action"):
+        extract_meta(raw)
+
+
+def test_extract_meta_feed_optional_in_old_format() -> None:
+    """Rétrocompat : si le LLM oublie le champ feed, on tolère via {action: null, ...}."""
+    raw = """<meta>{"intent": "answer", "store_memory": false, "memory_content": null,
+"task": {"content": null, "due_str": null}, "search_query": null}</meta>"""
+    _, meta = extract_meta(raw)
+    assert meta["feed"]["action"] is None
+    assert meta["feed"]["name"] is None
+    assert meta["feed"]["url"] is None

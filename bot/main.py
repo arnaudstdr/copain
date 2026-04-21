@@ -8,6 +8,7 @@ scheduler start) est branchée via `post_init`, la libération via `post_shutdow
 from __future__ import annotations
 
 from collections import deque
+from typing import Any
 
 from telegram.ext import Application, MessageHandler, filters
 
@@ -17,11 +18,29 @@ from bot.llm.client import LLMClient
 from bot.logging_conf import configure_logging, get_logger
 from bot.memory.embeddings import Embedder
 from bot.memory.manager import MemoryManager
+from bot.rss.fetcher import RssFetcher
+from bot.rss.manager import FeedAlreadyExists, FeedManager
 from bot.search.searxng import SearxngClient
 from bot.tasks.manager import TaskManager
 from bot.tasks.scheduler import ReminderScheduler
 
 log = get_logger(__name__)
+
+DEFAULT_FEEDS: tuple[tuple[str, str, str], ...] = (
+    ("The Verge", "https://www.theverge.com/rss/index.xml", "tech"),
+    ("ZDNet", "https://www.zdnet.com/news/rss.xml", "tech"),
+)
+
+
+async def _seed_default_feeds(rss: FeedManager) -> None:
+    if await rss.count() > 0:
+        return
+    for name, url, category in DEFAULT_FEEDS:
+        try:
+            await rss.add(url=url, name=name, category=category)
+        except FeedAlreadyExists:
+            continue
+    log.info("default_feeds_seeded", count=len(DEFAULT_FEEDS))
 
 
 def main() -> None:
@@ -41,18 +60,23 @@ def main() -> None:
             timezone=settings.timezone,
         ),
         search=SearxngClient(settings.searxng_base_url),
+        rss=FeedManager(settings.db_path),
+        rss_fetcher=RssFetcher(),
         history=deque(),
     )
 
-    async def _post_init(app: Application) -> None:
+    async def _post_init(app: Application[Any, Any, Any, Any, Any, Any]) -> None:
         await deps.tasks.init_schema()
+        await deps.rss.init_schema()
+        await _seed_default_feeds(deps.rss)
         deps.scheduler.start()
         deps.scheduler.attach_application(app)
         log.info("post_init_done")
 
-    async def _post_shutdown(_app: Application) -> None:
+    async def _post_shutdown(_app: Application[Any, Any, Any, Any, Any, Any]) -> None:
         deps.scheduler.shutdown()
         await deps.search.aclose()
+        await deps.rss.dispose()
         await deps.tasks.dispose()
         log.info("post_shutdown_done")
 

@@ -8,8 +8,13 @@ from typing import Any, Literal, TypedDict
 
 META_PATTERN = re.compile(r"<meta>\s*(\{.*?\})\s*</meta>", re.DOTALL)
 
-Intent = Literal["answer", "task", "search", "memory"]
-VALID_INTENTS: frozenset[str] = frozenset({"answer", "task", "search", "memory"})
+Intent = Literal["answer", "task", "search", "memory", "feed"]
+VALID_INTENTS: frozenset[str] = frozenset(
+    {"answer", "task", "search", "memory", "feed"}
+)
+
+FeedAction = Literal["add", "list", "remove", "summarize"]
+VALID_FEED_ACTIONS: frozenset[str] = frozenset({"add", "list", "remove", "summarize"})
 
 
 class TaskMeta(TypedDict):
@@ -17,11 +22,18 @@ class TaskMeta(TypedDict):
     due_str: str | None
 
 
+class FeedMeta(TypedDict):
+    action: FeedAction | None
+    name: str | None
+    url: str | None
+
+
 class Meta(TypedDict):
     intent: Intent
     store_memory: bool
     memory_content: str | None
     task: TaskMeta
+    feed: FeedMeta
     search_query: str | None
 
 
@@ -74,13 +86,26 @@ def _validate(data: Any) -> Meta:
         "due_str": _opt_str(task_raw.get("due_str"), "task.due_str"),
     }
 
+    feed_raw = data.get("feed") or {"action": None, "name": None, "url": None}
+    if not isinstance(feed_raw, dict):
+        raise MetaParseError("feed doit être un objet ou null")
+    feed_action = feed_raw.get("action")
+    if feed_action is not None and feed_action not in VALID_FEED_ACTIONS:
+        raise MetaParseError(f"feed.action invalide : {feed_action!r}")
+    feed: FeedMeta = {
+        "action": feed_action,
+        "name": _opt_str(feed_raw.get("name"), "feed.name"),
+        "url": _opt_str(feed_raw.get("url"), "feed.url"),
+    }
+
     search_query = _opt_str(data.get("search_query"), "search_query")
 
     return Meta(
-        intent=intent,  # type: ignore[typeddict-item]
+        intent=intent,
         store_memory=store_memory,
         memory_content=memory_content,
         task=task,
+        feed=feed,
         search_query=search_query,
     )
 

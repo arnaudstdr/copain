@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 from typing import Any
 
 from ollama import AsyncClient
@@ -29,7 +29,7 @@ class LLMClient:
 
     async def call(self, system: str, user: str) -> str:
         """Appelle le LLM avec un system prompt + un message utilisateur."""
-        return await self._chat(
+        return await self.chat(
             messages=[
                 {"role": "system", "content": system},
                 {"role": "user", "content": user},
@@ -39,7 +39,7 @@ class LLMClient:
     async def call_with_search(
         self,
         original_message: str,
-        results: Iterable[dict[str, str]],
+        results: Iterable[Mapping[str, Any]],
     ) -> str:
         """Relance le LLM en injectant les résultats SearXNG dans le contexte.
 
@@ -56,14 +56,15 @@ class LLMClient:
             "N'inclus PAS de bloc <meta>."
         )
         user = f"Question initiale : {original_message}\n\nRésultats :\n{formatted}"
-        return await self._chat(
+        return await self.chat(
             messages=[
                 {"role": "system", "content": system},
                 {"role": "user", "content": user},
             ]
         )
 
-    async def _chat(self, messages: list[dict[str, str]]) -> str:
+    async def chat(self, messages: list[dict[str, str]]) -> str:
+        """Appel bas niveau : envoie une liste de messages OpenAI-style, retourne le texte."""
         try:
             response: Any = await self._client.chat(model=self._model, messages=messages)
         except Exception as exc:

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 from zoneinfo import ZoneInfo
 
 from apscheduler.jobstores.sqlalchemy import SQLAlchemyJobStore
@@ -73,6 +73,6 @@ class ReminderScheduler:
         if self._scheduler.get_job(job_id) is not None:
             self._scheduler.remove_job(job_id)
 
-    def attach_application(self, _app: Application) -> None:
+    def attach_application(self, _app: Application[Any, Any, Any, Any, Any, Any]) -> None:
         """Hook réservé pour de futurs jobs qui auraient besoin de l'Application."""
         # Pas utilisé pour l'instant : le job reconstruit un Bot à partir du token.

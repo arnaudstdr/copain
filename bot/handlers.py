@@ -1,12 +1,12 @@
-"""Handler message entrant principal — orchestre LLM + mémoire + tâches + recherche."""
+"""Handler message entrant principal — orchestre LLM + mémoire + tâches + recherche + RSS."""
 
 from __future__ import annotations
 
 from collections import deque
-from collections.abc import Iterable
+from collections.abc import Callable, Coroutine, Sequence
 from dataclasses import dataclass
 from datetime import datetime
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 from zoneinfo import ZoneInfo
 
 import dateparser
@@ -14,6 +14,7 @@ import dateparser
 from bot.llm.parser import Meta, MetaParseError, extract_meta
 from bot.llm.prompt import build_system_prompt
 from bot.logging_conf import get_logger
+from bot.rss.manager import FeedAlreadyExists
 from bot.security import is_allowed
 
 if TYPE_CHECKING:
@@ -23,6 +24,9 @@ if TYPE_CHECKING:
     from bot.config import Settings
     from bot.llm.client import LLMClient
     from bot.memory.manager import MemoryManager
+    from bot.rss.fetcher import FeedItem, RssFetcher
+    from bot.rss.manager import FeedManager
+    from bot.rss.models import Feed
     from bot.search.searxng import SearxngClient
     from bot.tasks.manager import TaskManager
     from bot.tasks.scheduler import ReminderScheduler
@@ -45,10 +49,15 @@ class BotDeps:
     tasks: TaskManager
     scheduler: ReminderScheduler
     search: SearxngClient
+    rss: FeedManager
+    rss_fetcher: RssFetcher
     history: deque[str]
 
 
-def make_handler(deps: BotDeps):
+HandlerFn = Callable[["Update", "ContextTypes.DEFAULT_TYPE"], Coroutine[Any, Any, None]]
+
+
+def make_handler(deps: BotDeps) -> HandlerFn:
     """Retourne la coroutine handler à enregistrer dans python-telegram-bot."""
 
     async def handle_message(update: Update, _context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -92,8 +101,12 @@ async def _process(user_text: str, chat_id: int, deps: BotDeps) -> str:
     await _apply_side_effects(user_text, chat_id, meta, deps)
 
     if meta["intent"] == "search" and meta["search_query"]:
-        results: Iterable[dict[str, str]] = await deps.search.search(meta["search_query"])
+        results = await deps.search.search(meta["search_query"])
+        log.info("search_performed", query=meta["search_query"], hits=len(results))
         text = await deps.llm.call_with_search(user_text, results)
+
+    elif meta["intent"] == "feed" and meta["feed"]["action"]:
+        text = await _handle_feed(user_text, meta, deps, intro=text)
 
     deps.history.append(f"user: {user_text}")
     deps.history.append(f"assistant: {text}")
@@ -131,6 +144,79 @@ async def _apply_side_effects(
                 chat_id=chat_id,
                 content=task.content,
             )
+
+
+async def _handle_feed(user_text: str, meta: Meta, deps: BotDeps, intro: str) -> str:
+    action = meta["feed"]["action"]
+    name = meta["feed"]["name"]
+    url = meta["feed"]["url"]
+    log.info("feed_action", action=action, name=name, url=url)
+
+    if action == "add":
+        if not name or not url:
+            return "Il me faut un nom et une URL pour ajouter un flux."
+        try:
+            feed = await deps.rss.add(url=url, name=name)
+        except FeedAlreadyExists:
+            return f"Le flux « {name} » existe déjà."
+        return f"Flux ajouté : {feed.name} ({feed.url})"
+
+    if action == "list":
+        feeds = await deps.rss.list(enabled_only=False)
+        if not feeds:
+            return "Aucun flux enregistré."
+        lines = [
+            f"- {f.name} [{f.category}] {'✓' if f.enabled else '✗'} — {f.url}"
+            for f in feeds
+        ]
+        return "Tes flux :\n" + "\n".join(lines)
+
+    if action == "remove":
+        if not name:
+            return "Dis-moi quel flux supprimer."
+        ok = await deps.rss.remove(name)
+        return f"Flux « {name} » supprimé." if ok else f"Aucun flux trouvé avec le nom « {name} »."
+
+    if action == "summarize":
+        target_feeds: Sequence[Feed]
+        if name:
+            single = await deps.rss.get(name)
+            if single is None:
+                return f"Aucun flux trouvé pour « {name} »."
+            target_feeds = [single]
+        else:
+            target_feeds = await deps.rss.list(enabled_only=True)
+            if not target_feeds:
+                return "Aucun flux actif à résumer."
+
+        items = await deps.rss_fetcher.fetch_many(target_feeds, per_feed=5)
+        if not items:
+            return "Aucun article récupéré pour le moment."
+        summary = await _summarize_feed_items(deps, user_text, items[:10])
+        return summary if intro.strip() in ("", FALLBACK_TEXT) else f"{intro}\n\n{summary}"
+
+    return intro
+
+
+async def _summarize_feed_items(
+    deps: BotDeps, user_text: str, items: Sequence[FeedItem]
+) -> str:
+    bullets = "\n".join(
+        f"- [{it.feed_name}] {it.title} ({it.url})\n  {it.summary[:300]}"
+        for it in items
+    )
+    system = (
+        "Tu es l'assistant personnel d'Arnaud. Tu reçois une liste d'articles RSS récents. "
+        "Résume-les en français : 1 à 2 lignes par article, en citant le flux source et l'URL. "
+        "Sois factuel et concis. N'inclus PAS de bloc <meta>."
+    )
+    user = f"Question initiale : {user_text}\n\nArticles :\n{bullets}"
+    return await deps.llm.chat(
+        messages=[
+            {"role": "system", "content": system},
+            {"role": "user", "content": user},
+        ]
+    )
 
 
 def _parse_due(due_str: str | None, tz_name: str) -> datetime | None:

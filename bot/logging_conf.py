@@ -44,4 +44,5 @@ def configure_logging(env: str = "dev", level: int = logging.INFO) -> None:
 
 
 def get_logger(name: str) -> structlog.stdlib.BoundLogger:
-    return structlog.get_logger(name)
+    logger: structlog.stdlib.BoundLogger = structlog.get_logger(name)
+    return logger
