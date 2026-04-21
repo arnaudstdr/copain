@@ -18,6 +18,7 @@ from bot.llm.prompt import build_system_prompt
 from bot.logging_conf import get_logger
 from bot.rss.manager import FeedAlreadyExists
 from bot.security import is_allowed
+from bot.telegram_sender import reply_markdown
 
 if TYPE_CHECKING:
     from telegram import Update
@@ -84,7 +85,7 @@ def make_handler(deps: BotDeps) -> HandlerFn:
             log.exception("handler_failed", error=str(exc))
             reply = "Désolé, une erreur interne est survenue."
 
-        await message.reply_text(reply)
+        await reply_markdown(message, reply)
 
     return handle_message
 
@@ -119,7 +120,7 @@ def make_photo_handler(deps: BotDeps) -> HandlerFn:
             log.exception("photo_handler_failed", error=str(exc))
             reply = "Désolé, je n'ai pas réussi à analyser cette image."
 
-        await message.reply_text(reply)
+        await reply_markdown(message, reply)
 
     return handle_photo
 

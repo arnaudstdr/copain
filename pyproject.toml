@@ -45,6 +45,7 @@ module = [
     "feedparser.*",
     "caldav.*",
     "vobject.*",
+    "telegramify_markdown.*",
 ]
 ignore_missing_imports = true
 
