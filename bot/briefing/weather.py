@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime
 from types import TracebackType
 from typing import Any
+from zoneinfo import ZoneInfo
 
 import httpx
 
@@ -59,6 +61,15 @@ class WeatherSummary:
     description: str
 
 
+@dataclass(frozen=True, slots=True)
+class HourlyPrecipitation:
+    """Précipitation prévue à une heure donnée (timezone-aware)."""
+
+    time: datetime
+    mm: float
+    probability_pct: int
+
+
 class WeatherError(RuntimeError):
     """Levée sur erreur HTTP ou payload Open-Meteo inattendu."""
 
@@ -107,6 +118,62 @@ class OpenMeteoClient:
             )
         except (TypeError, ValueError, IndexError) as exc:
             raise WeatherError(f"Payload Open-Meteo malformé : {exc}") from exc
+
+    async def get_hourly_precipitation(
+        self,
+        lat: float,
+        lon: float,
+        hours_ahead: int = 3,
+    ) -> list[HourlyPrecipitation]:
+        """Retourne les précipitations prévues pour les N prochaines heures.
+
+        Les heures déjà passées (avant l'heure courante tronquée) sont filtrées.
+        Les timestamps retournés sont timezone-aware dans `self._timezone`.
+        """
+        params: dict[str, Any] = {
+            "latitude": lat,
+            "longitude": lon,
+            "hourly": "precipitation,precipitation_probability",
+            "timezone": self._timezone,
+            "forecast_days": 1,
+        }
+        try:
+            response = await self._client.get(BASE_URL, params=params)
+            response.raise_for_status()
+        except httpx.HTTPError as exc:
+            log.error("weather_hourly_fetch_failed", lat=lat, lon=lon, error=str(exc))
+            raise WeatherError(f"Open-Meteo hourly échoué : {exc}") from exc
+
+        try:
+            data: dict[str, Any] = response.json()
+        except ValueError as exc:
+            raise WeatherError("Réponse Open-Meteo non-JSON") from exc
+
+        hourly = data.get("hourly") or {}
+        times = hourly.get("time") or []
+        precs = hourly.get("precipitation") or []
+        probas = hourly.get("precipitation_probability") or []
+
+        tz = ZoneInfo(self._timezone)
+        now_hour = datetime.now(tz).replace(minute=0, second=0, microsecond=0)
+        out: list[HourlyPrecipitation] = []
+        for iso, mm, proba in zip(times, precs, probas, strict=False):
+            try:
+                t = datetime.fromisoformat(iso).replace(tzinfo=tz)
+            except (TypeError, ValueError):
+                continue
+            if t < now_hour:
+                continue
+            out.append(
+                HourlyPrecipitation(
+                    time=t,
+                    mm=float(mm) if mm is not None else 0.0,
+                    probability_pct=int(proba) if proba is not None else 0,
+                )
+            )
+            if len(out) >= hours_ahead:
+                break
+        return out
 
     async def aclose(self) -> None:
         await self._client.aclose()
