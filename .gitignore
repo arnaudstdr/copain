@@ -32,6 +32,7 @@ data/*.db-journal
 .idea/
 *.swp
 *.swo
+tmp/
 
 # OS
 .DS_Store
