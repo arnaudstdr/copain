@@ -102,6 +102,28 @@ class ReminderScheduler:
         )
         log.info("cron_job_scheduled", job_id=job_id, hour=hour, minute=minute)
 
+    def add_interval_job(
+        self,
+        job_id: str,
+        func: Callable[..., Awaitable[None]],
+        minutes: int,
+    ) -> None:
+        """Ajoute un job récurrent "toutes les N minutes" dans le MemoryJobStore.
+
+        Même logique que `add_cron_job` (closures non-sérialisables, re-planifié
+        au startup). Utilisé par le service de proactivité qui tick à intervalle
+        régulier pour évaluer ses règles.
+        """
+        self._scheduler.add_job(
+            func,
+            trigger="interval",
+            minutes=minutes,
+            id=job_id,
+            replace_existing=True,
+            jobstore="memory",
+        )
+        log.info("interval_job_scheduled", job_id=job_id, minutes=minutes)
+
     def attach_application(self, _app: Application[Any, Any, Any, Any, Any, Any]) -> None:
         """Hook réservé pour de futurs jobs qui auraient besoin de l'Application."""
         # Pas utilisé pour l'instant : le job reconstruit un Bot à partir du token.
