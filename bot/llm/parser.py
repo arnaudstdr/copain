@@ -39,6 +39,7 @@ class EventMeta(TypedDict):
     location: str | None
     description: str | None
     range_str: str | None
+    calendar_name: str | None
 
 
 class Meta(TypedDict):
@@ -120,6 +121,7 @@ def _validate(data: Any) -> Meta:
         "location": None,
         "description": None,
         "range_str": None,
+        "calendar_name": None,
     }
     if not isinstance(event_raw, dict):
         raise MetaParseError("event doit être un objet ou null")
@@ -134,6 +136,7 @@ def _validate(data: Any) -> Meta:
         "location": _opt_str(event_raw.get("location"), "event.location"),
         "description": _opt_str(event_raw.get("description"), "event.description"),
         "range_str": _opt_str(event_raw.get("range_str"), "event.range_str"),
+        "calendar_name": _opt_str(event_raw.get("calendar_name"), "event.calendar_name"),
     }
 
     search_query = _opt_str(data.get("search_query"), "search_query")

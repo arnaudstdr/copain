@@ -47,10 +47,15 @@ class ICloudCalendarClient:
         self._calendar_name = calendar_name
         self._tz = ZoneInfo(timezone)
         self._calendar: Any | None = None
+        self._all_calendars: list[Any] = []
 
     @property
     def is_connected(self) -> bool:
         return self._calendar is not None
+
+    def list_calendar_names(self) -> list[str]:
+        """Retourne la liste des noms de calendriers découverts au connect."""
+        return [getattr(c, "name", "?") for c in self._all_calendars]
 
     async def connect(self) -> None:
         """Résout le calendrier cible. Idempotent."""
@@ -67,9 +72,16 @@ class ICloudCalendarClient:
                 password=self._password,
             )
             principal = client.principal()
-            calendars = principal.calendars()
+            calendars = list(principal.calendars())
         except Exception as exc:
             raise ICloudCalendarError(f"Connexion iCloud échouée : {exc}") from exc
+
+        self._all_calendars = calendars
+        log.info(
+            "calendars_discovered",
+            count=len(calendars),
+            names=[getattr(c, "name", "?") for c in calendars],
+        )
 
         match = _find_calendar(calendars, self._calendar_name)
         if match is not None:
@@ -88,6 +100,21 @@ class ICloudCalendarClient:
             f"Disponibles : {available}"
         )
 
+    def resolve_calendar(self, name: str | None) -> Any:
+        """Retourne le calendrier matchant `name` (fuzzy), ou le calendrier défaut.
+
+        Raise ICloudCalendarError si `name` ne matche aucun calendrier disponible.
+        """
+        if name is None or not name.strip():
+            return self._require_connected()
+        match = _find_calendar(self._all_calendars, name)
+        if match is None:
+            available = [getattr(c, "name", "?") for c in self._all_calendars]
+            raise ICloudCalendarError(
+                f"Calendrier '{name}' introuvable. Disponibles : {available}"
+            )
+        return match
+
     async def create_event(
         self,
         title: str,
@@ -95,8 +122,10 @@ class ICloudCalendarClient:
         end: datetime,
         location: str | None = None,
         description: str | None = None,
+        calendar_name: str | None = None,
     ) -> CalendarEvent:
-        cal = self._require_connected()
+        cal = self.resolve_calendar(calendar_name)
+        target_name = getattr(cal, "name", self._calendar_name)
         start_aware = _ensure_aware(start, self._tz)
         end_aware = _ensure_aware(end, self._tz)
         event_uid = f"{uuid.uuid4().hex}@copain"
@@ -115,6 +144,7 @@ class ICloudCalendarClient:
             title=title,
             start=start_aware.isoformat(),
             end=end_aware.isoformat(),
+            calendar=target_name,
         )
         return CalendarEvent(
             uid=event_uid,
@@ -123,7 +153,7 @@ class ICloudCalendarClient:
             end=end_aware,
             location=location,
             description=description,
-            calendar_name=self._calendar_name,
+            calendar_name=target_name,
         )
 
     async def list_between(

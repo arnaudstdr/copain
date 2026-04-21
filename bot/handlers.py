@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from collections import deque
 from collections.abc import Callable, Coroutine, Sequence
 from dataclasses import dataclass
@@ -299,6 +300,7 @@ async def _handle_event(meta: Meta, deps: BotDeps, intro: str) -> str:
                 end=end,
                 location=meta["event"]["location"],
                 description=meta["event"]["description"],
+                calendar_name=meta["event"]["calendar_name"],
             )
         except Exception as exc:
             log.error("calendar_create_failed", error=str(exc))
@@ -378,11 +380,14 @@ def _parse_due(due_str: str | None, tz_name: str) -> datetime | None:
     Sans `TIMEZONE` + `RETURN_AS_TIMEZONE_AWARE`, dateparser renvoie un datetime
     naïf, qu'APScheduler interprète en UTC → décalage en prod (le container est
     souvent en UTC).
+
+    dateparser FR ne reconnaît pas « midi » / « minuit » : on les pré-normalise.
     """
     if not due_str:
         return None
+    normalized = _normalize_fr_time_words(due_str)
     parsed = dateparser.parse(
-        due_str,
+        normalized,
         languages=["fr"],
         settings={
             "PREFER_DATES_FROM": "future",
@@ -395,3 +400,16 @@ def _parse_due(due_str: str | None, tz_name: str) -> datetime | None:
     if parsed.tzinfo is None:
         parsed = parsed.replace(tzinfo=ZoneInfo(tz_name))
     return parsed
+
+
+_FR_TIME_SUBSTITUTIONS: tuple[tuple[re.Pattern[str], str], ...] = (
+    (re.compile(r"\bmidi\b", re.IGNORECASE), "12:00"),
+    (re.compile(r"\bminuit\b", re.IGNORECASE), "00:00"),
+)
+
+
+def _normalize_fr_time_words(expr: str) -> str:
+    """Remplace les mots FR que dateparser ignore par des expressions qu'il gère."""
+    for pattern, repl in _FR_TIME_SUBSTITUTIONS:
+        expr = pattern.sub(repl, expr)
+    return expr

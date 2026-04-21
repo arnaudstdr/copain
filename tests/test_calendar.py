@@ -107,6 +107,49 @@ async def test_create_event_requires_connection(client: ICloudCalendarClient) ->
         )
 
 
+async def test_create_event_routes_to_named_calendar(
+    client: ICloudCalendarClient,
+) -> None:
+    """Quand `calendar_name` est fourni, on utilise ce calendrier (fuzzy match)."""
+    default_cal = MagicMock()
+    default_cal.name = "Personnel"
+    default_cal.save_event = MagicMock()
+    sport_cal = MagicMock()
+    sport_cal.name = "🚴 Sport "
+    sport_cal.save_event = MagicMock()
+    client._calendar = default_cal  # type: ignore[attr-defined]
+    client._all_calendars = [default_cal, sport_cal]  # type: ignore[attr-defined]
+
+    start = datetime(2026, 4, 22, 12, 0, tzinfo=UTC)
+    event = await client.create_event(
+        title="Vélo",
+        start=start,
+        end=start + timedelta(hours=2),
+        calendar_name="sport",
+    )
+    assert sport_cal.save_event.called
+    assert not default_cal.save_event.called
+    assert event.calendar_name == "🚴 Sport "
+
+
+async def test_create_event_unknown_calendar_raises(
+    client: ICloudCalendarClient,
+) -> None:
+    default_cal = MagicMock()
+    default_cal.name = "Personnel"
+    client._calendar = default_cal  # type: ignore[attr-defined]
+    client._all_calendars = [default_cal]  # type: ignore[attr-defined]
+
+    start = datetime(2026, 4, 22, 12, 0, tzinfo=UTC)
+    with pytest.raises(ICloudCalendarError, match="introuvable"):
+        await client.create_event(
+            title="Test",
+            start=start,
+            end=start + timedelta(hours=1),
+            calendar_name="inexistant",
+        )
+
+
 async def test_connect_matches_emoji_calendar_by_trimmed_name() -> None:
     """Si l'utilisateur tape 'Personnel' mais le vrai nom est '🧘‍♂️ Personnel ',
     le matching tolérant (trim + ZWJ + variation selectors) doit fonctionner.

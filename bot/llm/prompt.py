@@ -28,11 +28,12 @@ naturelle, concise et directe. Pas de formules de politesse inutiles.
   "event": {{
     "action": "create|list, sinon null",
     "title": "titre du RDV/évènement si action=create, sinon null",
-    "start_str": "expression temporelle de début si action=create (ex: 'mardi 15h'), sinon null",
+    "start_str": "expression temporelle de début si action=create (ex: 'mardi 15h', 'demain 12h'), sinon null",
     "end_str": "expression temporelle de fin si précisée, sinon null (durée 1h par défaut)",
     "location": "lieu si mentionné, sinon null",
     "description": "note/description si mentionnée, sinon null",
-    "range_str": "plage temporelle si action=list (ex: 'cette semaine', 'demain'), sinon null"
+    "range_str": "plage temporelle si action=list (ex: 'cette semaine', 'demain'), sinon null",
+    "calendar_name": "nom du calendrier cible si l'utilisateur le précise (ex: 'sport', 'pro', 'anne'), sinon null (calendrier par défaut)"
   }},
   "search_query": "requête de recherche si intent=search, sinon null"
 }}
@@ -93,13 +94,19 @@ Exemple 4 :
 Utilisateur : « mets un RDV dentiste mardi 15h »
 Réponse attendue :
 OK, je l'ajoute au calendrier.
-<meta>{{"intent":"event","store_memory":false,"memory_content":null,"task":{{"content":null,"due_str":null}},"feed":{{"action":null,"name":null,"url":null}},"event":{{"action":"create","title":"RDV dentiste","start_str":"mardi 15h","end_str":null,"location":null,"description":null,"range_str":null}},"search_query":null}}</meta>
+<meta>{{"intent":"event","store_memory":false,"memory_content":null,"task":{{"content":null,"due_str":null}},"feed":{{"action":null,"name":null,"url":null}},"event":{{"action":"create","title":"RDV dentiste","start_str":"mardi 15h","end_str":null,"location":null,"description":null,"range_str":null,"calendar_name":null}},"search_query":null}}</meta>
 
 Exemple 5 :
 Utilisateur : « qu'est-ce que j'ai cette semaine ? »
 Réponse attendue :
 Voici tes évènements.
-<meta>{{"intent":"event","store_memory":false,"memory_content":null,"task":{{"content":null,"due_str":null}},"feed":{{"action":null,"name":null,"url":null}},"event":{{"action":"list","title":null,"start_str":null,"end_str":null,"location":null,"description":null,"range_str":"cette semaine"}},"search_query":null}}</meta>
+<meta>{{"intent":"event","store_memory":false,"memory_content":null,"task":{{"content":null,"due_str":null}},"feed":{{"action":null,"name":null,"url":null}},"event":{{"action":"list","title":null,"start_str":null,"end_str":null,"location":null,"description":null,"range_str":"cette semaine","calendar_name":null}},"search_query":null}}</meta>
+
+Exemple 6 (calendrier précisé + durée) :
+Utilisateur : « ajoute demain midi vélo pendant 2h dans le calendrier sport »
+Réponse attendue :
+OK, j'ajoute la séance.
+<meta>{{"intent":"event","store_memory":false,"memory_content":null,"task":{{"content":null,"due_str":null}},"feed":{{"action":null,"name":null,"url":null}},"event":{{"action":"create","title":"Vélo","start_str":"demain 12h","end_str":"demain 14h","location":null,"description":null,"range_str":null,"calendar_name":"sport"}},"search_query":null}}</meta>
 
 --- Contexte mémoire (notes et conversations passées pertinentes) ---
 {memory_context}
