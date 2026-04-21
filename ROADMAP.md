@@ -55,18 +55,9 @@ Approche révisée : plus de Tesseract, le modèle multimodal fait tout (texte +
 
 ---
 
-## Phase 4 — Transcription vocale
+## Phase 4 — Transcription vocale ❌ (abandonnée)
 
-Message vocal Telegram → Whisper base local → texte injecté dans le pipeline standard.
-
-- [ ] `bot/voice/transcriber.py` — `VoiceTranscriber` (`faster-whisper` lazy)
-- [ ] `bot/handlers.py` — `make_voice_handler` + `BotDeps.voice`
-- [ ] `bot/main.py` — `MessageHandler(filters.VOICE, ...)`
-- [ ] `bot/config.py` + `.env.example` — `WHISPER_MODEL=base`
-- [ ] `tests/test_voice.py`
-- [ ] Commit atomique
-
-**Budget RAM** : modèle `base` + `compute_type="int8"` ≈ 250-300 Mo. Chargé lazy au premier vocal.
+**Décision** : remplacée par la dictée native iOS/Telegram côté client. Aucun process supplémentaire à faire tourner sur le Pi, économie de 300 Mo de RAM, pas de latence de transcription, FR pris en charge nativement par Apple Intelligence/clavier iOS. Le bot reçoit directement du texte, rien à coder.
 
 ---
 
@@ -74,12 +65,14 @@ Message vocal Telegram → Whisper base local → texte injecté dans le pipelin
 
 | Composant            | RAM    |
 |----------------------|--------|
-| gemma3:4b            | 3.5 Go |
+| LLM (gemma4:31b-cloud) | 0 Go (cloud) |
 | ChromaDB + bot       | 1.0 Go |
 | SearXNG              | 0.3 Go |
-| Whisper base (int8)  | 0.3 Go |
-| Tesseract OCR        | on-demand |
-| **Total estimé**     | **~5.1 Go** |
+| **Total estimé**     | **~1.3 Go** |
+
+Le passage à un modèle cloud pour le LLM principal a libéré ~3.5 Go et rendu inutiles
+les features qui nécessitaient de la RAM supplémentaire (Whisper, Tesseract). La vision
+photo est gérée par le même modèle cloud multimodal.
 
 ---
 
@@ -93,4 +86,5 @@ Message vocal Telegram → Whisper base local → texte injecté dans le pipelin
 | 2026-04-17 | `637969b` | fix: timezone aware dateparser + APScheduler                   |
 | 2026-04-21 | `1d1af84` | feat(rss): Phase 1 — flux RSS avec intent=feed                |
 | 2026-04-21 | `533387f` | feat(briefing): Phase 2 — météo + tâches + RSS à 8h           |
-| 2026-04-21 | _Phase 3_ | feat(vision): analyse photo via gemma4:31b-cloud multimodal   |
+| 2026-04-21 | `6afdfd8` | feat(vision): Phase 3 — analyse photo via gemma4:31b-cloud    |
+| 2026-04-21 | _doc_     | docs: Phase 4 abandonnée (dictée native iOS/Telegram)         |
