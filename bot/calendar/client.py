@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import uuid
 from datetime import UTC, datetime, time, timedelta
-from typing import Any
+from typing import Any, cast
 from zoneinfo import ZoneInfo
 
 import caldav
@@ -68,7 +68,12 @@ class ICloudCalendarClient:
 
     def _sync_connect(self) -> Any:
         try:
-            client: Any = caldav.DAVClient(  # type: ignore[operator]
+            # cast(Any, ...) : certains versions de mypy voient caldav.DAVClient
+            # comme `object` (via ignore_missing_imports) et refusent l'appel ;
+            # le cast évite d'avoir à ajouter un `# type: ignore[operator]` qui
+            # deviendrait lui-même "unused" sur les versions plus récentes.
+            dav_client_cls = cast(Any, caldav.DAVClient)
+            client: Any = dav_client_cls(
                 url=ICLOUD_CALDAV_URL,
                 username=self._username,
                 password=self._password,
