@@ -13,6 +13,7 @@ from zoneinfo import ZoneInfo
 import dateparser
 
 from bot.calendar.client import ICloudCalendarError
+from bot.llm.client import LLMTimeoutError
 from bot.llm.parser import Meta, MetaParseError, extract_meta
 from bot.llm.prompt import build_system_prompt
 from bot.logging_conf import get_logger
@@ -81,6 +82,12 @@ def make_handler(deps: BotDeps) -> HandlerFn:
 
         try:
             reply = await _process(user_text, chat_id, deps)
+        except LLMTimeoutError:
+            log.warning("llm_timeout", chat_id=chat_id)
+            reply = (
+                "Le modèle met trop longtemps à répondre pour l'instant. "
+                "Réessaie dans quelques secondes."
+            )
         except Exception as exc:
             log.exception("handler_failed", error=str(exc))
             reply = "Désolé, une erreur interne est survenue."
@@ -116,6 +123,11 @@ def make_photo_handler(deps: BotDeps) -> HandlerFn:
 
         try:
             reply = await _process(caption, chat_id, deps, images=[image_bytes])
+        except LLMTimeoutError:
+            log.warning("llm_timeout", chat_id=chat_id, kind="photo")
+            reply = (
+                "Le modèle met trop longtemps à analyser l'image. Réessaie dans quelques secondes."
+            )
         except Exception as exc:
             log.exception("photo_handler_failed", error=str(exc))
             reply = "Désolé, je n'ai pas réussi à analyser cette image."

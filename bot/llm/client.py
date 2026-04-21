@@ -15,7 +15,16 @@ log = get_logger(__name__)
 
 
 class LLMError(RuntimeError):
-    """Erreur remontée par le client Ollama (réseau, timeout, modèle absent)."""
+    """Erreur remontée par le client Ollama (réseau, modèle absent, etc.)."""
+
+
+class LLMTimeoutError(LLMError):
+    """Levée spécifiquement quand Ollama dépasse le timeout configuré.
+
+    Sous-classe de LLMError pour que tout code qui catche LLMError la récupère
+    aussi. Permet aux handlers de donner un message utilisateur dédié
+    « le modèle met trop longtemps à répondre ».
+    """
 
 
 class LLMClient:
@@ -27,13 +36,15 @@ class LLMClient:
     multimodaux comme `gemma4:31b-cloud`, `llava`, `moondream`.
     """
 
-    DEFAULT_TIMEOUT_SEC = 60.0
+    DEFAULT_TIMEOUT_SEC = 120.0
 
     def __init__(self, base_url: str, model: str, timeout: float = DEFAULT_TIMEOUT_SEC) -> None:
-        # Timeout explicite : Ollama cloud avec un 31B peut prendre 10-30 s.
-        # Sans timeout, un freeze côté serveur bloque l'event loop Telegram.
+        # Timeout explicite : Ollama cloud avec un 31B peut prendre 30-90 s sur
+        # une recherche web (2 appels LLM chaînés). Défaut 120 s, configurable
+        # via OLLAMA_TIMEOUT_SEC depuis bot.config.Settings.
         self._client = AsyncClient(host=base_url, timeout=httpx.Timeout(timeout))
         self._model = model
+        self._timeout_sec = timeout
 
     async def call(
         self,
@@ -83,6 +94,11 @@ class LLMClient:
         """Appel bas niveau : envoie une liste de messages OpenAI-style, retourne le texte."""
         try:
             response: Any = await self._client.chat(model=self._model, messages=messages)
+        except httpx.TimeoutException as exc:
+            log.warning("ollama_chat_timeout", model=self._model, timeout_sec=self._timeout_sec)
+            raise LLMTimeoutError(
+                f"Ollama n'a pas répondu dans les {self._timeout_sec:.0f} s impartis"
+            ) from exc
         except Exception as exc:
             log.error("ollama_chat_failed", model=self._model, error=str(exc))
             raise LLMError(f"Appel Ollama échoué : {exc}") from exc

@@ -54,3 +54,23 @@ async def test_chat_ollama_exception_wraps_as_llmerror(fake_client: LLMClient) -
     fake_client._client.chat = AsyncMock(side_effect=ConnectionError("boom"))  # type: ignore[attr-defined]
     with pytest.raises(LLMError, match="Ollama échoué"):
         await fake_client.chat([{"role": "user", "content": "salut"}])
+
+
+async def test_chat_timeout_raises_llmtimeout_error(fake_client: LLMClient) -> None:
+    """Un httpx.TimeoutException doit lever LLMTimeoutError, pas LLMError générique."""
+    import httpx
+
+    from bot.llm.client import LLMTimeoutError
+
+    fake_client._client.chat = AsyncMock(  # type: ignore[attr-defined]
+        side_effect=httpx.ReadTimeout("too slow")
+    )
+    with pytest.raises(LLMTimeoutError, match="n'a pas répondu"):
+        await fake_client.chat([{"role": "user", "content": "salut"}])
+
+
+async def test_llmtimeout_is_subclass_of_llmerror() -> None:
+    """Garantit qu'un except LLMError existant continue de capter les timeouts."""
+    from bot.llm.client import LLMTimeoutError
+
+    assert issubclass(LLMTimeoutError, LLMError)

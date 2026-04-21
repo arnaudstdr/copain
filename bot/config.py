@@ -25,6 +25,7 @@ class Settings:
     ollama_base_url: str
     ollama_llm_model: str
     ollama_embed_model: str
+    ollama_timeout_sec: float
 
     searxng_base_url: str
 
@@ -99,6 +100,7 @@ def load_settings() -> Settings:
         ollama_base_url=os.getenv("OLLAMA_BASE_URL", "http://localhost:11434"),
         ollama_llm_model=os.getenv("OLLAMA_LLM_MODEL", "gemma3:4b"),
         ollama_embed_model=os.getenv("OLLAMA_EMBED_MODEL", "nomic-embed-text"),
+        ollama_timeout_sec=_env_float("OLLAMA_TIMEOUT_SEC", 120.0),
         searxng_base_url=os.getenv("SEARXNG_BASE_URL", "http://localhost:8080"),
         data_dir=data_dir,
         chroma_dir=Path(os.getenv("CHROMA_DIR", data_dir / "chroma")).resolve(),

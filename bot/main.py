@@ -66,7 +66,11 @@ def main() -> None:
     tasks = TaskManager(engine, scheduler=scheduler)
     rss = FeedManager(engine)
     rss_fetcher = RssFetcher()
-    llm = LLMClient(settings.ollama_base_url, settings.ollama_llm_model)
+    llm = LLMClient(
+        settings.ollama_base_url,
+        settings.ollama_llm_model,
+        timeout=settings.ollama_timeout_sec,
+    )
     calendar = ICloudCalendarClient(
         username=settings.icloud_username,
         app_password=settings.icloud_app_password,
