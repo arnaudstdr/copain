@@ -12,6 +12,7 @@ from zoneinfo import ZoneInfo
 
 import dateparser
 
+from bot.calendar.client import ICloudCalendarError
 from bot.llm.parser import Meta, MetaParseError, extract_meta
 from bot.llm.prompt import build_system_prompt
 from bot.logging_conf import get_logger
@@ -317,9 +318,9 @@ async def _handle_event(meta: Meta, deps: BotDeps, intro: str) -> str:
                 description=meta["event"]["description"],
                 calendar_name=meta["event"]["calendar_name"],
             )
-        except Exception as exc:
-            log.error("calendar_create_failed", error=str(exc))
-            return f"Désolé, je n'ai pas pu créer l'évènement : {exc}"
+        except ICloudCalendarError:
+            log.exception("calendar_create_failed")
+            return "Désolé, impossible de créer l'évènement pour le moment."
         confirm = (
             f"📅 Ajouté au calendrier : {event.title} — "
             f"{event.start.strftime('%A %d %B à %H:%M')} ({event.calendar_name})"
@@ -332,9 +333,9 @@ async def _handle_event(meta: Meta, deps: BotDeps, intro: str) -> str:
         start, end = _parse_range(range_str, tz)
         try:
             events = await deps.calendar.list_between(start, end)
-        except Exception as exc:
-            log.error("calendar_list_failed", error=str(exc))
-            return f"Désolé, lecture du calendrier échouée : {exc}"
+        except ICloudCalendarError:
+            log.exception("calendar_list_failed")
+            return "Désolé, lecture du calendrier impossible pour le moment."
         if not events:
             return f"Aucun évènement sur {range_str or 'la période demandée'}."
         lines = [
