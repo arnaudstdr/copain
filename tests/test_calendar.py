@@ -107,6 +107,30 @@ async def test_create_event_requires_connection(client: ICloudCalendarClient) ->
         )
 
 
+async def test_connect_matches_emoji_calendar_by_trimmed_name() -> None:
+    """Si l'utilisateur tape 'Personnel' mais le vrai nom est '🧘‍♂️ Personnel ',
+    le matching tolérant (trim + ZWJ + variation selectors) doit fonctionner.
+    """
+    client = ICloudCalendarClient(
+        username="test@icloud.com",
+        app_password="xxxx",
+        calendar_name="Personnel",
+        timezone="Europe/Paris",
+    )
+    emoji_cal = MagicMock()
+    emoji_cal.name = "🧘‍♂️ Personnel "
+    other = MagicMock()
+    other.name = "Pro"
+    principal = MagicMock()
+    principal.calendars.return_value = [other, emoji_cal]
+    dav_client = MagicMock()
+    dav_client.principal.return_value = principal
+
+    with patch("bot.calendar.client.caldav.DAVClient", return_value=dav_client):
+        await client.connect()
+    assert client._calendar is emoji_cal  # type: ignore[attr-defined]
+
+
 async def test_list_today_uses_local_date(client: ICloudCalendarClient) -> None:
     fake_cal = MagicMock()
     fake_cal.name = "Personnel"

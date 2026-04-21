@@ -71,10 +71,16 @@ class ICloudCalendarClient:
         except Exception as exc:
             raise ICloudCalendarError(f"Connexion iCloud échouée : {exc}") from exc
 
-        for cal in calendars:
-            name = getattr(cal, "name", None) or ""
-            if name == self._calendar_name:
-                return cal
+        match = _find_calendar(calendars, self._calendar_name)
+        if match is not None:
+            matched_name = getattr(match, "name", "?")
+            if matched_name != self._calendar_name:
+                log.info(
+                    "calendar_fuzzy_match",
+                    requested=self._calendar_name,
+                    matched=matched_name,
+                )
+            return match
 
         available = [getattr(c, "name", "?") for c in calendars]
         raise ICloudCalendarError(
@@ -161,6 +167,45 @@ class ICloudCalendarClient:
 
 def _ensure_aware(dt: datetime, tz: ZoneInfo) -> datetime:
     return dt if dt.tzinfo else dt.replace(tzinfo=tz)
+
+
+def _find_calendar(calendars: list[Any], requested: str) -> Any | None:
+    """Matching tolérant aux espaces, à la casse et aux emojis ZWJ/variation-selectors.
+
+    iCloud renvoie souvent des noms avec emojis (ex: '🧘‍♂️ Personnel '). Les copier
+    parfaitement depuis le .env est hasardeux (ZWJ, variation selectors, espaces),
+    donc on tente plusieurs stratégies de match du plus strict au plus laxiste.
+    """
+    import unicodedata
+
+    def normalize(s: str) -> str:
+        # NFC compose, supprime ZWJ (U+200D) et variation selectors (U+FE0F, U+FE0E)
+        nfc = unicodedata.normalize("NFC", s)
+        cleaned = nfc.replace("‍", "").replace("️", "").replace("︎", "")
+        return cleaned.strip().casefold()
+
+    target = normalize(requested)
+
+    # 1. Match exact (préférence stricte)
+    for cal in calendars:
+        if getattr(cal, "name", None) == requested:
+            return cal
+
+    # 2. Match normalisé (trim + case-fold + ZWJ/VS)
+    for cal in calendars:
+        if normalize(getattr(cal, "name", "") or "") == target:
+            return cal
+
+    # 3. Match "contient" sur la version alphanumérique seulement
+    alnum_target = "".join(c for c in target if c.isalnum())
+    if alnum_target:
+        for cal in calendars:
+            name = getattr(cal, "name", "") or ""
+            alnum = "".join(c for c in normalize(name) if c.isalnum())
+            if alnum_target in alnum:
+                return cal
+
+    return None
 
 
 def _build_vevent(
