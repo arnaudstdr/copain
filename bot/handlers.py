@@ -21,6 +21,7 @@ if TYPE_CHECKING:
     from telegram import Update
     from telegram.ext import ContextTypes
 
+    from bot.briefing.service import BriefingService
     from bot.config import Settings
     from bot.llm.client import LLMClient
     from bot.memory.manager import MemoryManager
@@ -51,6 +52,7 @@ class BotDeps:
     search: SearxngClient
     rss: FeedManager
     rss_fetcher: RssFetcher
+    briefing: BriefingService
     history: deque[str]
 
 

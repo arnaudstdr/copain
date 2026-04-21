@@ -12,6 +12,8 @@ from typing import Any
 
 from telegram.ext import Application, MessageHandler, filters
 
+from bot.briefing.service import BriefingService
+from bot.briefing.weather import OpenMeteoClient
 from bot.config import load_settings
 from bot.handlers import BotDeps, make_handler
 from bot.llm.client import LLMClient
@@ -31,6 +33,8 @@ DEFAULT_FEEDS: tuple[tuple[str, str, str], ...] = (
     ("ZDNet", "https://www.zdnet.com/news/rss.xml", "tech"),
 )
 
+BRIEFING_JOB_ID = "daily-briefing"
+
 
 async def _seed_default_feeds(rss: FeedManager) -> None:
     if await rss.count() > 0:
@@ -49,21 +53,38 @@ def main() -> None:
     log.info("startup", env=settings.env)
 
     embedder = Embedder(settings.ollama_base_url, settings.ollama_embed_model)
+    weather = OpenMeteoClient(timezone=settings.timezone)
+    tasks = TaskManager(settings.db_path)
+    rss = FeedManager(settings.db_path)
+    rss_fetcher = RssFetcher()
+    llm = LLMClient(settings.ollama_base_url, settings.ollama_llm_model)
+
     deps = BotDeps(
         settings=settings,
-        llm=LLMClient(settings.ollama_base_url, settings.ollama_llm_model),
+        llm=llm,
         memory=MemoryManager(settings.chroma_dir, embedder),
-        tasks=TaskManager(settings.db_path),
+        tasks=tasks,
         scheduler=ReminderScheduler(
             settings.scheduler_db_path,
             settings.telegram_bot_token,
             timezone=settings.timezone,
         ),
         search=SearxngClient(settings.searxng_base_url),
-        rss=FeedManager(settings.db_path),
-        rss_fetcher=RssFetcher(),
+        rss=rss,
+        rss_fetcher=rss_fetcher,
+        briefing=BriefingService(
+            settings=settings,
+            weather=weather,
+            tasks=tasks,
+            rss=rss,
+            rss_fetcher=rss_fetcher,
+            llm=llm,
+        ),
         history=deque(),
     )
+
+    async def _daily_briefing_job() -> None:
+        await deps.briefing.send_daily(chat_id=settings.allowed_user_id)
 
     async def _post_init(app: Application[Any, Any, Any, Any, Any, Any]) -> None:
         await deps.tasks.init_schema()
@@ -71,11 +92,18 @@ def main() -> None:
         await _seed_default_feeds(deps.rss)
         deps.scheduler.start()
         deps.scheduler.attach_application(app)
+        deps.scheduler.add_cron_job(
+            job_id=BRIEFING_JOB_ID,
+            func=_daily_briefing_job,
+            hour=settings.briefing_hour,
+            minute=settings.briefing_minute,
+        )
         log.info("post_init_done")
 
     async def _post_shutdown(_app: Application[Any, Any, Any, Any, Any, Any]) -> None:
         deps.scheduler.shutdown()
         await deps.search.aclose()
+        await weather.aclose()
         await deps.rss.dispose()
         await deps.tasks.dispose()
         log.info("post_shutdown_done")

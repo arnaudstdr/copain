@@ -1,12 +1,14 @@
-"""Planificateur de rappels : APScheduler persisté en SQLAlchemy."""
+"""Planificateur de jobs : rappels (persistés) et cron (mémoire)."""
 
 from __future__ import annotations
 
+from collections.abc import Awaitable, Callable
 from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 from zoneinfo import ZoneInfo
 
+from apscheduler.jobstores.memory import MemoryJobStore
 from apscheduler.jobstores.sqlalchemy import SQLAlchemyJobStore
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
@@ -37,9 +39,13 @@ class ReminderScheduler:
 
     def __init__(self, db_path: Path, bot_token: str, timezone: str = "Europe/Paris") -> None:
         db_path.parent.mkdir(parents=True, exist_ok=True)
-        jobstore = SQLAlchemyJobStore(url=f"sqlite:///{db_path}")
+        # default = rappels one-shot persistés (SQLAlchemy)
+        # memory = cron/recurrent (closures, non-sérialisables, re-planifiés au startup)
         self._scheduler = AsyncIOScheduler(
-            jobstores={"default": jobstore},
+            jobstores={
+                "default": SQLAlchemyJobStore(url=f"sqlite:///{db_path}"),
+                "memory": MemoryJobStore(),
+            },
             timezone=ZoneInfo(timezone),
         )
         self._bot_token = bot_token
@@ -72,6 +78,30 @@ class ReminderScheduler:
         job_id = f"task-{task_id}"
         if self._scheduler.get_job(job_id) is not None:
             self._scheduler.remove_job(job_id)
+
+    def add_cron_job(
+        self,
+        job_id: str,
+        func: Callable[..., Awaitable[None]],
+        hour: int,
+        minute: int,
+    ) -> None:
+        """Ajoute un job cron en mémoire (re-planifié au startup).
+
+        Utilisé pour les tâches récurrentes non-sérialisables (closures qui capturent
+        des services). Le SQLAlchemyJobStore exige la sérialisation ; on le court-circuite
+        en utilisant un MemoryJobStore dédié.
+        """
+        self._scheduler.add_job(
+            func,
+            trigger="cron",
+            hour=hour,
+            minute=minute,
+            id=job_id,
+            replace_existing=True,
+            jobstore="memory",
+        )
+        log.info("cron_job_scheduled", job_id=job_id, hour=hour, minute=minute)
 
     def attach_application(self, _app: Application[Any, Any, Any, Any, Any, Any]) -> None:
         """Hook réservé pour de futurs jobs qui auraient besoin de l'Application."""

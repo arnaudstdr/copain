@@ -23,18 +23,18 @@ Socle pour le briefing matinal. Flux stockés en SQLite (table `feeds`), CRUD en
 
 ---
 
-## Phase 2 — Briefing matinal planifié (consomme Phase 1)
+## Phase 2 — Briefing matinal planifié (consomme Phase 1) ✅
 
 Push Telegram quotidien à 8h : météo Sélestat + tâches du jour + top 5 items RSS résumés.
 
-- [ ] `bot/briefing/weather.py` — client Open-Meteo (pas de clé API)
-- [ ] `bot/briefing/service.py` — `BriefingService` (agrège + envoie)
-- [ ] `bot/tasks/scheduler.py` — helper `add_cron_job`
-- [ ] `bot/config.py` — `BRIEFING_HOUR`, `HOME_LAT`, `HOME_LON`, `HOME_CITY`
-- [ ] `.env.example` — documenter les 4 variables
-- [ ] `bot/main.py` — scheduling dans `_post_init`
-- [ ] `tests/test_briefing.py`
-- [ ] Commit atomique
+- [x] `bot/briefing/weather.py` — client Open-Meteo (pas de clé API)
+- [x] `bot/briefing/service.py` — `BriefingService` (agrège + envoie)
+- [x] `bot/tasks/scheduler.py` — helper `add_cron_job` + MemoryJobStore
+- [x] `bot/config.py` — `BRIEFING_HOUR`, `BRIEFING_MINUTE`, `HOME_LAT`, `HOME_LON`, `HOME_CITY`
+- [x] `.env.example` — documenter les 5 variables
+- [x] `bot/main.py` — scheduling dans `_post_init`, `BriefingService` dans `BotDeps`
+- [x] `tests/test_briefing.py`
+- [x] Commit atomique
 
 **Coordonnées Sélestat** : 48.26°N, 7.45°E | Timezone : Europe/Paris
 
@@ -89,4 +89,5 @@ Message vocal Telegram → Whisper base local → texte injecté dans le pipelin
 | 2026-04-17 | `2745b0f` | change url searxng (port 8888)                                 |
 | 2026-04-17 | `6c4dd56` | fix: structlog LoggerFactory + async post_init/post_shutdown   |
 | 2026-04-17 | `637969b` | fix: timezone aware dateparser + APScheduler                   |
-| 2026-04-21 | _Phase 1_ | feat: RSS — modèle Feed, FeedManager, fetcher, intent=feed    |
+| 2026-04-21 | `1d1af84` | feat(rss): Phase 1 — flux RSS avec intent=feed                |
+| 2026-04-21 | _Phase 2_ | feat(briefing): météo Sélestat + tâches + top 5 RSS à 8h      |

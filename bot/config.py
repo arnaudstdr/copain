@@ -35,6 +35,12 @@ class Settings:
 
     timezone: str
 
+    briefing_hour: int
+    briefing_minute: int
+    home_lat: float
+    home_lon: float
+    home_city: str
+
     env: str
 
     @property
@@ -57,6 +63,26 @@ def _required_int(key: str) -> int:
         raise ConfigError(f"{key} doit être un entier, reçu : {raw!r}") from exc
 
 
+def _env_int(key: str, default: int) -> int:
+    raw = os.getenv(key)
+    if raw is None or raw == "":
+        return default
+    try:
+        return int(raw)
+    except ValueError as exc:
+        raise ConfigError(f"{key} doit être un entier, reçu : {raw!r}") from exc
+
+
+def _env_float(key: str, default: float) -> float:
+    raw = os.getenv(key)
+    if raw is None or raw == "":
+        return default
+    try:
+        return float(raw)
+    except ValueError as exc:
+        raise ConfigError(f"{key} doit être un nombre, reçu : {raw!r}") from exc
+
+
 def load_settings() -> Settings:
     """Charge `.env` (si présent) puis construit l'objet Settings validé."""
     load_dotenv()
@@ -77,5 +103,10 @@ def load_settings() -> Settings:
             os.getenv("SCHEDULER_DB_PATH", data_dir / "scheduler.db")
         ).resolve(),
         timezone=os.getenv("TZ", "Europe/Paris"),
+        briefing_hour=_env_int("BRIEFING_HOUR", 8),
+        briefing_minute=_env_int("BRIEFING_MINUTE", 0),
+        home_lat=_env_float("HOME_LAT", 48.26),
+        home_lon=_env_float("HOME_LON", 7.45),
+        home_city=os.getenv("HOME_CITY", "Sélestat"),
         env=os.getenv("ENV", "dev"),
     )
