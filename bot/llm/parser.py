@@ -4,20 +4,20 @@ from __future__ import annotations
 
 import json
 import re
-from typing import Any, Literal, TypedDict
+from typing import Any, Literal, TypedDict, get_args
 
 META_PATTERN = re.compile(r"<meta>\s*(\{.*?\})\s*</meta>", re.DOTALL)
 
+# Source unique de vérité : le frozenset est dérivé du Literal via get_args().
+# Ajouter un nouvel intent/action ne requiert de modifier qu'un seul endroit.
 Intent = Literal["answer", "task", "search", "memory", "feed", "event"]
-VALID_INTENTS: frozenset[str] = frozenset(
-    {"answer", "task", "search", "memory", "feed", "event"}
-)
+VALID_INTENTS: frozenset[str] = frozenset(get_args(Intent))
 
 FeedAction = Literal["add", "list", "remove", "summarize"]
-VALID_FEED_ACTIONS: frozenset[str] = frozenset({"add", "list", "remove", "summarize"})
+VALID_FEED_ACTIONS: frozenset[str] = frozenset(get_args(FeedAction))
 
 EventAction = Literal["create", "list"]
-VALID_EVENT_ACTIONS: frozenset[str] = frozenset({"create", "list"})
+VALID_EVENT_ACTIONS: frozenset[str] = frozenset(get_args(EventAction))
 
 
 class TaskMeta(TypedDict):
