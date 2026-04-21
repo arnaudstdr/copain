@@ -19,9 +19,18 @@ LLM principal en cloud).
   le pipeline normal (mémoire/tâche/event selon le contenu)
 - **Calendrier iCloud** (CalDAV) : création et listing d'évènements dans n'importe
   quel calendrier iCloud, visible nativement sur iPhone / Apple Watch / Mac
+- **Proactivité opt-in** : un job APScheduler tick toutes les N min (défaut 30) et
+  peut pousser au plus **une** notif par tick. Deux règles en v1 — alerte pluie
+  dans l'heure (Open-Meteo horaire) et rappel RDV ~1 h avant (calendrier iCloud).
+  Cinq garde-fous empêchent le spam : feature flag global, fenêtre horaire
+  configurable (défaut 8h-21h), budget quotidien max 3, dédup par `event_uid`
+  pour les events, cooldown temporel pour la pluie. Désactivé par défaut
+  (`PROACTIVITY_ENABLED=false`).
 
 Tout passe par le même pipeline : un LLM décide l'intent via un bloc `<meta>` JSON,
 le code exécute les effets de bord, puis renvoie un message texte à l'utilisateur.
+Les notifs proactives passent, elles, par un job autonome (pas de LLM ni de routing
+`<meta>`) qui écrit dans la table `notification_logs` pour tracer cooldowns et budget.
 
 ---
 
@@ -167,13 +176,18 @@ copain/
 │   │   ├── models.py            # CalendarEvent dataclass
 │   │   └── client.py            # ICloudCalendarClient (connect + fuzzy match)
 │   │
-│   └── briefing/
-│       ├── weather.py           # OpenMeteoClient + WEATHER_CODES FR
-│       └── service.py           # BriefingService (agrège + cron)
+│   ├── briefing/
+│   │   ├── weather.py           # OpenMeteoClient + HourlyPrecipitation + codes FR
+│   │   └── service.py           # BriefingService (agrège + cron)
+│   │
+│   └── proactivity/
+│       ├── models.py            # NotificationLog (partage Base tasks)
+│       ├── rules.py             # evaluate_rain + evaluate_upcoming_event (purs)
+│       └── service.py           # ProactivityService.tick + garde-fous
 │
 ├── data/                        # volume Docker persisté
 │   ├── chroma/
-│   ├── tasks.db                 # SQLite partagée tasks + feeds
+│   ├── tasks.db                 # SQLite partagée tasks + feeds + notification_logs
 │   └── scheduler.db             # APScheduler jobs persistés
 │
 └── tests/                       # pytest-asyncio, tout mocké (pas d'I/O externes)
@@ -185,8 +199,14 @@ copain/
     ├── test_security.py
     ├── test_feeds.py
     ├── test_briefing.py
+    ├── test_weather.py
     ├── test_calendar.py
-    └── test_handlers_dates.py
+    ├── test_config.py
+    ├── test_handlers_dates.py
+    ├── test_scheduler_interval.py
+    ├── test_proactivity_models.py
+    ├── test_proactivity_rules.py
+    └── test_proactivity_service.py
 ```
 
 ---
@@ -229,6 +249,14 @@ HOME_CITY=Sélestat
 ICLOUD_USERNAME=                     # requis, Apple ID
 ICLOUD_APP_PASSWORD=                 # requis, format xxxx-xxxx-xxxx-xxxx
 ICLOUD_CALENDAR_NAME=Personnel       # nom du calendrier par défaut (fuzzy match)
+
+# Proactivité (notifications poussées sans demande — opt-in strict)
+PROACTIVITY_ENABLED=false
+PROACTIVITY_WINDOW_START_HOUR=8
+PROACTIVITY_WINDOW_END_HOUR=21
+PROACTIVITY_DAILY_BUDGET=3
+PROACTIVITY_CHECK_INTERVAL_MIN=30
+PROACTIVITY_RAIN_COOLDOWN_HOURS=3
 
 # Environnement (dev | prod) — conditionne le format de log structlog
 ENV=dev

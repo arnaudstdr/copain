@@ -17,6 +17,9 @@ Hébergé partiellement sur Raspberry Pi 5 (services locaux) + LLM cloud.
 - Analyse de photos (texte, scène, graphique, menu, reçu, etc.)
 - Calendrier iCloud via CalDAV (création + listing d'évènements dans n'importe
   quel calendrier iCloud, fuzzy matching du nom)
+- **Proactivité opt-in** (`PROACTIVITY_ENABLED=true`) : alerte pluie dans l'heure
+  + rappel RDV ~1 h avant. Garde-fous intégrés (fenêtre horaire, cooldown par
+  type, budget quotidien max 3).
 
 Le routing entre ces capacités est piloté par le LLM via un bloc `<meta>` JSON
 qu'il produit en fin de chaque réponse. Voir [`CLAUDE.md`](./CLAUDE.md) pour

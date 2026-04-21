@@ -83,6 +83,35 @@ Intent `event` distinct de `task` : les RDV vont directement dans le calendrier 
 
 ---
 
+## Phase 6 — Proactivité v1 ✅
+
+Le bot peut pousser des messages non sollicités quand l'info a une valeur immédiate, avec garde-fous stricts pour ne jamais spammer. Opt-in via `PROACTIVITY_ENABLED=true`.
+
+Règles de la v1 (2) :
+
+1. **Pluie dans l'heure** — seuils Open-Meteo `mm ≥ 0.3` ou `probabilité ≥ 60 %` sur l'heure courante/suivante.
+2. **RDV calendrier dans ~1 h** — event démarrant entre 45 et 75 min, notifié une seule fois par UID.
+
+Garde-fous, dans l'ordre du tick :
+
+1. Feature flag `PROACTIVITY_ENABLED` (défaut `false`).
+2. Fenêtre horaire `[PROACTIVITY_WINDOW_START_HOUR, PROACTIVITY_WINDOW_END_HOUR[` (défaut 8-21).
+3. Budget quotidien `PROACTIVITY_DAILY_BUDGET` (défaut 3) calculé depuis minuit local.
+4. Dédup : par `event_uid` pour les events, cooldown `PROACTIVITY_RAIN_COOLDOWN_HOURS` pour la pluie.
+5. Priorité event > pluie (1 seule notif par tick).
+
+- [x] `bot/briefing/weather.py` — `HourlyPrecipitation` + `get_hourly_precipitation()`
+- [x] `bot/tasks/scheduler.py` — `add_interval_job()` (MemoryJobStore)
+- [x] `bot/proactivity/models.py` — `NotificationLog` (partage `Base`)
+- [x] `bot/proactivity/rules.py` — `evaluate_rain` + `evaluate_upcoming_event` (purs)
+- [x] `bot/proactivity/service.py` — `ProactivityService.tick()` avec les 5 garde-fous
+- [x] `bot/config.py` — 6 vars `PROACTIVITY_*` + helper `_env_bool`
+- [x] `bot/main.py` — câblage interval job conditionnel + import du module pour `metadata`
+- [x] `.env.example` — bloc Proactivité documenté
+- [x] Tests : `test_weather`, `test_scheduler_interval`, `test_proactivity_*`, `test_config`
+
+---
+
 ## Budget RAM cumulé (Pi 5 8 Go — 7 Go utilisables)
 
 | Composant            | RAM    |
@@ -111,3 +140,4 @@ photo est gérée par le même modèle cloud multimodal.
 | 2026-04-21 | `6afdfd8` | feat(vision): Phase 3 — analyse photo via gemma4:31b-cloud    |
 | 2026-04-21 | _doc_     | docs: Phase 4 abandonnée (dictée native iOS/Telegram)         |
 | 2026-04-21 | _Phase 5_ | feat(calendar): iCloud CalDAV, intent=event, briefing étendu  |
+| 2026-04-21 | _Phase 6_ | feat(proactivity): pluie + rappel RDV 1h avant, garde-fous    |
