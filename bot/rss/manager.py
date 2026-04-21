@@ -66,8 +66,14 @@ class FeedManager:
         async with self._sessionmaker() as session:
             if isinstance(name_or_id, int):
                 return await session.get(Feed, name_or_id)
+            # Échappe % et _ pour éviter qu'un nom utilisateur style "zd%" fasse
+            # un match sauvage (les wildcards LIKE sont réservés).
+            pattern = _escape_like(name_or_id)
             stmt = select(Feed).where(
-                or_(Feed.name == name_or_id, Feed.name.ilike(f"%{name_or_id}%"))
+                or_(
+                    Feed.name == name_or_id,
+                    Feed.name.ilike(f"%{pattern}%", escape="\\"),
+                )
             )
             result = await session.execute(stmt)
             return result.scalar_one_or_none()
@@ -110,3 +116,8 @@ class FeedManager:
         stmt = select(Feed).where(Feed.name == name_or_id)
         result = await session.execute(stmt)
         return result.scalar_one_or_none()
+
+
+def _escape_like(value: str) -> str:
+    """Échappe les wildcards LIKE (% et _) et le caractère d'échappement \\."""
+    return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")

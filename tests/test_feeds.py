@@ -56,6 +56,20 @@ async def test_get_by_name_exact_and_partial(manager: FeedManager) -> None:
     assert partial is not None and partial.name == "The Verge"
 
 
+async def test_get_escapes_like_wildcards(manager: FeedManager) -> None:
+    """Un pattern contenant % ou _ doit matcher littéralement, pas comme wildcard."""
+    await manager.add(url="https://a.com/rss", name="ZDNet")
+    await manager.add(url="https://b.com/rss", name="Zz%Trick")
+
+    # "zd%" ne doit matcher QUE "Zz%Trick" (pas "ZDNet" via wildcard LIKE)
+    found = await manager.get("z%")
+    assert found is not None and found.name == "Zz%Trick"
+
+    # Recherche par sous-chaîne normale : toujours OK
+    zdnet = await manager.get("zdnet")
+    assert zdnet is not None and zdnet.name == "ZDNet"
+
+
 async def test_remove_feed(manager: FeedManager) -> None:
     await manager.add(url="https://example.com/rss", name="Example")
     assert await manager.remove("Example") is True
