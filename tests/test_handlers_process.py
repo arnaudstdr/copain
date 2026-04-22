@@ -31,6 +31,9 @@ def _meta_block(
     event_location: str | None = None,
     event_calendar: str | None = None,
     event_range: str | None = None,
+    fuel_type: str | None = None,
+    fuel_radius_km: float | None = None,
+    fuel_location: str | None = None,
     search_query: str | None = None,
 ) -> str:
     """Construit une réponse LLM factice avec bloc <meta> valide."""
@@ -52,6 +55,11 @@ def _meta_block(
             "range_str": event_range,
             "calendar_name": event_calendar,
         },
+        "fuel": {
+            "fuel_type": fuel_type,
+            "radius_km": fuel_radius_km,
+            "location": fuel_location,
+        },
         "search_query": search_query,
     }
     return f"Réponse texte.\n<meta>{json.dumps(meta)}</meta>"
@@ -63,6 +71,10 @@ def deps() -> BotDeps:
     settings = MagicMock()
     settings.allowed_user_id = 42
     settings.timezone = "Europe/Paris"
+    settings.home_lat = 48.26
+    settings.home_lon = 7.45
+    settings.home_city = "Sélestat"
+    settings.fuel_default_radius_km = 10.0
 
     memory = MagicMock()
     memory.retrieve_context = AsyncMock(return_value=[])
@@ -86,6 +98,10 @@ def deps() -> BotDeps:
     rss_fetcher = MagicMock()
     briefing = MagicMock()
     calendar = MagicMock()
+    fuel = MagicMock()
+    fuel.find_cheapest = AsyncMock(return_value=[])
+    geocoder = MagicMock()
+    geocoder.geocode_fr = AsyncMock(return_value=None)
 
     return BotDeps(
         settings=settings,
@@ -98,6 +114,8 @@ def deps() -> BotDeps:
         rss_fetcher=rss_fetcher,
         briefing=briefing,
         calendar=calendar,
+        fuel=fuel,
+        geocoder=geocoder,
         history=deque(maxlen=6),
     )
 
@@ -234,3 +252,97 @@ async def test_process_empty_text_with_image_uses_default_prompt(
     # Vérifie que le LLM a bien reçu le prompt par défaut (pas une string vide)
     call_kwargs = deps.llm.call.call_args.kwargs
     assert "Analyse cette image" in call_kwargs["user"]
+
+
+async def test_process_fuel_intent_home_falls_back_to_home_coords(
+    deps: BotDeps,
+) -> None:
+    """Sans location → on interroge l'API avec HOME_LAT/HOME_LON."""
+    from datetime import UTC, datetime
+
+    from bot.fuel.models import FuelStation
+
+    station = FuelStation(
+        id="A",
+        address="12 rue Y",
+        city="Sélestat",
+        postal_code="67600",
+        lat=48.26,
+        lon=7.45,
+        distance_km=2.3,
+        fuel_type="gazole",
+        price_eur=1.689,
+        updated_at=datetime.now(UTC),
+    )
+    deps.fuel.find_cheapest = AsyncMock(return_value=[station])
+    deps.llm.call = AsyncMock(return_value=_meta_block(intent="fuel", fuel_type="gazole"))
+
+    text = await _process("gazole pas cher ?", chat_id=42, deps=deps)
+
+    deps.geocoder.geocode_fr.assert_not_called()
+    deps.fuel.find_cheapest.assert_awaited_once()
+    call_kwargs = deps.fuel.find_cheapest.await_args.kwargs
+    assert call_kwargs["fuel_type"] == "gazole"
+    assert call_kwargs["center"].lat == 48.26
+    assert call_kwargs["center"].lon == 7.45
+    assert call_kwargs["radius_km"] == 10.0
+    assert "Sélestat" in text
+    assert "1.689 €" in text
+
+
+async def test_process_fuel_intent_with_location_calls_geocoder(
+    deps: BotDeps,
+) -> None:
+    """Avec location → on appelle Nominatim et on utilise les coords retournées."""
+    from bot.fuel.models import GeoPoint
+
+    deps.geocoder.geocode_fr = AsyncMock(return_value=GeoPoint(lat=48.08, lon=7.36))
+    deps.fuel.find_cheapest = AsyncMock(return_value=[])
+    deps.llm.call = AsyncMock(
+        return_value=_meta_block(
+            intent="fuel",
+            fuel_type="sp98",
+            fuel_radius_km=5.0,
+            fuel_location="Colmar",
+        )
+    )
+
+    text = await _process("SP98 à Colmar dans 5 km", chat_id=42, deps=deps)
+
+    deps.geocoder.geocode_fr.assert_awaited_once_with("Colmar")
+    call_kwargs = deps.fuel.find_cheapest.await_args.kwargs
+    assert call_kwargs["center"].lat == pytest.approx(48.08)
+    assert call_kwargs["radius_km"] == 5.0
+    assert "Colmar" in text
+
+
+async def test_process_fuel_unknown_fuel_type_returns_hint(
+    deps: BotDeps,
+) -> None:
+    deps.llm.call = AsyncMock(return_value=_meta_block(intent="fuel", fuel_type="charbon"))
+    text = await _process("charbon pas cher", chat_id=42, deps=deps)
+    assert "Je ne reconnais pas" in text
+    deps.fuel.find_cheapest.assert_not_called()
+
+
+async def test_process_fuel_diesel_synonym_is_normalized(deps: BotDeps) -> None:
+    """Le LLM peut envoyer 'diesel' — on doit mapper vers 'gazole'."""
+    deps.fuel.find_cheapest = AsyncMock(return_value=[])
+    deps.llm.call = AsyncMock(return_value=_meta_block(intent="fuel", fuel_type="diesel"))
+
+    await _process("diesel pas cher", chat_id=42, deps=deps)
+
+    call_kwargs = deps.fuel.find_cheapest.await_args.kwargs
+    assert call_kwargs["fuel_type"] == "gazole"
+
+
+async def test_process_fuel_location_not_found_returns_message(
+    deps: BotDeps,
+) -> None:
+    deps.geocoder.geocode_fr = AsyncMock(return_value=None)
+    deps.llm.call = AsyncMock(
+        return_value=_meta_block(intent="fuel", fuel_type="gazole", fuel_location="Atlantide")
+    )
+    text = await _process("gazole à Atlantide", chat_id=42, deps=deps)
+    assert "Atlantide" in text
+    deps.fuel.find_cheapest.assert_not_called()

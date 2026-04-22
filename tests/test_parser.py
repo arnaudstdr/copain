@@ -192,3 +192,49 @@ def test_extract_meta_event_optional_in_old_format() -> None:
     assert meta["event"]["action"] is None
     assert meta["event"]["title"] is None
     assert meta["event"]["range_str"] is None
+
+
+def test_extract_meta_fuel_full() -> None:
+    raw = """\
+OK, je cherche.
+<meta>
+{
+  "intent": "fuel",
+  "store_memory": false,
+  "memory_content": null,
+  "task": {"content": null, "due_str": null},
+  "feed": {"action": null, "name": null, "url": null},
+  "event": {"action": null, "title": null, "start_str": null, "end_str": null,
+            "location": null, "description": null, "range_str": null},
+  "fuel": {"fuel_type": "sp98", "radius_km": 5, "location": "Colmar"},
+  "search_query": null
+}
+</meta>"""
+    text, meta = extract_meta(raw)
+    assert text.strip() == "OK, je cherche."
+    assert meta["intent"] == "fuel"
+    assert meta["fuel"]["fuel_type"] == "sp98"
+    assert meta["fuel"]["radius_km"] == 5.0
+    assert meta["fuel"]["location"] == "Colmar"
+
+
+def test_extract_meta_fuel_optional_in_old_format() -> None:
+    """Rétrocompat : si le LLM oublie le champ fuel, défauts à None."""
+    raw = """<meta>{"intent": "answer", "store_memory": false, "memory_content": null,
+"task": {"content": null, "due_str": null},
+"feed": {"action": null, "name": null, "url": null},
+"search_query": null}</meta>"""
+    _, meta = extract_meta(raw)
+    assert meta["fuel"]["fuel_type"] is None
+    assert meta["fuel"]["radius_km"] is None
+    assert meta["fuel"]["location"] is None
+
+
+def test_extract_meta_fuel_radius_invalid_raises() -> None:
+    raw = """<meta>{"intent": "fuel", "store_memory": false, "memory_content": null,
+"task": {"content": null, "due_str": null},
+"feed": {"action": null, "name": null, "url": null},
+"fuel": {"fuel_type": "gazole", "radius_km": "abc", "location": null},
+"search_query": null}</meta>"""
+    with pytest.raises(MetaParseError, match=r"fuel\.radius_km"):
+        extract_meta(raw)
