@@ -98,7 +98,7 @@ class ProactivityService:
         if not self._calendar.is_connected:
             return None
         try:
-            events = await self._calendar.list_between(now, now + timedelta(minutes=90))
+            events = await self._calendar.list_all_between(now, now + timedelta(minutes=90))
         except Exception as exc:
             log.warning("proactivity_calendar_failed", error=str(exc))
             return None

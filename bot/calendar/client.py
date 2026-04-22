@@ -190,6 +190,51 @@ class ICloudCalendarClient:
         end = now + timedelta(days=days)
         return await self.list_between(now, end)
 
+    async def list_all_between(self, start: datetime, end: datetime) -> list[CalendarEvent]:
+        """Agrège les évènements de TOUS les calendriers iCloud découverts.
+
+        Itère sur `self._all_calendars` ; une exception sur un calendrier donné
+        (perm révoquées, CalDAV flaky...) est loggée en warning et n'interrompt
+        pas les autres — un calendrier cassé ne doit pas tuer le briefing.
+
+        Chaque `CalendarEvent` porte le nom du calendrier d'origine dans
+        `calendar_name`, pas le nom du calendrier par défaut.
+        """
+        if not self._all_calendars:
+            raise ICloudCalendarError("Client iCloud non connecté. Appelle connect() d'abord.")
+        start_aware = _ensure_aware(start, self._tz)
+        end_aware = _ensure_aware(end, self._tz)
+        events: list[CalendarEvent] = []
+        for cal in self._all_calendars:
+            cal_name = getattr(cal, "name", "?") or "?"
+            try:
+                raw = await asyncio.to_thread(
+                    cal.date_search,
+                    start_aware,
+                    end_aware,
+                    expand=True,
+                )
+            except Exception as exc:
+                log.warning("calendar_list_failed_for", calendar=cal_name, error=str(exc))
+                continue
+            for entry in raw:
+                parsed = _parse_vevent(entry, cal_name, self._tz)
+                if parsed is not None:
+                    events.append(parsed)
+        events.sort(key=lambda e: e.start)
+        return events
+
+    async def list_all_today(self) -> list[CalendarEvent]:
+        now = datetime.now(self._tz)
+        start = datetime.combine(now.date(), time.min, tzinfo=self._tz)
+        end = datetime.combine(now.date(), time.max, tzinfo=self._tz)
+        return await self.list_all_between(start, end)
+
+    async def list_all_upcoming(self, days: int = 7) -> list[CalendarEvent]:
+        now = datetime.now(self._tz)
+        end = now + timedelta(days=days)
+        return await self.list_all_between(now, end)
+
     def _require_connected(self) -> Any:
         if self._calendar is None:
             raise ICloudCalendarError("Client iCloud non connecté. Appelle connect() d'abord.")

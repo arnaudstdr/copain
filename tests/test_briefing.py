@@ -79,7 +79,7 @@ def mock_llm() -> MagicMock:
 def mock_calendar_empty() -> MagicMock:
     cal = MagicMock()
     cal.is_connected = True
-    cal.list_today = AsyncMock(return_value=[])
+    cal.list_all_today = AsyncMock(return_value=[])
     return cal
 
 
@@ -88,7 +88,7 @@ def mock_calendar_with_events() -> MagicMock:
     cal = MagicMock()
     cal.is_connected = True
     start = datetime.now(UTC).replace(hour=9, minute=0, second=0, microsecond=0)
-    cal.list_today = AsyncMock(
+    cal.list_all_today = AsyncMock(
         return_value=[
             CalendarEvent(
                 uid="e1",
@@ -117,7 +117,7 @@ def mock_calendar_with_events() -> MagicMock:
 def mock_calendar_disconnected() -> MagicMock:
     cal = MagicMock()
     cal.is_connected = False
-    cal.list_today = AsyncMock(side_effect=RuntimeError("disconnected"))
+    cal.list_all_today = AsyncMock(side_effect=RuntimeError("disconnected"))
     return cal
 
 
@@ -226,7 +226,7 @@ async def test_build_calendar_disconnected_shows_empty_section(
     )
     text = await service.build()
     assert "Aucun évènement prévu" in text
-    mock_calendar_disconnected.list_today.assert_not_called()
+    mock_calendar_disconnected.list_all_today.assert_not_called()
 
 
 async def test_build_weather_error_is_graceful(

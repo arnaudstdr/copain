@@ -345,7 +345,7 @@ async def _handle_event(meta: Meta, deps: BotDeps, intro: str) -> str:
         range_str = meta["event"]["range_str"]
         start, end = _parse_range(range_str, tz)
         try:
-            events = await deps.calendar.list_between(start, end)
+            events = await deps.calendar.list_all_between(start, end)
         except ICloudCalendarError:
             log.exception("calendar_list_failed")
             return "Désolé, lecture du calendrier impossible pour le moment."

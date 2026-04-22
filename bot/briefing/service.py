@@ -88,7 +88,7 @@ class BriefingService:
         if not self._calendar.is_connected:
             return []
         try:
-            return await self._calendar.list_today()
+            return await self._calendar.list_all_today()
         except Exception as exc:
             log.warning("briefing_events_skipped", error=str(exc))
             return []

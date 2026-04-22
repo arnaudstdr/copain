@@ -186,6 +186,96 @@ async def test_list_today_uses_local_date(client: ICloudCalendarClient) -> None:
     assert end_arg.hour == 23
 
 
+async def test_list_all_between_aggregates_calendars(client: ICloudCalendarClient) -> None:
+    """list_all_between agrège tous les calendriers et tag chaque event avec son calendrier d'origine."""
+    ical_perso = """BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//Test//Test//EN
+BEGIN:VEVENT
+UID:perso-1@copain
+SUMMARY:RDV médecin
+DTSTART:20260422T140000Z
+DTEND:20260422T150000Z
+END:VEVENT
+END:VCALENDAR"""
+    ical_sport = """BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//Test//Test//EN
+BEGIN:VEVENT
+UID:sport-1@copain
+SUMMARY:Vélo
+DTSTART:20260422T100000Z
+DTEND:20260422T120000Z
+END:VEVENT
+END:VCALENDAR"""
+    entry_perso = MagicMock()
+    entry_perso.data = ical_perso
+    entry_sport = MagicMock()
+    entry_sport.data = ical_sport
+
+    cal_perso = MagicMock()
+    cal_perso.name = "Personnel"
+    cal_perso.date_search = MagicMock(return_value=[entry_perso])
+    cal_sport = MagicMock()
+    cal_sport.name = "🚴 Sport"
+    cal_sport.date_search = MagicMock(return_value=[entry_sport])
+
+    client._all_calendars = [cal_perso, cal_sport]  # type: ignore[attr-defined]
+
+    start = datetime(2026, 4, 22, 0, 0, tzinfo=UTC)
+    end = datetime(2026, 4, 22, 23, 59, tzinfo=UTC)
+    events = await client.list_all_between(start, end)
+
+    # Ordre trié par start : Vélo (10h) avant RDV médecin (14h).
+    assert [e.title for e in events] == ["Vélo", "RDV médecin"]
+    assert events[0].calendar_name == "🚴 Sport"
+    assert events[1].calendar_name == "Personnel"
+
+
+async def test_list_all_between_tolerates_per_calendar_failure(
+    client: ICloudCalendarClient,
+) -> None:
+    """Une panne sur un calendrier ne doit pas masquer les events des autres."""
+    ical = """BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//Test//Test//EN
+BEGIN:VEVENT
+UID:ok-1@copain
+SUMMARY:Tour en ville
+DTSTART:20260422T090000Z
+DTEND:20260422T100000Z
+END:VEVENT
+END:VCALENDAR"""
+    entry = MagicMock()
+    entry.data = ical
+
+    cal_ok1 = MagicMock()
+    cal_ok1.name = "Personnel"
+    cal_ok1.date_search = MagicMock(return_value=[entry])
+    cal_broken = MagicMock()
+    cal_broken.name = "Partagé"
+    cal_broken.date_search = MagicMock(side_effect=RuntimeError("403 forbidden"))
+    cal_ok2 = MagicMock()
+    cal_ok2.name = "Sport"
+    cal_ok2.date_search = MagicMock(return_value=[])
+
+    client._all_calendars = [cal_ok1, cal_broken, cal_ok2]  # type: ignore[attr-defined]
+
+    start = datetime(2026, 4, 22, 0, 0, tzinfo=UTC)
+    end = datetime(2026, 4, 22, 23, 59, tzinfo=UTC)
+    events = await client.list_all_between(start, end)
+
+    assert [e.title for e in events] == ["Tour en ville"]
+    assert cal_broken.date_search.called  # on a bien tenté
+
+
+async def test_list_all_between_requires_connection(client: ICloudCalendarClient) -> None:
+    start = datetime(2026, 4, 22, 0, 0, tzinfo=UTC)
+    end = start + timedelta(hours=1)
+    with pytest.raises(ICloudCalendarError, match="non connecté"):
+        await client.list_all_between(start, end)
+
+
 async def test_list_between_parses_and_sorts(client: ICloudCalendarClient) -> None:
     ical_1 = """BEGIN:VCALENDAR
 VERSION:2.0

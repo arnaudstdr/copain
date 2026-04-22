@@ -79,7 +79,7 @@ def _weather_returning(hourly: list[HourlyPrecipitation]) -> MagicMock:
 def _calendar_with(events: list[CalendarEvent], connected: bool = True) -> MagicMock:
     cal = MagicMock()
     cal.is_connected = connected
-    cal.list_between = AsyncMock(return_value=events)
+    cal.list_all_between = AsyncMock(return_value=events)
     return cal
 
 
@@ -234,7 +234,7 @@ async def test_exceptions_are_swallowed(engine: AsyncEngine) -> None:
     """Une panne iCloud ne doit jamais faire crasher le job APScheduler."""
     bad_calendar = MagicMock()
     bad_calendar.is_connected = True
-    bad_calendar.list_between = AsyncMock(side_effect=RuntimeError("iCloud down"))
+    bad_calendar.list_all_between = AsyncMock(side_effect=RuntimeError("iCloud down"))
 
     service, send = await _build_service(
         engine,
@@ -250,7 +250,7 @@ async def test_exceptions_are_swallowed(engine: AsyncEngine) -> None:
 async def test_disconnected_calendar_skips_events_but_allows_rain(engine: AsyncEngine) -> None:
     cal = MagicMock()
     cal.is_connected = False
-    cal.list_between = AsyncMock(side_effect=AssertionError("should not be called"))
+    cal.list_all_between = AsyncMock(side_effect=AssertionError("should not be called"))
 
     service, send = await _build_service(
         engine,
