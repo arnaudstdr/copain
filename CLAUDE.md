@@ -19,6 +19,12 @@ LLM principal en cloud).
   le pipeline normal (mémoire/tâche/event selon le contenu)
 - **Calendrier iCloud** (CalDAV) : création et listing d'évènements dans n'importe
   quel calendrier iCloud, visible nativement sur iPhone / Apple Watch / Mac
+- **Prix carburants** : via l'API open data `data.economie.gouv.fr`
+  (dataset `prix-des-carburants-en-france-flux-instantane-v2`, pas de clé
+  requise). Demander en langage naturel « gazole pas cher ? » → top 5 stations
+  triées par prix dans un rayon de 10 km autour de `HOME_CITY`. Support des
+  lieux nommés via géocoding OSM Nominatim (« SP98 à Colmar dans 5 km »).
+  Synonymes FR mappés (diesel → gazole, 98 → sp98, etc.).
 - **Proactivité opt-in** : un job APScheduler tick toutes les N min (défaut 30) et
   peut pousser au plus **une** notif par tick. Deux règles en v1 — alerte pluie
   dans l'heure (Open-Meteo horaire) et rappel RDV ~1 h avant (calendrier iCloud).
@@ -54,8 +60,8 @@ Bot Python (python-telegram-bot v21, async)
      │     └── chat(messages)              → appel bas niveau
      │
      ├── Parser <meta>
-     │     └── Intent ∈ {answer, task, search, memory, feed, event}
-     │         + TaskMeta / FeedMeta / EventMeta
+     │     └── Intent ∈ {answer, task, search, memory, feed, event, fuel}
+     │         + TaskMeta / FeedMeta / EventMeta / FuelMeta
      │
      ├── Memory Manager (ChromaDB + nomic-embed-text via Ollama)
      │     ├── store()             → embed + persist le memory_content
@@ -78,6 +84,10 @@ Bot Python (python-telegram-bot v21, async)
      │     ├── ICloudCalendarClient.connect()    → découverte des calendriers
      │     ├── create_event(calendar_name?)      → fuzzy match du calendrier cible
      │     └── list_between / list_today / list_upcoming
+     │
+     ├── Fuel (prix carburants open data)
+     │     ├── FuelClient         → data.economie.gouv.fr (ODS v2.1)
+     │     └── NominatimClient    → géocoding OSM (FR, cache mémoire)
      │
      └── Briefing Service (job cron APScheduler)
            ├── OpenMeteoClient (météo Sélestat)
@@ -103,6 +113,8 @@ Bot Python (python-telegram-bot v21, async)
 | Météo              | Open-Meteo (HTTP, pas de clé)                            |
 | Calendrier         | CalDAV via `caldav` + `vobject`                          |
 | Recherche web      | SearXNG (instance locale Docker)                         |
+| Prix carburants    | data.economie.gouv.fr (Opendatasoft v2.1, sans clé)      |
+| Géocoding          | Nominatim OSM (HTTP, sans clé, cache mémoire)            |
 | Config             | python-dotenv (.env validé par dataclass Settings)       |
 | Logs               | structlog (console en dev, JSON en prod)                 |
 | Conteneur          | Docker + Docker Compose                                  |
@@ -180,6 +192,11 @@ copain/
 │   │   ├── weather.py           # OpenMeteoClient + HourlyPrecipitation + codes FR
 │   │   └── service.py           # BriefingService (agrège + cron)
 │   │
+│   ├── fuel/
+│   │   ├── models.py            # FuelType + FuelStation + GeoPoint + synonymes FR
+│   │   ├── client.py            # FuelClient (data.economie.gouv.fr ODS v2.1)
+│   │   └── geocoding.py         # NominatimClient (OSM FR + cache mémoire)
+│   │
 │   └── proactivity/
 │       ├── models.py            # NotificationLog (partage Base tasks)
 │       ├── rules.py             # evaluate_rain + evaluate_upcoming_event (purs)
@@ -206,7 +223,9 @@ copain/
     ├── test_scheduler_interval.py
     ├── test_proactivity_models.py
     ├── test_proactivity_rules.py
-    └── test_proactivity_service.py
+    ├── test_proactivity_service.py
+    ├── test_fuel_client.py
+    └── test_nominatim.py
 ```
 
 ---
@@ -258,6 +277,12 @@ PROACTIVITY_DAILY_BUDGET=3
 PROACTIVITY_CHECK_INTERVAL_MIN=30
 PROACTIVITY_RAIN_COOLDOWN_HOURS=3
 
+# Prix carburants (data.economie.gouv.fr — sans clé API)
+FUEL_DEFAULT_RADIUS_KM=10              # rayon de recherche par défaut
+# User-Agent obligatoire selon la policy Nominatim :
+# https://operations.osmfoundation.org/policies/nominatim/
+NOMINATIM_USER_AGENT=copain-bot/1.0 (personal assistant)
+
 # Logs — fichier rotatif JSON persisté dans le volume Docker (5 Mo x 5 backups).
 # Mettre vide pour désactiver la persistance fichier (stdout reste actif).
 LOG_FILE_PATH=./data/logs/bot.log
@@ -278,7 +303,7 @@ bloc `<meta>` JSON qu'il DOIT inclure en fin de chaque réponse :
 
 ```json
 {
-  "intent": "answer|task|search|memory|feed|event",
+  "intent": "answer|task|search|memory|feed|event|fuel",
   "store_memory": true|false,
   "memory_content": "résumé factuel si store_memory=true, sinon null",
   "task": {
@@ -300,13 +325,18 @@ bloc `<meta>` JSON qu'il DOIT inclure en fin de chaque réponse :
     "range_str": "plage si action=list (ex: 'cette semaine'), sinon null",
     "calendar_name": "calendrier cible si précisé (fuzzy match), sinon null"
   },
+  "fuel": {
+    "fuel_type": "gazole|sp95|sp98|e10|e85|gplc si intent=fuel, sinon null",
+    "radius_km": "nombre si rayon mentionné (ex: 'dans 5 km'), sinon null",
+    "location": "ville ou lieu si précisé, sinon null (= autour de HOME_CITY)"
+  },
   "search_query": "requête si intent=search, sinon null"
 }
 ```
 
 Le prompt complet est dans `bot/llm/prompt.py` (`SYSTEM_PROMPT_TEMPLATE`). Il
-contient 6 exemples few-shot pour stabiliser le routing de gemma4 (feed et
-event, principalement). Deux règles critiques y sont inscrites :
+contient 8 exemples few-shot pour stabiliser le routing de gemma4 (feed,
+event, fuel). Deux règles critiques y sont inscrites :
 
 - **Distinction task vs event** : RDV/réunion/meeting AVEC une heure → `event`,
   sinon → `task`.
@@ -344,6 +374,8 @@ async def _process(user_text, chat_id, deps, images=None) -> str:
         text = await _handle_feed(...)   # add/list/remove/summarize
     elif meta["intent"] == "event" and meta["event"]["action"]:
         text = await _handle_event(...)  # create (iCloud) / list
+    elif meta["intent"] == "fuel" and meta["fuel"]["fuel_type"]:
+        text = await _handle_fuel(...)   # prix carburants + géocoding
 
     # 7. Historique glissant + retour
     deps.history.extend([f"user: {user_text}", f"assistant: {text}"])
