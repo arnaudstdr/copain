@@ -310,3 +310,39 @@ END:VCALENDAR"""
     end = datetime(2026, 4, 22, 23, 59, tzinfo=UTC)
     events = await client.list_between(start, end)
     assert [e.title for e in events] == ["First", "Second"]
+
+
+async def test_list_between_converts_utc_to_local_timezone(
+    client: ICloudCalendarClient,
+) -> None:
+    """iCloud sérialise souvent en UTC (`...Z`) : l'heure retournée doit être locale.
+
+    `DTSTART:20260422T100000Z` (UTC) doit s'afficher 12:00 en Europe/Paris CEST
+    (UTC+2 en avril), pas 10:00 comme avant le fix.
+    """
+    ical = """BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//Test//Test//EN
+BEGIN:VEVENT
+UID:evt-tz@copain
+SUMMARY:Vélo
+DTSTART:20260422T100000Z
+DTEND:20260422T120000Z
+END:VEVENT
+END:VCALENDAR"""
+    entry = MagicMock()
+    entry.data = ical
+    fake_cal = MagicMock()
+    fake_cal.name = "Personnel"
+    fake_cal.date_search = MagicMock(return_value=[entry])
+    client._calendar = fake_cal  # type: ignore[attr-defined]
+
+    events = await client.list_between(
+        datetime(2026, 4, 22, 0, 0, tzinfo=UTC),
+        datetime(2026, 4, 22, 23, 59, tzinfo=UTC),
+    )
+    assert len(events) == 1
+    # Europe/Paris en avril = CEST (UTC+2) : 10h UTC → 12h locale.
+    assert events[0].start.hour == 12
+    assert events[0].end.hour == 14
+    assert str(events[0].start.tzinfo) == "Europe/Paris"

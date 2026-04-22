@@ -365,9 +365,17 @@ def _parse_vevent(entry: Any, calendar_name: str, tz: ZoneInfo) -> CalendarEvent
 
 
 def _to_aware(value: Any, tz: ZoneInfo) -> datetime:
-    """Accepte datetime ou date, retourne datetime timezone-aware."""
+    """Accepte datetime ou date, retourne datetime timezone-aware dans `tz`.
+
+    iCloud sérialise souvent les VEVENT en UTC (`DTSTART:...Z`). vobject
+    renvoie alors un datetime aware en UTC, qui affichait l'heure UTC au
+    lieu de l'heure locale (décalage CEST = -2h visible côté briefing).
+    On convertit donc systématiquement vers la timezone locale demandée.
+    """
     if isinstance(value, datetime):
-        return value if value.tzinfo else value.replace(tzinfo=tz)
+        if value.tzinfo is None:
+            return value.replace(tzinfo=tz)
+        return value.astimezone(tz)
     return datetime.combine(value, time.min, tzinfo=tz)
 
 
