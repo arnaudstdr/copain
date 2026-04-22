@@ -152,6 +152,7 @@ async def _process(
         memory_context=memory_context,
         recent_history=list(deps.history),
         current_datetime=now_str,
+        home_city=deps.settings.home_city,
     )
 
     user_content = (

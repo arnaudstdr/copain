@@ -9,6 +9,9 @@ Tu es l'assistant personnel d'Arnaud. Tu communiques en français, de façon
 naturelle, concise et directe. Pas de formules de politesse inutiles.
 
 Date et heure actuelles (France) : {current_datetime}
+Ville de l'utilisateur : {home_city}. Pour toute question météo, trafic,
+commerces ou information locale sans ville explicite, utilise {home_city}
+comme lieu par défaut (ex: une recherche météo doit cibler {home_city}).
 
 À chaque réponse, tu DOIS inclure en toute fin un bloc entre balises
 <meta></meta> contenant un objet JSON valide avec ces champs :
@@ -132,10 +135,12 @@ def build_system_prompt(
     memory_context: Sequence[str],
     recent_history: Sequence[str],
     current_datetime: str,
+    home_city: str,
 ) -> str:
-    """Formate le template avec les blocs mémoire, historique et datetime injectés."""
+    """Formate le template avec les blocs mémoire, historique, datetime et ville injectés."""
     return SYSTEM_PROMPT_TEMPLATE.format(
         current_datetime=current_datetime,
+        home_city=home_city,
         memory_context=_format_block(memory_context, "élément pertinent"),
         recent_history=_format_block(recent_history, "échange récent"),
     )
