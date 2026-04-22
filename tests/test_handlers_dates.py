@@ -7,7 +7,8 @@ from bot.handlers import _normalize_fr_time_words, _parse_due
 
 def test_normalize_midi_and_minuit() -> None:
     assert _normalize_fr_time_words("demain midi") == "demain 12:00"
-    assert _normalize_fr_time_words("ce soir minuit") == "ce soir 00:00"
+    # "ce soir" est substitué à "aujourd'hui" (dateparser gère bien cette expression).
+    assert _normalize_fr_time_words("ce soir minuit") == "aujourd'hui 00:00"
     assert _normalize_fr_time_words("Midi pile") == "12:00 pile"
 
 
