@@ -92,6 +92,13 @@ def configure_logging(
     root.handlers = handlers
     root.setLevel(level)
 
+    # Mute le logger ChromaDB qui loggue en erreur à chaque event télémétrique
+    # alors que la télémétrie est désactivée (anonymized_telemetry=False).
+    # Bug connu : chromadb 0.6.x incompatible avec posthog >= 7 (nouvelle
+    # signature de `capture()`). Les logs d'erreur n'apportent rien et
+    # polluent le fichier rotatif.
+    logging.getLogger("chromadb.telemetry.product.posthog").setLevel(logging.CRITICAL)
+
     if log_file_path is not None:
         structlog.get_logger(__name__).info(
             "logging_configured",
