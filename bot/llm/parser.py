@@ -10,7 +10,7 @@ META_PATTERN = re.compile(r"<meta>\s*(\{.*?\})\s*</meta>", re.DOTALL)
 
 # Source unique de vérité : le frozenset est dérivé du Literal via get_args().
 # Ajouter un nouvel intent/action ne requiert de modifier qu'un seul endroit.
-Intent = Literal["answer", "task", "search", "memory", "feed", "event"]
+Intent = Literal["answer", "task", "search", "memory", "feed", "event", "fuel"]
 VALID_INTENTS: frozenset[str] = frozenset(get_args(Intent))
 
 FeedAction = Literal["add", "list", "remove", "summarize"]
@@ -42,6 +42,12 @@ class EventMeta(TypedDict):
     calendar_name: str | None
 
 
+class FuelMeta(TypedDict):
+    fuel_type: str | None
+    radius_km: float | None
+    location: str | None
+
+
 class Meta(TypedDict):
     intent: Intent
     store_memory: bool
@@ -49,6 +55,7 @@ class Meta(TypedDict):
     task: TaskMeta
     feed: FeedMeta
     event: EventMeta
+    fuel: FuelMeta
     search_query: str | None
 
 
@@ -139,6 +146,19 @@ def _validate(data: Any) -> Meta:
         "calendar_name": _opt_str(event_raw.get("calendar_name"), "event.calendar_name"),
     }
 
+    fuel_raw = data.get("fuel") or {
+        "fuel_type": None,
+        "radius_km": None,
+        "location": None,
+    }
+    if not isinstance(fuel_raw, dict):
+        raise MetaParseError("fuel doit être un objet ou null")
+    fuel: FuelMeta = {
+        "fuel_type": _opt_str(fuel_raw.get("fuel_type"), "fuel.fuel_type"),
+        "radius_km": _opt_float(fuel_raw.get("radius_km"), "fuel.radius_km"),
+        "location": _opt_str(fuel_raw.get("location"), "fuel.location"),
+    }
+
     search_query = _opt_str(data.get("search_query"), "search_query")
 
     return Meta(
@@ -148,6 +168,7 @@ def _validate(data: Any) -> Meta:
         task=task,
         feed=feed,
         event=event,
+        fuel=fuel,
         search_query=search_query,
     )
 
@@ -158,3 +179,19 @@ def _opt_str(value: Any, field: str) -> str | None:
     if not isinstance(value, str):
         raise MetaParseError(f"{field} doit être une chaîne ou null")
     return value
+
+
+def _opt_float(value: Any, field: str) -> float | None:
+    """Accepte int, float, ou str numérique. `True`/`False` rejetés (bool is int)."""
+    if value is None:
+        return None
+    if isinstance(value, bool):
+        raise MetaParseError(f"{field} doit être un nombre ou null")
+    if isinstance(value, (int, float)):
+        return float(value)
+    if isinstance(value, str):
+        try:
+            return float(value)
+        except ValueError as exc:
+            raise MetaParseError(f"{field} doit être un nombre ou null") from exc
+    raise MetaParseError(f"{field} doit être un nombre ou null")

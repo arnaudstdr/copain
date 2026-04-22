@@ -13,6 +13,9 @@ from zoneinfo import ZoneInfo
 import dateparser
 
 from bot.calendar.client import ICloudCalendarError
+from bot.fuel.client import FuelError
+from bot.fuel.geocoding import NominatimError
+from bot.fuel.models import FUEL_LABELS, GeoPoint, normalize_fuel_type
 from bot.llm.client import LLMTimeoutError
 from bot.llm.parser import Meta, MetaParseError, extract_meta
 from bot.llm.prompt import build_system_prompt
@@ -28,6 +31,9 @@ if TYPE_CHECKING:
     from bot.briefing.service import BriefingService
     from bot.calendar.client import ICloudCalendarClient
     from bot.config import Settings
+    from bot.fuel.client import FuelClient
+    from bot.fuel.geocoding import NominatimClient
+    from bot.fuel.models import FuelStation
     from bot.llm.client import LLMClient
     from bot.memory.manager import MemoryManager
     from bot.rss.fetcher import FeedItem, RssFetcher
@@ -59,6 +65,8 @@ class BotDeps:
     rss_fetcher: RssFetcher
     briefing: BriefingService
     calendar: ICloudCalendarClient
+    fuel: FuelClient
+    geocoder: NominatimClient
     history: deque[str]
 
 
@@ -178,6 +186,9 @@ async def _process(
 
     elif meta["intent"] == "event" and meta["event"]["action"]:
         text = await _handle_event(meta, deps, intro=text)
+
+    elif meta["intent"] == "fuel" and meta["fuel"]["fuel_type"]:
+        text = await _handle_fuel(meta, deps, intro=text)
 
     history_user = user_text if user_text else "(image envoyée)"
     if images:
@@ -360,6 +371,113 @@ async def _handle_event(meta: Meta, deps: BotDeps, intro: str) -> str:
         return f"{header}\n" + "\n".join(lines)
 
     return intro
+
+
+async def _handle_fuel(meta: Meta, deps: BotDeps, intro: str) -> str:
+    raw_type = meta["fuel"]["fuel_type"]
+    fuel_type = normalize_fuel_type(raw_type)
+    if fuel_type is None:
+        return (
+            f"Je ne reconnais pas le carburant « {raw_type} ». "
+            "Essaie : gazole, SP95, SP98, E10, E85 ou GPLc."
+        )
+
+    location_query = meta["fuel"]["location"]
+    radius_km = meta["fuel"]["radius_km"] or deps.settings.fuel_default_radius_km
+    log.info(
+        "fuel_action",
+        fuel_type=fuel_type,
+        radius_km=radius_km,
+        location=location_query,
+    )
+
+    if location_query:
+        try:
+            geocoded = await deps.geocoder.geocode_fr(location_query)
+        except NominatimError:
+            log.exception("geocode_failed")
+            return "Désolé, impossible de localiser ce lieu pour l'instant."
+        if geocoded is None:
+            return f"Je n'ai pas trouvé « {location_query} » sur la carte."
+        center = geocoded
+        place_label = location_query
+    else:
+        center = GeoPoint(lat=deps.settings.home_lat, lon=deps.settings.home_lon)
+        place_label = deps.settings.home_city
+
+    try:
+        stations = await deps.fuel.find_cheapest(
+            fuel_type=fuel_type,
+            center=center,
+            radius_km=radius_km,
+            limit=5,
+        )
+    except FuelError:
+        log.exception("fuel_fetch_failed")
+        return "Désolé, impossible de récupérer les prix des carburants pour l'instant."
+
+    if not stations:
+        return (
+            f"Aucune station trouvée pour le {FUEL_LABELS[fuel_type]} "
+            f"dans un rayon de {_format_km(radius_km)} autour de {place_label}."
+        )
+
+    tz = ZoneInfo(deps.settings.timezone)
+    header = (
+        f"⛽ Top {len(stations)} {FUEL_LABELS[fuel_type]} "
+        f"(rayon {_format_km(radius_km)} autour de {place_label})"
+    )
+    lines = [_format_station(i, s) for i, s in enumerate(stations, start=1)]
+    freshness = _format_freshness(stations, tz)
+    body = f"{header}\n" + "\n".join(lines)
+    return body + (f"\n{freshness}" if freshness else "")
+
+
+def _format_station(rank: int, station: FuelStation) -> str:
+    location_parts = [part for part in (station.address, station.postal_code, station.city) if part]
+    location = ", ".join(location_parts) if location_parts else "adresse inconnue"
+    return f"{rank}. {station.price_eur:.3f} € — {location} ({station.distance_km:.1f} km)"
+
+
+def _format_km(km: float) -> str:
+    """Formate un rayon en km : entier si c'en est un, sinon 1 décimale."""
+    if float(km).is_integer():
+        return f"{int(km)} km"
+    return f"{km:.1f} km"
+
+
+def _format_freshness(stations: Sequence[FuelStation], tz: ZoneInfo) -> str | None:
+    """Retourne une ligne « Prix mis à jour il y a … » basée sur la station la plus fraîche."""
+    now = datetime.now(tz)
+    ages: list[timedelta] = []
+    for s in stations:
+        if s.updated_at is None:
+            continue
+        updated = (
+            s.updated_at if s.updated_at.tzinfo is not None else s.updated_at.replace(tzinfo=tz)
+        )
+        delta = now - updated
+        if delta.total_seconds() >= 0:
+            ages.append(delta)
+    if not ages:
+        return None
+    freshest = min(ages)
+    return f"(Prix mis à jour {_humanize_age(freshest)})"
+
+
+def _humanize_age(delta: timedelta) -> str:
+    """Ex: 'il y a 2h', 'il y a 15 min', 'il y a 3 jours'."""
+    total_seconds = int(delta.total_seconds())
+    if total_seconds < 60:
+        return "à l'instant"
+    minutes = total_seconds // 60
+    if minutes < 60:
+        return f"il y a {minutes} min"
+    hours = minutes // 60
+    if hours < 24:
+        return f"il y a {hours}h"
+    days = hours // 24
+    return f"il y a {days} j"
 
 
 def _parse_range(range_str: str | None, tz: ZoneInfo) -> tuple[datetime, datetime]:

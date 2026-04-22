@@ -19,6 +19,8 @@ from bot.briefing.weather import OpenMeteoClient
 from bot.calendar.client import ICloudCalendarClient, ICloudCalendarError
 from bot.config import load_settings
 from bot.db import create_shared_engine, enable_wal_mode
+from bot.fuel.client import FuelClient
+from bot.fuel.geocoding import NominatimClient
 from bot.handlers import MAX_HISTORY, BotDeps, make_handler, make_photo_handler
 from bot.llm.client import LLMClient
 from bot.logging_conf import configure_logging, get_logger
@@ -79,6 +81,8 @@ def main() -> None:
         calendar_name=settings.icloud_calendar_name,
         timezone=settings.timezone,
     )
+    fuel = FuelClient()
+    geocoder = NominatimClient(user_agent=settings.nominatim_user_agent)
     proactivity = ProactivityService(
         settings=settings,
         weather=weather,
@@ -106,6 +110,8 @@ def main() -> None:
             calendar=calendar,
         ),
         calendar=calendar,
+        fuel=fuel,
+        geocoder=geocoder,
         history=deque(maxlen=MAX_HISTORY),
     )
 
@@ -168,6 +174,8 @@ def main() -> None:
         deps.scheduler.shutdown()
         await deps.search.aclose()
         await weather.aclose()
+        await deps.fuel.aclose()
+        await deps.geocoder.aclose()
         await engine.dispose()
         log.info("post_shutdown_done")
 

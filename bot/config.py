@@ -53,6 +53,9 @@ class Settings:
     proactivity_check_interval_min: int
     proactivity_rain_cooldown_hours: int
 
+    fuel_default_radius_km: float
+    nominatim_user_agent: str
+
     log_file_path: Path | None
 
     env: str
@@ -161,6 +164,11 @@ def load_settings() -> Settings:
         proactivity_daily_budget=_env_int("PROACTIVITY_DAILY_BUDGET", 3),
         proactivity_check_interval_min=_env_int("PROACTIVITY_CHECK_INTERVAL_MIN", 30),
         proactivity_rain_cooldown_hours=_env_int("PROACTIVITY_RAIN_COOLDOWN_HOURS", 3),
+        fuel_default_radius_km=_env_float("FUEL_DEFAULT_RADIUS_KM", 10.0),
+        nominatim_user_agent=os.getenv(
+            "NOMINATIM_USER_AGENT",
+            "copain-bot/1.0 (personal assistant)",
+        ),
         log_file_path=_parse_log_file_path(data_dir),
         env=os.getenv("ENV", "dev"),
     )

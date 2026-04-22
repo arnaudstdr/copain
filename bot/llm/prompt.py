@@ -18,7 +18,7 @@ comme lieu par défaut (ex: une recherche météo doit cibler {home_city}).
 
 <meta>
 {{
-  "intent": "answer|task|search|memory|feed|event",
+  "intent": "answer|task|search|memory|feed|event|fuel",
   "store_memory": true|false,
   "memory_content": "résumé factuel en une phrase si store_memory est true, sinon null",
   "task": {{
@@ -39,6 +39,11 @@ comme lieu par défaut (ex: une recherche météo doit cibler {home_city}).
     "description": "note/description si mentionnée, sinon null",
     "range_str": "plage temporelle si action=list (ex: 'cette semaine', 'demain'), sinon null",
     "calendar_name": "nom du calendrier cible si l'utilisateur le précise (ex: 'sport', 'pro', 'anne'), sinon null (calendrier par défaut)"
+  }},
+  "fuel": {{
+    "fuel_type": "gazole|sp95|sp98|e10|e85|gplc si intent=fuel, sinon null",
+    "radius_km": "nombre (rayon en km) si précisé par l'utilisateur (ex: 'dans 5 km'), sinon null",
+    "location": "ville ou lieu si précisé (ex: 'Strasbourg'), sinon null (= autour de chez l'utilisateur)"
   }},
   "search_query": "requête de recherche si intent=search, sinon null"
 }}
@@ -65,6 +70,13 @@ Règles pour intent :
              temporelle telle que donnée par l'utilisateur, y compris les mots comme
              "midi" et "minuit" qui sont reconnus côté code. N'essaie PAS de
              réinterpréter "midi" en "12h" — laisse le mot tel quel.
+- "fuel"   → l'utilisateur demande le prix d'un carburant (gazole/diesel, SP95,
+             SP98, E10, E85, GPLc) autour d'un lieu ou "près de chez moi".
+             fuel_type doit être normalisé en minuscules sans espaces parmi
+             gazole/sp95/sp98/e10/e85/gplc (ex: "diesel" → "gazole",
+             "98" → "sp98"). radius_km extrait seulement si l'utilisateur
+             mentionne un rayon ("dans 5 km", "à 10 km autour"), sinon null.
+             location = ville/lieu explicite, sinon null (= autour de chez moi).
 - "answer" → tout le reste, réponse directe
 
 Si l'utilisateur envoie une image (avec ou sans légende), analyse-la visuellement :
@@ -116,6 +128,20 @@ Utilisateur : « ajoute demain midi vélo pendant 2h dans le calendrier sport »
 Réponse attendue :
 OK, j'ajoute la séance.
 <meta>{{"intent":"event","store_memory":false,"memory_content":null,"task":{{"content":null,"due_str":null}},"feed":{{"action":null,"name":null,"url":null}},"event":{{"action":"create","title":"Vélo","start_str":"demain 12h","end_str":"demain 14h","location":null,"description":null,"range_str":null,"calendar_name":"sport"}},"search_query":null}}</meta>
+
+Exemples pour intent=fuel :
+
+Exemple 7 :
+Utilisateur : « où trouver du gazole pas cher ? »
+Réponse attendue :
+Je regarde autour de chez toi.
+<meta>{{"intent":"fuel","store_memory":false,"memory_content":null,"task":{{"content":null,"due_str":null}},"feed":{{"action":null,"name":null,"url":null}},"event":{{"action":null,"title":null,"start_str":null,"end_str":null,"location":null,"description":null,"range_str":null,"calendar_name":null}},"fuel":{{"fuel_type":"gazole","radius_km":null,"location":null}},"search_query":null}}</meta>
+
+Exemple 8 :
+Utilisateur : « SP98 dans 5 km à Colmar »
+Réponse attendue :
+OK, je cherche à Colmar.
+<meta>{{"intent":"fuel","store_memory":false,"memory_content":null,"task":{{"content":null,"due_str":null}},"feed":{{"action":null,"name":null,"url":null}},"event":{{"action":null,"title":null,"start_str":null,"end_str":null,"location":null,"description":null,"range_str":null,"calendar_name":null}},"fuel":{{"fuel_type":"sp98","radius_km":5,"location":"Colmar"}},"search_query":null}}</meta>
 
 --- Contexte mémoire (notes et conversations passées pertinentes) ---
 {memory_context}
