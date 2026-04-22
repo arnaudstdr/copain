@@ -238,3 +238,49 @@ def test_extract_meta_fuel_radius_invalid_raises() -> None:
 "search_query": null}</meta>"""
     with pytest.raises(MetaParseError, match=r"fuel\.radius_km"):
         extract_meta(raw)
+
+
+def test_extract_meta_weather_full() -> None:
+    raw = """\
+Je regarde.
+<meta>
+{
+  "intent": "weather",
+  "store_memory": false,
+  "memory_content": null,
+  "task": {"content": null, "due_str": null},
+  "feed": {"action": null, "name": null, "url": null},
+  "event": {"action": null, "title": null, "start_str": null, "end_str": null,
+            "location": null, "description": null, "range_str": null},
+  "fuel": {"fuel_type": null, "radius_km": null, "location": null},
+  "weather": {"location": "Strasbourg", "when": "ce weekend"},
+  "search_query": null
+}
+</meta>"""
+    text, meta = extract_meta(raw)
+    assert text.strip() == "Je regarde."
+    assert meta["intent"] == "weather"
+    assert meta["weather"]["location"] == "Strasbourg"
+    assert meta["weather"]["when"] == "ce weekend"
+
+
+def test_extract_meta_weather_optional_in_old_format() -> None:
+    """Rétrocompat : si le LLM oublie weather, défauts à None."""
+    raw = """<meta>{"intent": "answer", "store_memory": false, "memory_content": null,
+"task": {"content": null, "due_str": null},
+"feed": {"action": null, "name": null, "url": null},
+"search_query": null}</meta>"""
+    _, meta = extract_meta(raw)
+    assert meta["weather"]["location"] is None
+    assert meta["weather"]["when"] is None
+
+
+def test_extract_meta_weather_location_wrong_type_raises() -> None:
+    raw = """<meta>{"intent": "weather", "store_memory": false, "memory_content": null,
+"task": {"content": null, "due_str": null},
+"feed": {"action": null, "name": null, "url": null},
+"fuel": {"fuel_type": null, "radius_km": null, "location": null},
+"weather": {"location": 123, "when": null},
+"search_query": null}</meta>"""
+    with pytest.raises(MetaParseError, match=r"weather\.location"):
+        extract_meta(raw)

@@ -34,6 +34,8 @@ def _meta_block(
     fuel_type: str | None = None,
     fuel_radius_km: float | None = None,
     fuel_location: str | None = None,
+    weather_location: str | None = None,
+    weather_when: str | None = None,
     search_query: str | None = None,
 ) -> str:
     """Construit une réponse LLM factice avec bloc <meta> valide."""
@@ -59,6 +61,10 @@ def _meta_block(
             "fuel_type": fuel_type,
             "radius_km": fuel_radius_km,
             "location": fuel_location,
+        },
+        "weather": {
+            "location": weather_location,
+            "when": weather_when,
         },
         "search_query": search_query,
     }
@@ -102,6 +108,8 @@ def deps() -> BotDeps:
     fuel.find_cheapest = AsyncMock(return_value=[])
     geocoder = MagicMock()
     geocoder.geocode_fr = AsyncMock(return_value=None)
+    weather = MagicMock()
+    weather.get_forecast = AsyncMock(return_value=[])
 
     return BotDeps(
         settings=settings,
@@ -116,6 +124,7 @@ def deps() -> BotDeps:
         calendar=calendar,
         fuel=fuel,
         geocoder=geocoder,
+        weather=weather,
         history=deque(maxlen=6),
     )
 
@@ -346,3 +355,131 @@ async def test_process_fuel_location_not_found_returns_message(
     text = await _process("gazole à Atlantide", chat_id=42, deps=deps)
     assert "Atlantide" in text
     deps.fuel.find_cheapest.assert_not_called()
+
+
+async def test_process_weather_intent_home_default(deps: BotDeps) -> None:
+    """Sans location → HOME_LAT/HOME_LON ; sans when → aujourd'hui (1 jour)."""
+    from datetime import date
+
+    from bot.briefing.weather import DailyWeather
+
+    day = DailyWeather(
+        city="Sélestat",
+        date=date.today(),
+        temp_min=10.0,
+        temp_max=20.0,
+        precipitation_mm=0.0,
+        wind_kmh_max=12.0,
+        description="ciel dégagé",
+        temp_current=15.0,
+    )
+    deps.weather.get_forecast = AsyncMock(return_value=[day])
+    deps.llm.call = AsyncMock(return_value=_meta_block(intent="weather"))
+
+    text = await _process("quel temps fait-il ?", chat_id=42, deps=deps)
+
+    deps.geocoder.geocode_fr.assert_not_called()
+    deps.weather.get_forecast.assert_awaited_once()
+    call_kwargs = deps.weather.get_forecast.await_args.kwargs
+    assert call_kwargs["lat"] == 48.26
+    assert call_kwargs["lon"] == 7.45
+    assert call_kwargs["city"] == "Sélestat"
+    assert call_kwargs["days"] == 1
+    assert "Sélestat" in text
+    assert "aujourd'hui" in text
+    assert "15°C" in text
+    assert "ciel dégagé".capitalize() in text
+
+
+async def test_process_weather_intent_with_location_calls_geocoder(
+    deps: BotDeps,
+) -> None:
+    """Avec location → appel Nominatim + coordonnées utilisées."""
+    from datetime import date
+
+    from bot.briefing.weather import DailyWeather
+    from bot.fuel.models import GeoPoint
+
+    deps.geocoder.geocode_fr = AsyncMock(return_value=GeoPoint(lat=48.58, lon=7.75))
+    deps.weather.get_forecast = AsyncMock(
+        return_value=[
+            DailyWeather(
+                city="Strasbourg",
+                date=date.today(),
+                temp_min=8.0,
+                temp_max=18.0,
+                precipitation_mm=2.0,
+                wind_kmh_max=20.0,
+                description="pluie faible",
+                temp_current=12.0,
+            )
+        ]
+    )
+    deps.llm.call = AsyncMock(
+        return_value=_meta_block(intent="weather", weather_location="Strasbourg")
+    )
+
+    text = await _process("météo à Strasbourg ?", chat_id=42, deps=deps)
+
+    deps.geocoder.geocode_fr.assert_awaited_once_with("Strasbourg")
+    call_kwargs = deps.weather.get_forecast.await_args.kwargs
+    assert call_kwargs["lat"] == pytest.approx(48.58)
+    assert call_kwargs["lon"] == pytest.approx(7.75)
+    assert "Strasbourg" in text
+
+
+async def test_process_weather_demain_requests_two_days_returns_single(
+    deps: BotDeps,
+) -> None:
+    """'demain' → days=2 (jour 0 + jour 1), on retourne juste le jour 1."""
+    from datetime import date, timedelta
+
+    from bot.briefing.weather import DailyWeather
+
+    today = date.today()
+    tomorrow = today + timedelta(days=1)
+    forecast = [
+        DailyWeather(
+            city="Sélestat",
+            date=today,
+            temp_min=10.0,
+            temp_max=20.0,
+            precipitation_mm=0.0,
+            wind_kmh_max=12.0,
+            description="ciel dégagé",
+            temp_current=15.0,
+        ),
+        DailyWeather(
+            city="Sélestat",
+            date=tomorrow,
+            temp_min=12.0,
+            temp_max=22.0,
+            precipitation_mm=5.0,
+            wind_kmh_max=18.0,
+            description="averses faibles",
+            temp_current=None,
+        ),
+    ]
+    deps.weather.get_forecast = AsyncMock(return_value=forecast)
+    deps.llm.call = AsyncMock(
+        return_value=_meta_block(intent="weather", weather_when="demain")
+    )
+
+    text = await _process("quel temps demain ?", chat_id=42, deps=deps)
+
+    call_kwargs = deps.weather.get_forecast.await_args.kwargs
+    assert call_kwargs["days"] == 2
+    assert "demain" in text
+    # Pas de "maintenant" pour un jour futur (temp_current=None).
+    assert "maintenant" not in text
+    assert "Averses faibles" in text
+
+
+async def test_process_weather_location_not_found(deps: BotDeps) -> None:
+    deps.geocoder.geocode_fr = AsyncMock(return_value=None)
+    deps.llm.call = AsyncMock(
+        return_value=_meta_block(intent="weather", weather_location="Atlantide")
+    )
+    text = await _process("météo à Atlantide", chat_id=42, deps=deps)
+    assert "Atlantide" in text
+    deps.weather.get_forecast.assert_not_called()

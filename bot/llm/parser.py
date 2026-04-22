@@ -10,7 +10,7 @@ META_PATTERN = re.compile(r"<meta>\s*(\{.*?\})\s*</meta>", re.DOTALL)
 
 # Source unique de vérité : le frozenset est dérivé du Literal via get_args().
 # Ajouter un nouvel intent/action ne requiert de modifier qu'un seul endroit.
-Intent = Literal["answer", "task", "search", "memory", "feed", "event", "fuel"]
+Intent = Literal["answer", "task", "search", "memory", "feed", "event", "fuel", "weather"]
 VALID_INTENTS: frozenset[str] = frozenset(get_args(Intent))
 
 FeedAction = Literal["add", "list", "remove", "summarize"]
@@ -48,6 +48,11 @@ class FuelMeta(TypedDict):
     location: str | None
 
 
+class WeatherMeta(TypedDict):
+    location: str | None
+    when: str | None
+
+
 class Meta(TypedDict):
     intent: Intent
     store_memory: bool
@@ -56,6 +61,7 @@ class Meta(TypedDict):
     feed: FeedMeta
     event: EventMeta
     fuel: FuelMeta
+    weather: WeatherMeta
     search_query: str | None
 
 
@@ -159,6 +165,14 @@ def _validate(data: Any) -> Meta:
         "location": _opt_str(fuel_raw.get("location"), "fuel.location"),
     }
 
+    weather_raw = data.get("weather") or {"location": None, "when": None}
+    if not isinstance(weather_raw, dict):
+        raise MetaParseError("weather doit être un objet ou null")
+    weather: WeatherMeta = {
+        "location": _opt_str(weather_raw.get("location"), "weather.location"),
+        "when": _opt_str(weather_raw.get("when"), "weather.when"),
+    }
+
     search_query = _opt_str(data.get("search_query"), "search_query")
 
     return Meta(
@@ -169,6 +183,7 @@ def _validate(data: Any) -> Meta:
         feed=feed,
         event=event,
         fuel=fuel,
+        weather=weather,
         search_query=search_query,
     )
 

@@ -25,6 +25,12 @@ LLM principal en cloud).
   triées par prix dans un rayon de 10 km autour de `HOME_CITY`. Support des
   lieux nommés via géocoding OSM Nominatim (« SP98 à Colmar dans 5 km »).
   Synonymes FR mappés (diesel → gazole, 98 → sp98, etc.).
+- **Météo** : via Open-Meteo (pas de clé requise), source dédiée pour éviter
+  le fallback SearXNG. Demander « quel temps fait-il ? » → aujourd'hui à
+  `HOME_CITY` ; « météo à Strasbourg ce weekend » → prévisions multi-jours
+  pour un lieu géocodé via Nominatim. Expressions FR gérées : `aujourd'hui`,
+  `demain`, `après-demain`, `ce weekend`, `cette semaine`, `dans N jours`,
+  fallback `dateparser` pour le reste. Limite 16 jours (Open-Meteo).
 - **Proactivité opt-in** : un job APScheduler tick toutes les N min (défaut 30) et
   peut pousser au plus **une** notif par tick. Deux règles en v1 — alerte pluie
   dans l'heure (Open-Meteo horaire) et rappel RDV ~1 h avant (calendrier iCloud).
@@ -60,8 +66,8 @@ Bot Python (python-telegram-bot v21, async)
      │     └── chat(messages)              → appel bas niveau
      │
      ├── Parser <meta>
-     │     └── Intent ∈ {answer, task, search, memory, feed, event, fuel}
-     │         + TaskMeta / FeedMeta / EventMeta / FuelMeta
+     │     └── Intent ∈ {answer, task, search, memory, feed, event, fuel, weather}
+     │         + TaskMeta / FeedMeta / EventMeta / FuelMeta / WeatherMeta
      │
      ├── Memory Manager (ChromaDB + nomic-embed-text via Ollama)
      │     ├── store()             → embed + persist le memory_content
@@ -303,7 +309,7 @@ bloc `<meta>` JSON qu'il DOIT inclure en fin de chaque réponse :
 
 ```json
 {
-  "intent": "answer|task|search|memory|feed|event|fuel",
+  "intent": "answer|task|search|memory|feed|event|fuel|weather",
   "store_memory": true|false,
   "memory_content": "résumé factuel si store_memory=true, sinon null",
   "task": {
@@ -329,6 +335,10 @@ bloc `<meta>` JSON qu'il DOIT inclure en fin de chaque réponse :
     "fuel_type": "gazole|sp95|sp98|e10|e85|gplc si intent=fuel, sinon null",
     "radius_km": "nombre si rayon mentionné (ex: 'dans 5 km'), sinon null",
     "location": "ville ou lieu si précisé, sinon null (= autour de HOME_CITY)"
+  },
+  "weather": {
+    "location": "ville ou lieu si précisé, sinon null (= HOME_CITY)",
+    "when": "expression FR si précisée (ex: 'demain', 'ce weekend'), sinon null (= aujourd'hui)"
   },
   "search_query": "requête si intent=search, sinon null"
 }
@@ -376,6 +386,8 @@ async def _process(user_text, chat_id, deps, images=None) -> str:
         text = await _handle_event(...)  # create (iCloud) / list
     elif meta["intent"] == "fuel" and meta["fuel"]["fuel_type"]:
         text = await _handle_fuel(...)   # prix carburants + géocoding
+    elif meta["intent"] == "weather":
+        text = await _handle_weather(...) # Open-Meteo + géocoding + plage de jours
 
     # 7. Historique glissant + retour
     deps.history.extend([f"user: {user_text}", f"assistant: {text}"])

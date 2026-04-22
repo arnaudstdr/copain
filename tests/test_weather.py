@@ -6,7 +6,7 @@ from datetime import datetime, timedelta
 from unittest.mock import AsyncMock, MagicMock
 from zoneinfo import ZoneInfo
 
-from bot.briefing.weather import HourlyPrecipitation, OpenMeteoClient
+from bot.briefing.weather import DailyWeather, HourlyPrecipitation, OpenMeteoClient
 
 
 def _fmt(dt: datetime) -> str:
@@ -63,3 +63,36 @@ async def test_get_hourly_precipitation_empty_payload_returns_empty_list() -> No
 
     result = await client.get_hourly_precipitation(lat=0.0, lon=0.0)
     assert result == []
+
+
+async def test_get_forecast_returns_daily_list_with_current_temp_on_day0() -> None:
+    payload = {
+        "current": {"temperature_2m": 15.3},
+        "daily": {
+            "time": ["2026-04-22", "2026-04-23", "2026-04-24"],
+            "temperature_2m_min": [8.0, 9.5, 10.0],
+            "temperature_2m_max": [18.0, 20.0, 22.0],
+            "precipitation_sum": [0.0, 2.5, 0.0],
+            "weather_code": [1, 61, 3],
+            "wind_speed_10m_max": [12.0, 18.0, 10.0],
+        },
+    }
+    response = MagicMock()
+    response.json.return_value = payload
+    response.raise_for_status = MagicMock()
+
+    client = OpenMeteoClient(timezone="Europe/Paris")
+    client._client = AsyncMock()
+    client._client.get = AsyncMock(return_value=response)
+
+    result = await client.get_forecast(lat=48.26, lon=7.45, city="Sélestat", days=3)
+
+    assert len(result) == 3
+    assert all(isinstance(d, DailyWeather) for d in result)
+    assert result[0].city == "Sélestat"
+    assert result[0].temp_current == 15.3
+    assert result[0].description == "plutôt dégagé"
+    assert result[1].temp_current is None
+    assert result[1].description == "pluie faible"
+    assert result[1].precipitation_mm == 2.5
+    assert result[2].wind_kmh_max == 10.0

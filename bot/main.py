@@ -112,6 +112,7 @@ def main() -> None:
         calendar=calendar,
         fuel=fuel,
         geocoder=geocoder,
+        weather=weather,
         history=deque(maxlen=MAX_HISTORY),
     )
 

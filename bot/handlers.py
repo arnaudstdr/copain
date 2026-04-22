@@ -6,12 +6,13 @@ import re
 from collections import deque
 from collections.abc import Callable, Coroutine, Sequence
 from dataclasses import dataclass
-from datetime import datetime, time, timedelta
+from datetime import date, datetime, time, timedelta
 from typing import TYPE_CHECKING, Any
 from zoneinfo import ZoneInfo
 
 import dateparser
 
+from bot.briefing.weather import WeatherError
 from bot.calendar.client import ICloudCalendarError
 from bot.fuel.client import FuelError
 from bot.fuel.geocoding import NominatimError
@@ -29,6 +30,7 @@ if TYPE_CHECKING:
     from telegram.ext import ContextTypes
 
     from bot.briefing.service import BriefingService
+    from bot.briefing.weather import DailyWeather, OpenMeteoClient
     from bot.calendar.client import ICloudCalendarClient
     from bot.config import Settings
     from bot.fuel.client import FuelClient
@@ -67,6 +69,7 @@ class BotDeps:
     calendar: ICloudCalendarClient
     fuel: FuelClient
     geocoder: NominatimClient
+    weather: OpenMeteoClient
     history: deque[str]
 
 
@@ -189,6 +192,9 @@ async def _process(
 
     elif meta["intent"] == "fuel" and meta["fuel"]["fuel_type"]:
         text = await _handle_fuel(meta, deps, intro=text)
+
+    elif meta["intent"] == "weather":
+        text = await _handle_weather(meta, deps, intro=text)
 
     history_user = user_text if user_text else "(image envoyée)"
     if images:
@@ -431,6 +437,139 @@ async def _handle_fuel(meta: Meta, deps: BotDeps, intro: str) -> str:
     freshness = _format_freshness(stations, tz)
     body = f"{header}\n" + "\n".join(lines)
     return body + (f"\n{freshness}" if freshness else "")
+
+
+async def _handle_weather(meta: Meta, deps: BotDeps, intro: str) -> str:
+    location_query = meta["weather"]["location"]
+    when_str = meta["weather"]["when"]
+    log.info("weather_action", location=location_query, when=when_str)
+
+    if location_query:
+        try:
+            geocoded = await deps.geocoder.geocode_fr(location_query)
+        except NominatimError:
+            log.exception("weather_geocode_failed")
+            return "Désolé, impossible de localiser ce lieu pour l'instant."
+        if geocoded is None:
+            return f"Je n'ai pas trouvé « {location_query} » sur la carte."
+        lat, lon, label = geocoded.lat, geocoded.lon, location_query
+    else:
+        lat = deps.settings.home_lat
+        lon = deps.settings.home_lon
+        label = deps.settings.home_city
+
+    tz = ZoneInfo(deps.settings.timezone)
+    start_offset, end_offset = _parse_weather_range(when_str, tz)
+    # +1 pour inclure la borne haute, plafond à 16 (limite Open-Meteo).
+    days_needed = min(end_offset + 1, 16)
+
+    try:
+        forecast = await deps.weather.get_forecast(
+            lat=lat, lon=lon, city=label, days=days_needed
+        )
+    except WeatherError:
+        log.exception("weather_fetch_failed")
+        return "Désolé, impossible de récupérer la météo pour l'instant."
+
+    if not forecast:
+        return f"Aucune prévision disponible pour {label}."
+
+    selected = forecast[start_offset : end_offset + 1]
+    if not selected:
+        return f"Aucune prévision disponible pour la période demandée à {label}."
+
+    period_label = _weather_period_label(when_str)
+    if len(selected) == 1:
+        return _format_weather_single(selected[0], label, period_label)
+    return _format_weather_multi(selected, label, period_label)
+
+
+def _format_weather_single(day: DailyWeather, place: str, period: str) -> str:
+    header = f"🌤 *Météo — {place}* ({period})"
+    current_line = (
+        f"{day.description.capitalize()}, {day.temp_current:.0f}°C maintenant"
+        if day.temp_current is not None
+        else f"{day.description.capitalize()}"
+    )
+    details = (
+        f"min {day.temp_min:.0f}°C / max {day.temp_max:.0f}°C — "
+        f"Précipitations : {day.precipitation_mm:.0f} mm — "
+        f"Vent max : {day.wind_kmh_max:.0f} km/h"
+    )
+    return f"{header}\n{current_line}\n{details}"
+
+
+def _format_weather_multi(days: Sequence[DailyWeather], place: str, period: str) -> str:
+    header = f"🌤 *Météo — {place}* ({period})"
+    lines = [
+        f"- {_fr_day_label(d.date)} : {d.description}, "
+        f"{d.temp_min:.0f}-{d.temp_max:.0f}°C, "
+        f"{d.precipitation_mm:.0f} mm, vent {d.wind_kmh_max:.0f} km/h"
+        for d in days
+    ]
+    return f"{header}\n" + "\n".join(lines)
+
+
+_FR_WEEKDAYS_SHORT: tuple[str, ...] = ("lun", "mar", "mer", "jeu", "ven", "sam", "dim")
+
+
+def _fr_day_label(d: date) -> str:
+    """Ex: 'sam 26/04' — mapping manuel pour ne pas dépendre de la locale système."""
+    return f"{_FR_WEEKDAYS_SHORT[d.weekday()]} {d.strftime('%d/%m')}"
+
+
+def _weather_period_label(when_str: str | None) -> str:
+    """Label humain affiché dans l'en-tête météo ; recopie ce que l'utilisateur a dit."""
+    if not when_str:
+        return "aujourd'hui"
+    return when_str.strip()
+
+
+def _parse_weather_range(when_str: str | None, tz: ZoneInfo) -> tuple[int, int]:
+    """Convertit une expression FR en (offset_début, offset_fin) en jours depuis aujourd'hui.
+
+    Défaut (aucune expression) : (0, 0) = aujourd'hui. Sinon, matches explicites
+    pour les expressions courantes, fallback dateparser pour le reste.
+    """
+    if not when_str:
+        return 0, 0
+
+    today = datetime.now(tz).date()
+    lowered = when_str.strip().lower()
+
+    if "aujourd" in lowered or "ce jour" in lowered or "maintenant" in lowered:
+        return 0, 0
+    if "après-demain" in lowered or "apres-demain" in lowered:
+        return 2, 2
+    if "demain" in lowered:
+        return 1, 1
+    if "weekend" in lowered or "week-end" in lowered:
+        wd = today.weekday()  # 0=lundi .. 6=dimanche
+        if wd < 5:
+            return 5 - wd, 6 - wd
+        if wd == 5:
+            return 0, 1
+        return 0, 0  # dimanche = fin de weekend déjà là
+    if "semaine" in lowered:
+        return 0, 6
+
+    parsed = dateparser.parse(
+        when_str,
+        languages=["fr"],
+        settings={
+            "PREFER_DATES_FROM": "future",
+            "TIMEZONE": str(tz),
+            "RETURN_AS_TIMEZONE_AWARE": True,
+        },
+    )
+    if parsed is None:
+        return 0, 0
+    offset = (parsed.date() - today).days
+    if offset < 0:
+        offset = 0
+    if offset > 15:
+        offset = 15
+    return offset, offset
 
 
 def _format_station(rank: int, station: FuelStation) -> str:

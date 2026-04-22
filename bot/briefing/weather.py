@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import date, datetime
 from types import TracebackType
 from typing import Any
 from zoneinfo import ZoneInfo
@@ -70,6 +70,24 @@ class HourlyPrecipitation:
     probability_pct: int
 
 
+@dataclass(frozen=True, slots=True)
+class DailyWeather:
+    """Météo quotidienne pour un jour donné (local à la timezone Open-Meteo).
+
+    `temp_current` n'est renseigné que pour aujourd'hui (premier élément du
+    forecast) ; `None` pour les jours futurs.
+    """
+
+    city: str
+    date: date
+    temp_min: float
+    temp_max: float
+    precipitation_mm: float
+    wind_kmh_max: float
+    description: str
+    temp_current: float | None
+
+
 class WeatherError(RuntimeError):
     """Levée sur erreur HTTP ou payload Open-Meteo inattendu."""
 
@@ -118,6 +136,78 @@ class OpenMeteoClient:
             )
         except (TypeError, ValueError, IndexError) as exc:
             raise WeatherError(f"Payload Open-Meteo malformé : {exc}") from exc
+
+    async def get_forecast(
+        self,
+        lat: float,
+        lon: float,
+        city: str,
+        days: int = 7,
+    ) -> list[DailyWeather]:
+        """Retourne les prévisions quotidiennes pour les N prochains jours.
+
+        Le premier élément (jour 0) inclut `temp_current` ; les suivants ont
+        `temp_current=None`. Limité à 16 jours par Open-Meteo.
+        """
+        clamped = max(1, min(days, 16))
+        params: dict[str, Any] = {
+            "latitude": lat,
+            "longitude": lon,
+            "current": "temperature_2m",
+            "daily": (
+                "temperature_2m_max,temperature_2m_min,"
+                "precipitation_sum,weather_code,wind_speed_10m_max"
+            ),
+            "timezone": self._timezone,
+            "forecast_days": clamped,
+        }
+        try:
+            response = await self._client.get(BASE_URL, params=params)
+            response.raise_for_status()
+        except httpx.HTTPError as exc:
+            log.error("weather_forecast_failed", lat=lat, lon=lon, error=str(exc))
+            raise WeatherError(f"Open-Meteo forecast échoué : {exc}") from exc
+
+        try:
+            data: dict[str, Any] = response.json()
+        except ValueError as exc:
+            raise WeatherError("Réponse Open-Meteo non-JSON") from exc
+
+        current = data.get("current") or {}
+        daily = data.get("daily") or {}
+        dates = daily.get("time") or []
+        mins = daily.get("temperature_2m_min") or []
+        maxs = daily.get("temperature_2m_max") or []
+        precs = daily.get("precipitation_sum") or []
+        codes = daily.get("weather_code") or []
+        winds = daily.get("wind_speed_10m_max") or []
+
+        try:
+            current_temp = float(current.get("temperature_2m", 0.0))
+        except (TypeError, ValueError) as exc:
+            raise WeatherError(f"Payload Open-Meteo malformé : {exc}") from exc
+
+        out: list[DailyWeather] = []
+        for i, (d_iso, tmin, tmax, prec, code, wind) in enumerate(
+            zip(dates, mins, maxs, precs, codes, winds, strict=False)
+        ):
+            try:
+                d = date.fromisoformat(d_iso)
+                out.append(
+                    DailyWeather(
+                        city=city,
+                        date=d,
+                        temp_min=float(tmin),
+                        temp_max=float(tmax),
+                        precipitation_mm=float(prec) if prec is not None else 0.0,
+                        wind_kmh_max=float(wind) if wind is not None else 0.0,
+                        description=WEATHER_CODES.get(int(code), "indéterminé"),
+                        temp_current=current_temp if i == 0 else None,
+                    )
+                )
+            except (TypeError, ValueError) as exc:
+                raise WeatherError(f"Payload Open-Meteo malformé : {exc}") from exc
+        return out
 
     async def get_hourly_precipitation(
         self,
