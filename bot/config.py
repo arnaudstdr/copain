@@ -53,6 +53,8 @@ class Settings:
     proactivity_check_interval_min: int
     proactivity_rain_cooldown_hours: int
 
+    log_file_path: Path | None
+
     env: str
 
     @property
@@ -112,6 +114,20 @@ def _env_bool(key: str, default: bool) -> bool:
     raise ConfigError(f"{key} doit être un booléen (true/false), reçu : {raw!r}")
 
 
+def _parse_log_file_path(data_dir: Path) -> Path | None:
+    """Parse `LOG_FILE_PATH`.
+
+    Défaut : `<data_dir>/logs/bot.log`. Valeur vide → `None` (pas de
+    persistance fichier, seul le stdout reste actif).
+    """
+    raw = os.getenv("LOG_FILE_PATH")
+    if raw is None:
+        return (data_dir / "logs" / "bot.log").resolve()
+    if raw.strip() == "":
+        return None
+    return Path(raw).resolve()
+
+
 def load_settings() -> Settings:
     """Charge `.env` (si présent) puis construit l'objet Settings validé."""
     load_dotenv()
@@ -145,5 +161,6 @@ def load_settings() -> Settings:
         proactivity_daily_budget=_env_int("PROACTIVITY_DAILY_BUDGET", 3),
         proactivity_check_interval_min=_env_int("PROACTIVITY_CHECK_INTERVAL_MIN", 30),
         proactivity_rain_cooldown_hours=_env_int("PROACTIVITY_RAIN_COOLDOWN_HOURS", 3),
+        log_file_path=_parse_log_file_path(data_dir),
         env=os.getenv("ENV", "dev"),
     )

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 from bot.config import ConfigError, _env_bool, load_settings
@@ -67,3 +69,32 @@ def test_env_bool_rejects_garbage(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("X", "maybe")
     with pytest.raises(ConfigError, match="booléen"):
         _env_bool("X", False)
+
+
+def test_log_file_path_default(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    _minimal_env(monkeypatch)
+    monkeypatch.setenv("DATA_DIR", str(tmp_path))
+    monkeypatch.delenv("LOG_FILE_PATH", raising=False)
+
+    settings = load_settings()
+    assert settings.log_file_path == (tmp_path / "logs" / "bot.log").resolve()
+
+
+def test_log_file_path_empty_disables_file_logging(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    _minimal_env(monkeypatch)
+    monkeypatch.setenv("DATA_DIR", str(tmp_path))
+    monkeypatch.setenv("LOG_FILE_PATH", "")
+
+    settings = load_settings()
+    assert settings.log_file_path is None
+
+
+def test_log_file_path_explicit(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    _minimal_env(monkeypatch)
+    monkeypatch.setenv("DATA_DIR", str(tmp_path))
+    monkeypatch.setenv("LOG_FILE_PATH", str(tmp_path / "custom" / "bot.log"))
+
+    settings = load_settings()
+    assert settings.log_file_path == (tmp_path / "custom" / "bot.log").resolve()

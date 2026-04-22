@@ -258,6 +258,10 @@ PROACTIVITY_DAILY_BUDGET=3
 PROACTIVITY_CHECK_INTERVAL_MIN=30
 PROACTIVITY_RAIN_COOLDOWN_HOURS=3
 
+# Logs — fichier rotatif JSON persisté dans le volume Docker (5 Mo x 5 backups).
+# Mettre vide pour désactiver la persistance fichier (stdout reste actif).
+LOG_FILE_PATH=./data/logs/bot.log
+
 # Environnement (dev | prod) — conditionne le format de log structlog
 ENV=dev
 ```
@@ -464,8 +468,11 @@ besoin à l'avenir.
 - **async/await** pour tous les I/O (Telegram, Ollama, ChromaDB, SQLite,
   httpx, caldav en `to_thread`)
 - **Gestion d'erreurs explicite**, pas de `bare except`
-- **Logs structurés via `structlog`** (pas le `logging` standard), console
-  coloré en dev et JSON en prod selon `ENV`
+- **Logs structurés via `structlog`** (pas le `logging` standard), deux
+  handlers : stdout (console coloré en dev, JSON en prod selon `ENV`) +
+  fichier rotatif JSON `data/logs/bot.log` (5 Mo x 5 backups) si
+  `LOG_FILE_PATH` est défini — persistés dans le volume Docker pour
+  `grep`/`jq` après coup
 - **Variables d'environnement via `python-dotenv`**, jamais de valeurs hardcodées
   hors de `bot/config.py`
 - **Tests pytest + pytest-asyncio** (mode auto), dépendances externes mockées —

@@ -56,7 +56,7 @@ async def _seed_default_feeds(rss: FeedManager) -> None:
 
 def main() -> None:
     settings = load_settings()
-    configure_logging(env=settings.env)
+    configure_logging(env=settings.env, log_file_path=settings.log_file_path)
     log.info("startup", env=settings.env)
 
     embedder = Embedder(settings.ollama_base_url, settings.ollama_embed_model)
