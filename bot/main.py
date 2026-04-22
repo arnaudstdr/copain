@@ -36,7 +36,6 @@ log = get_logger(__name__)
 
 DEFAULT_FEEDS: tuple[tuple[str, str, str], ...] = (
     ("The Verge", "https://www.theverge.com/rss/index.xml", "tech"),
-    ("ZDNet", "https://www.zdnet.com/news/rss.xml", "tech"),
 )
 
 BRIEFING_JOB_ID = "daily-briefing"
