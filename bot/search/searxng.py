@@ -7,6 +7,7 @@ from typing import TypedDict
 
 import httpx
 
+from bot.http_retry import get_json_with_retry
 from bot.logging_conf import get_logger
 
 log = get_logger(__name__)
@@ -23,24 +24,20 @@ class SearxngError(RuntimeError):
 
 
 class SearxngClient:
-    def __init__(self, base_url: str, timeout: float = 10.0) -> None:
+    def __init__(self, base_url: str, timeout: float = 15.0) -> None:
         self._base_url = base_url.rstrip("/")
         self._client = httpx.AsyncClient(timeout=timeout)
 
     async def search(self, query: str, limit: int = 5) -> list[SearchResult]:
         url = f"{self._base_url}/search"
         params = {"q": query, "format": "json", "language": "fr"}
-        try:
-            response = await self._client.get(url, params=params)
-            response.raise_for_status()
-        except httpx.HTTPError as exc:
-            log.error("searxng_http_failed", url=url, error=str(exc))
-            raise SearxngError(f"Appel SearXNG échoué : {exc}") from exc
-
-        try:
-            payload = response.json()
-        except ValueError as exc:
-            raise SearxngError("Réponse SearXNG non-JSON") from exc
+        payload = await get_json_with_retry(
+            self._client,
+            url,
+            context="searxng:search",
+            error_cls=SearxngError,
+            params=params,
+        )
 
         raw_results = payload.get("results", [])
         if not isinstance(raw_results, list):

@@ -10,6 +10,7 @@ from typing import Any
 import httpx
 
 from bot.fuel.models import FuelStation, FuelType, GeoPoint
+from bot.http_retry import get_json_with_retry
 from bot.logging_conf import get_logger
 
 log = get_logger(__name__)
@@ -37,7 +38,7 @@ class FuelError(RuntimeError):
 class FuelClient:
     """Wrapper httpx async pour interroger le dataset national des prix carburants."""
 
-    def __init__(self, timeout: float = 10.0) -> None:
+    def __init__(self, timeout: float = 20.0) -> None:
         self._client = httpx.AsyncClient(timeout=timeout)
 
     async def find_cheapest(
@@ -72,17 +73,13 @@ class FuelClient:
             radius_km=radius_km,
             limit=limit,
         )
-        try:
-            response = await self._client.get(BASE_URL, params=params)
-            response.raise_for_status()
-        except httpx.HTTPError as exc:
-            log.error("fuel_fetch_failed", error=str(exc))
-            raise FuelError(f"Appel prix-carburants échoué : {exc}") from exc
-
-        try:
-            payload: dict[str, Any] = response.json()
-        except ValueError as exc:
-            raise FuelError("Réponse prix-carburants non-JSON") from exc
+        payload = await get_json_with_retry(
+            self._client,
+            BASE_URL,
+            context="fuel:find_cheapest",
+            error_cls=FuelError,
+            params=params,
+        )
 
         raw_results = payload.get("results", [])
         if not isinstance(raw_results, list):

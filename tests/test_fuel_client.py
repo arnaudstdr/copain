@@ -100,13 +100,19 @@ async def test_find_cheapest_returns_empty_when_no_results() -> None:
     assert stations == []
 
 
-async def test_find_cheapest_http_error_raises_fuel_error() -> None:
+async def test_find_cheapest_http_error_raises_fuel_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("bot.http_retry.asyncio.sleep", AsyncMock())
     client = FuelClient()
     client._client = AsyncMock()
     client._client.get = AsyncMock(side_effect=httpx.ConnectTimeout("boom"))
 
-    with pytest.raises(FuelError, match="prix-carburants"):
+    with pytest.raises(FuelError, match="fuel:find_cheapest") as excinfo:
         await client.find_cheapest("gazole", GeoPoint(lat=48.0, lon=7.0), radius_km=10.0)
+
+    assert isinstance(excinfo.value.__cause__, httpx.ConnectTimeout)
+    assert client._client.get.await_count == 3
 
 
 async def test_find_cheapest_skips_records_without_geom() -> None:

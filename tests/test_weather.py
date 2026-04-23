@@ -9,7 +9,6 @@ from zoneinfo import ZoneInfo
 import httpx
 import pytest
 
-from bot.briefing import weather as weather_module
 from bot.briefing.weather import (
     DailyWeather,
     HourlyPrecipitation,
@@ -133,7 +132,7 @@ def _today_success_response() -> MagicMock:
 async def test_get_today_retries_on_transient_httpx_error(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(weather_module, "_BACKOFF_SECONDS", (0.0, 0.0))
+    monkeypatch.setattr("bot.http_retry.asyncio.sleep", AsyncMock())
     success = _today_success_response()
 
     client = OpenMeteoClient(timezone="Europe/Paris")
@@ -157,7 +156,7 @@ async def test_get_today_retries_on_transient_httpx_error(
 async def test_get_today_raises_weather_error_after_all_retries_fail(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(weather_module, "_BACKOFF_SECONDS", (0.0, 0.0))
+    monkeypatch.setattr("bot.http_retry.asyncio.sleep", AsyncMock())
 
     client = OpenMeteoClient(timezone="Europe/Paris")
     client._client = AsyncMock()
