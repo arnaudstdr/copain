@@ -4,6 +4,20 @@
   <img src="copain_bot.png" alt="Logo copain" width="200">
 </p>
 
+<p align="center">
+  <a href="https://github.com/arnaudstdr/copain/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/arnaudstdr/copain/ci.yml?branch=main&label=CI&logo=githubactions&logoColor=white" alt="CI"></a>
+  <img src="https://img.shields.io/badge/python-3.12%2B-3776AB?logo=python&logoColor=white" alt="Python 3.12+">
+  <img src="https://img.shields.io/badge/lint-ruff-000000?logo=ruff&logoColor=white" alt="Ruff">
+  <img src="https://img.shields.io/badge/types-mypy%20strict-1f5082?logo=python&logoColor=white" alt="Mypy strict">
+</p>
+
+<p align="center">
+  <img src="https://img.shields.io/badge/platform-Telegram-26A5E4?logo=telegram&logoColor=white" alt="Telegram">
+  <img src="https://img.shields.io/badge/LLM-Ollama-000000?logo=ollama&logoColor=white" alt="Ollama">
+  <img src="https://img.shields.io/badge/deploy-Docker-2496ED?logo=docker&logoColor=white" alt="Docker">
+  <img src="https://img.shields.io/badge/host-Raspberry%20Pi%205-c51a4a?logo=raspberrypi&logoColor=white" alt="Raspberry Pi 5">
+</p>
+
 Bot Telegram mono-utilisateur en langage naturel français.
 Hébergé partiellement sur Raspberry Pi 5 (services locaux) + LLM cloud.
 
