@@ -1,48 +1,51 @@
-# copain — Assistant personnel Telegram — CLAUDE.md
+# copain — Personal Telegram Assistant — CLAUDE.md
 
-## Vue d'ensemble du projet
+## Project overview
 
-Bot Telegram mono-utilisateur, tout en langage naturel français. Conçu pour
-Arnaud, self-hosted partiellement (services locaux sur Raspberry Pi 5 8 Go,
-LLM principal en cloud).
+Single-user Telegram bot, entirely in natural French language. Designed for a
+single user, partly self-hosted (local services on a Raspberry Pi 5 8 GB, main
+LLM in the cloud).
 
-### Capacités actuelles
+### Current features
 
-- **Conversation** avec mémoire sémantique automatique (ChromaDB + embeddings)
-- **Tâches + rappels** en langage naturel (SQLite, rappels push Telegram à l'échéance)
-- **Recherche web** via SearXNG self-hosted avec résumé FR
-- **Flux RSS** : ajout/liste/suppression + résumé des dernières actus à la demande
-- **Briefing matinal** automatique chaque jour (heure configurable, défaut 8h) :
-  météo locale + tâches du jour + évènements du jour + top 5 actus RSS résumées
-- **Analyse photo** : envoi d'image Telegram → vision multimodale du LLM → extraction
-  de texte, description de scène, compréhension de graphique, puis routage dans
-  le pipeline normal (mémoire/tâche/event selon le contenu)
-- **Calendrier iCloud** (CalDAV) : création et listing d'évènements dans n'importe
-  quel calendrier iCloud, visible nativement sur iPhone / Apple Watch / Mac
-- **Prix carburants** : via l'API open data `data.economie.gouv.fr`
-  (dataset `prix-des-carburants-en-france-flux-instantane-v2`, pas de clé
-  requise). Demander en langage naturel « gazole pas cher ? » → top 5 stations
-  triées par prix dans un rayon de 10 km autour de `HOME_CITY`. Support des
-  lieux nommés via géocoding OSM Nominatim (« SP98 à Colmar dans 5 km »).
-  Synonymes FR mappés (diesel → gazole, 98 → sp98, etc.).
-- **Météo** : via Open-Meteo (pas de clé requise), source dédiée pour éviter
-  le fallback SearXNG. Demander « quel temps fait-il ? » → aujourd'hui à
-  `HOME_CITY` ; « météo à Strasbourg ce weekend » → prévisions multi-jours
-  pour un lieu géocodé via Nominatim. Expressions FR gérées : `aujourd'hui`,
-  `demain`, `après-demain`, `ce weekend`, `cette semaine`, `dans N jours`,
-  fallback `dateparser` pour le reste. Limite 16 jours (Open-Meteo).
-- **Proactivité opt-in** : un job APScheduler tick toutes les N min (défaut 30) et
-  peut pousser au plus **une** notif par tick. Deux règles en v1 — alerte pluie
-  dans l'heure (Open-Meteo horaire) et rappel RDV ~1 h avant (calendrier iCloud).
-  Cinq garde-fous empêchent le spam : feature flag global, fenêtre horaire
-  configurable (défaut 8h-21h), budget quotidien max 3, dédup par `event_uid`
-  pour les events, cooldown temporel pour la pluie. Désactivé par défaut
-  (`PROACTIVITY_ENABLED=false`).
+- **Conversation** with automatic semantic memory (ChromaDB + embeddings)
+- **Tasks + reminders** in natural language (SQLite, Telegram push reminders
+  at due time)
+- **Web search** via self-hosted SearXNG with FR summary
+- **RSS feeds**: add/list/remove + summary of the latest news on demand
+- **Morning briefing** automatically every day (configurable time, default
+  8am): local weather + today's tasks + today's events + top 5 summarised RSS
+  items
+- **Photo analysis**: Telegram image sent → LLM multimodal vision → text
+  extraction, scene description, chart understanding, then routed through the
+  normal pipeline (memory/task/event depending on content)
+- **iCloud calendar** (CalDAV): event creation and listing in any iCloud
+  calendar, natively visible on iPhone / Apple Watch / Mac
+- **Fuel prices**: via the `data.economie.gouv.fr` open data API (dataset
+  `prix-des-carburants-en-france-flux-instantane-v2`, no key required). Ask
+  in natural language "gazole pas cher ?" → top 5 stations sorted by price
+  within a 10 km radius around `HOME_CITY`. Support for named locations via
+  OSM Nominatim geocoding ("SP98 à Colmar dans 5 km"). FR synonyms mapped
+  (diesel → gazole, 98 → sp98, etc.).
+- **Weather**: via Open-Meteo (no key required), dedicated source to avoid
+  the SearXNG fallback. Ask "quel temps fait-il ?" → today at `HOME_CITY`;
+  "météo à Strasbourg ce weekend" → multi-day forecast for a location
+  geocoded via Nominatim. Supported FR expressions: `aujourd'hui`, `demain`,
+  `après-demain`, `ce weekend`, `cette semaine`, `dans N jours`, fallback to
+  `dateparser` for the rest. 16-day limit (Open-Meteo).
+- **Opt-in proactivity**: an APScheduler job ticks every N min (default 30)
+  and may push at most **one** notification per tick. Two rules in v1 — rain
+  alert within the hour (Open-Meteo hourly) and appointment reminder ~1 h
+  before (iCloud calendar). Five safeguards prevent spam: global feature
+  flag, configurable time window (default 8am-9pm), daily budget capped at
+  3, dedup by `event_uid` for events, temporal cooldown for rain. Disabled
+  by default (`PROACTIVITY_ENABLED=false`).
 
-Tout passe par le même pipeline : un LLM décide l'intent via un bloc `<meta>` JSON,
-le code exécute les effets de bord, puis renvoie un message texte à l'utilisateur.
-Les notifs proactives passent, elles, par un job autonome (pas de LLM ni de routing
-`<meta>`) qui écrit dans la table `notification_logs` pour tracer cooldowns et budget.
+Everything flows through the same pipeline: an LLM decides the intent via a
+`<meta>` JSON block, the code executes the side effects, then a text message
+is returned to the user. Proactive notifications, on the other hand, run
+through an autonomous job (no LLM, no `<meta>` routing) that writes into the
+`notification_logs` table to track cooldowns and budget.
 
 ---
 
@@ -52,105 +55,105 @@ Les notifs proactives passent, elles, par un job autonome (pas de LLM ni de rout
 Telegram API
      │
      ▼
-Bot Python (python-telegram-bot v21, async)
+Python bot (python-telegram-bot v21, async)
      │
-     ├── Middleware sécurité (ALLOWED_USER_ID whitelist)
+     ├── Security middleware (ALLOWED_USER_ID whitelist)
      │
      ├── Handlers
-     │     ├── filters.TEXT  → make_handler       → pipeline standard
+     │     ├── filters.TEXT  → make_handler       → standard pipeline
      │     └── filters.PHOTO → make_photo_handler → pipeline + images[]
      │
      ├── LLM Client (Ollama — gemma4:31b-cloud multimodal)
-     │     ├── call(system, user, images?)  → chat API Ollama
-     │     ├── call_with_search(message, results) → relance avec résultats SearXNG
-     │     └── chat(messages)              → appel bas niveau
+     │     ├── call(system, user, images?)        → Ollama chat API
+     │     ├── call_with_search(message, results) → re-run with SearXNG results
+     │     └── chat(messages)                     → low-level call
      │
-     ├── Parser <meta>
+     ├── <meta> parser
      │     └── Intent ∈ {answer, task, search, memory, feed, event, fuel, weather}
      │         + TaskMeta / FeedMeta / EventMeta / FuelMeta / WeatherMeta
      │
      ├── Memory Manager (ChromaDB + nomic-embed-text via Ollama)
-     │     ├── store()             → embed + persist le memory_content
-     │     └── retrieve_context()  → top-5 chunks pertinents
+     │     ├── store()             → embed + persist the memory_content
+     │     └── retrieve_context()  → top-5 relevant chunks
      │
      ├── Task Manager (SQLite via SQLAlchemy async + aiosqlite)
      │     ├── create / list_pending / complete / delete
      │     └── ReminderScheduler
-     │           ├── SQLAlchemyJobStore → rappels one-shot persistés
-     │           └── MemoryJobStore     → cron (closures non-sérialisables)
+     │           ├── SQLAlchemyJobStore → persisted one-shot reminders
+     │           └── MemoryJobStore     → cron (non-serialisable closures)
      │
      ├── RSS Manager
      │     ├── FeedManager (SQLAlchemy, table `feeds`)
      │     └── RssFetcher (feedparser via asyncio.to_thread)
      │
      ├── Search Manager
-     │     └── SearxngClient (HTTP JSON local)
+     │     └── SearxngClient (local HTTP JSON)
      │
-     ├── iCloud Calendar (CalDAV via lib `caldav`)
-     │     ├── ICloudCalendarClient.connect()    → découverte des calendriers
-     │     ├── create_event(calendar_name?)      → fuzzy match du calendrier cible
+     ├── iCloud Calendar (CalDAV via `caldav` lib)
+     │     ├── ICloudCalendarClient.connect()    → calendar discovery
+     │     ├── create_event(calendar_name?)      → fuzzy match of the target calendar
      │     └── list_between / list_today / list_upcoming
      │
-     ├── Fuel (prix carburants open data)
+     ├── Fuel (open data fuel prices)
      │     ├── FuelClient         → data.economie.gouv.fr (ODS v2.1)
-     │     └── NominatimClient    → géocoding OSM (FR, cache mémoire)
+     │     └── NominatimClient    → OSM geocoding (FR, in-memory cache)
      │
-     └── Briefing Service (job cron APScheduler)
-           ├── OpenMeteoClient (météo Sélestat)
+     └── Briefing Service (APScheduler cron job)
+           ├── OpenMeteoClient (Sélestat weather)
            ├── _today_tasks / _today_events / _rss_block
-           └── send_daily → push Telegram à l'heure configurée
+           └── send_daily → Telegram push at the configured time
 ```
 
 ---
 
-## Stack technique
+## Tech stack
 
-| Composant          | Choix                                                    |
+| Component          | Choice                                                   |
 |--------------------|----------------------------------------------------------|
-| Langage            | Python 3.12+ async/await partout                         |
-| Bot Telegram       | `python-telegram-bot >= 21`                              |
+| Language           | Python 3.12+ async/await everywhere                      |
+| Telegram bot       | `python-telegram-bot >= 21`                              |
 | LLM                | Ollama → `gemma4:31b-cloud` (multimodal, cloud)          |
 | Embeddings         | Ollama → `nomic-embed-text` (local)                      |
-| Mémoire vectorielle| ChromaDB (persistance locale)                            |
+| Vector memory      | ChromaDB (local persistence)                             |
 | ORM                | SQLAlchemy 2 async + aiosqlite                           |
 | Scheduler          | APScheduler (SQLAlchemy + Memory jobstores)              |
-| Dates              | dateparser (FR) + normalisation midi/minuit              |
+| Dates              | dateparser (FR) + noon/midnight normalisation            |
 | RSS                | feedparser                                               |
-| Météo              | Open-Meteo (HTTP, pas de clé)                            |
-| Calendrier         | CalDAV via `caldav` + `vobject`                          |
-| Recherche web      | SearXNG (instance locale Docker)                         |
-| Prix carburants    | data.economie.gouv.fr (Opendatasoft v2.1, sans clé)      |
-| Géocoding          | Nominatim OSM (HTTP, sans clé, cache mémoire)            |
-| Config             | python-dotenv (.env validé par dataclass Settings)       |
-| Logs               | structlog (console en dev, JSON en prod)                 |
-| Conteneur          | Docker + Docker Compose                                  |
-| Tests              | pytest + pytest-asyncio (mode auto)                      |
-| Qualité            | ruff (lint+format) + mypy strict via pre-commit          |
+| Weather            | Open-Meteo (HTTP, no key)                                |
+| Calendar           | CalDAV via `caldav` + `vobject`                          |
+| Web search         | SearXNG (local Docker instance)                          |
+| Fuel prices        | data.economie.gouv.fr (Opendatasoft v2.1, no key)        |
+| Geocoding          | Nominatim OSM (HTTP, no key, in-memory cache)            |
+| Config             | python-dotenv (.env validated by a Settings dataclass)   |
+| Logs               | structlog (console in dev, JSON in prod)                 |
+| Container          | Docker + Docker Compose                                  |
+| Tests              | pytest + pytest-asyncio (auto mode)                      |
+| Quality            | ruff (lint+format) + mypy strict via pre-commit          |
 
 ---
 
-## Modèles
+## Models
 
-| Modèle                | Type        | Où tourne        | Usage                                      |
-|-----------------------|-------------|------------------|--------------------------------------------|
-| `gemma4:31b-cloud`    | LLM vision  | Ollama Cloud     | Toutes les réponses + analyse des images   |
-| `nomic-embed-text`    | Embeddings  | Ollama local Pi  | Vecteurs pour ChromaDB (à la demande)      |
+| Model                 | Type        | Where it runs    | Usage                                        |
+|-----------------------|-------------|------------------|----------------------------------------------|
+| `gemma4:31b-cloud`    | Vision LLM  | Ollama Cloud     | All replies + image analysis                 |
+| `nomic-embed-text`    | Embeddings  | Ollama local Pi  | Vectors for ChromaDB (on demand)             |
 
-Le LLM est passé en cloud parce que l'inférence locale sur Pi 5 était trop lente.
-Conséquence : la majeure partie du budget RAM initial est libérée. Seuls
-`nomic-embed-text` (~300 Mo à la demande), ChromaDB/bot (~1 Go) et SearXNG (~0.3 Go)
-tournent localement sur le Pi.
+The LLM was moved to the cloud because local inference on the Pi 5 was too
+slow. As a result, most of the initial RAM budget is freed. Only
+`nomic-embed-text` (~300 MB on demand), ChromaDB/bot (~1 GB), and SearXNG
+(~0.3 GB) run locally on the Pi.
 
 ---
 
-## Structure du projet
+## Project structure
 
 ```
 copain/
-├── CLAUDE.md                    # ce fichier (source de vérité projet)
-├── README.md                    # setup utilisateur
-├── ROADMAP.md                   # statut des phases d'implémentation
-├── .env                         # secrets (jamais commité)
+├── CLAUDE.md                    # this file (project source of truth)
+├── README.md                    # user-facing setup
+├── ROADMAP.md                   # implementation phase status
+├── .env                         # secrets (never committed)
 ├── .env.example
 ├── docker-compose.yml
 ├── Dockerfile
@@ -162,14 +165,14 @@ copain/
 │
 ├── bot/
 │   ├── __init__.py
-│   ├── main.py                  # entrypoint + post_init/post_shutdown PTB
+│   ├── main.py                  # entrypoint + PTB post_init/post_shutdown
 │   ├── handlers.py              # make_handler + make_photo_handler + _handle_*
 │   ├── security.py              # is_allowed(update, allowed_user_id)
 │   ├── config.py                # Settings dataclass + load_settings()
-│   ├── logging_conf.py          # setup structlog
+│   ├── logging_conf.py          # structlog setup
 │   │
 │   ├── llm/
-│   │   ├── client.py            # LLMClient (chat + images base64)
+│   │   ├── client.py            # LLMClient (chat + base64 images)
 │   │   ├── prompt.py            # SYSTEM_PROMPT_TEMPLATE + build_system_prompt
 │   │   └── parser.py            # Meta TypedDict + extract_meta
 │   │
@@ -179,12 +182,12 @@ copain/
 │   │
 │   ├── tasks/
 │   │   ├── manager.py           # TaskManager async
-│   │   ├── models.py            # Task + Base DeclarativeBase (partagée)
+│   │   ├── models.py            # Task + Base DeclarativeBase (shared)
 │   │   └── scheduler.py         # ReminderScheduler (add_reminder + add_cron_job)
 │   │
 │   ├── rss/
 │   │   ├── manager.py           # FeedManager CRUD
-│   │   ├── models.py            # Feed (partage Base avec Task)
+│   │   ├── models.py            # Feed (shares Base with Task)
 │   │   └── fetcher.py           # RssFetcher via asyncio.to_thread
 │   │
 │   ├── search/
@@ -195,25 +198,25 @@ copain/
 │   │   └── client.py            # ICloudCalendarClient (connect + fuzzy match)
 │   │
 │   ├── briefing/
-│   │   ├── weather.py           # OpenMeteoClient + HourlyPrecipitation + codes FR
-│   │   └── service.py           # BriefingService (agrège + cron)
+│   │   ├── weather.py           # OpenMeteoClient + HourlyPrecipitation + FR codes
+│   │   └── service.py           # BriefingService (aggregates + cron)
 │   │
 │   ├── fuel/
-│   │   ├── models.py            # FuelType + FuelStation + GeoPoint + synonymes FR
+│   │   ├── models.py            # FuelType + FuelStation + GeoPoint + FR synonyms
 │   │   ├── client.py            # FuelClient (data.economie.gouv.fr ODS v2.1)
-│   │   └── geocoding.py         # NominatimClient (OSM FR + cache mémoire)
+│   │   └── geocoding.py         # NominatimClient (OSM FR + in-memory cache)
 │   │
 │   └── proactivity/
-│       ├── models.py            # NotificationLog (partage Base tasks)
-│       ├── rules.py             # evaluate_rain + evaluate_upcoming_event (purs)
-│       └── service.py           # ProactivityService.tick + garde-fous
+│       ├── models.py            # NotificationLog (shares Base with tasks)
+│       ├── rules.py             # evaluate_rain + evaluate_upcoming_event (pure)
+│       └── service.py           # ProactivityService.tick + safeguards
 │
-├── data/                        # volume Docker persisté
+├── data/                        # persisted Docker volume
 │   ├── chroma/
-│   ├── tasks.db                 # SQLite partagée tasks + feeds + notification_logs
-│   └── scheduler.db             # APScheduler jobs persistés
+│   ├── tasks.db                 # SQLite shared by tasks + feeds + notification_logs
+│   └── scheduler.db             # persisted APScheduler jobs
 │
-└── tests/                       # pytest-asyncio, tout mocké (pas d'I/O externes)
+└── tests/                       # pytest-asyncio, everything mocked (no external I/O)
     ├── conftest.py
     ├── test_parser.py
     ├── test_llm_client.py
@@ -236,46 +239,46 @@ copain/
 
 ---
 
-## Variables d'environnement (.env)
+## Environment variables (.env)
 
 ```env
 # Telegram
-TELEGRAM_BOT_TOKEN=                  # requis
-ALLOWED_USER_ID=                     # requis, ton user_id Telegram uniquement
+TELEGRAM_BOT_TOKEN=                  # required
+ALLOWED_USER_ID=                     # required, your Telegram user_id only
 
-# Ollama (client + modèles)
+# Ollama (client + models)
 OLLAMA_BASE_URL=http://localhost:11434
 OLLAMA_LLM_MODEL=gemma4:31b-cloud
 OLLAMA_EMBED_MODEL=nomic-embed-text
 
-# SearXNG (instance locale)
+# SearXNG (local instance)
 SEARXNG_BASE_URL=http://localhost:8888
 
-# Chemins de données (montés en volume Docker)
+# Data paths (mounted as a Docker volume)
 DATA_DIR=./data
 CHROMA_DIR=./data/chroma
 DB_PATH=./data/tasks.db
 SCHEDULER_DB_PATH=./data/scheduler.db
 
-# Fuseau horaire (dateparser + APScheduler + affichage)
+# Timezone (dateparser + APScheduler + display)
 TZ=Europe/Paris
 
-# Briefing matinal planifié
+# Scheduled morning briefing
 BRIEFING_HOUR=8
 BRIEFING_MINUTE=0
 
-# Coordonnées pour la météo (Open-Meteo, sans clé API)
+# Coordinates for weather (Open-Meteo, no API key)
 HOME_LAT=48.26
 HOME_LON=7.45
 HOME_CITY=Sélestat
 
-# iCloud Calendar (CalDAV) — App-Specific Password obligatoire (2FA Apple ID)
-# Générer sur : https://appleid.apple.com → Connexion et sécurité
-ICLOUD_USERNAME=                     # requis, Apple ID
-ICLOUD_APP_PASSWORD=                 # requis, format xxxx-xxxx-xxxx-xxxx
-ICLOUD_CALENDAR_NAME=Personnel       # nom du calendrier par défaut (fuzzy match)
+# iCloud Calendar (CalDAV) — App-Specific Password required (Apple ID 2FA)
+# Generate at: https://appleid.apple.com → Sign-In and Security
+ICLOUD_USERNAME=                     # required, Apple ID
+ICLOUD_APP_PASSWORD=                 # required, format xxxx-xxxx-xxxx-xxxx
+ICLOUD_CALENDAR_NAME=Personnel       # default calendar name (fuzzy match)
 
-# Proactivité (notifications poussées sans demande — opt-in strict)
+# Proactivity (notifications pushed without a request — strict opt-in)
 PROACTIVITY_ENABLED=false
 PROACTIVITY_WINDOW_START_HOUR=8
 PROACTIVITY_WINDOW_END_HOUR=21
@@ -283,100 +286,101 @@ PROACTIVITY_DAILY_BUDGET=3
 PROACTIVITY_CHECK_INTERVAL_MIN=30
 PROACTIVITY_RAIN_COOLDOWN_HOURS=3
 
-# Prix carburants (data.economie.gouv.fr — sans clé API)
-FUEL_DEFAULT_RADIUS_KM=10              # rayon de recherche par défaut
-# User-Agent obligatoire selon la policy Nominatim :
+# Fuel prices (data.economie.gouv.fr — no API key)
+FUEL_DEFAULT_RADIUS_KM=10              # default search radius
+# User-Agent required by the Nominatim policy:
 # https://operations.osmfoundation.org/policies/nominatim/
 NOMINATIM_USER_AGENT=copain-bot/1.0 (personal assistant)
 
-# Logs — fichier rotatif JSON persisté dans le volume Docker (5 Mo x 5 backups).
-# Mettre vide pour désactiver la persistance fichier (stdout reste actif).
+# Logs — rotating JSON file persisted in the Docker volume (5 MB x 5 backups).
+# Leave empty to disable file persistence (stdout stays active).
 LOG_FILE_PATH=./data/logs/bot.log
 
-# Environnement (dev | prod) — conditionne le format de log structlog
+# Environment (dev | prod) — controls the structlog log format
 ENV=dev
 ```
 
-`bot/config.py` charge et valide ces variables. Les variables marquées
-« requis » font crasher le démarrage si absentes (`ConfigError` explicite).
+`bot/config.py` loads and validates these variables. Variables marked as
+"required" crash the startup if missing (explicit `ConfigError`).
 
 ---
 
-## System Prompt (routing par bloc `<meta>`)
+## System Prompt (routing via the `<meta>` block)
 
-Le LLM reçoit à chaque appel un system prompt dont la pièce centrale est un
-bloc `<meta>` JSON qu'il DOIT inclure en fin de chaque réponse :
+On every call, the LLM receives a system prompt whose centrepiece is a
+`<meta>` JSON block that it MUST include at the end of every reply:
 
 ```json
 {
   "intent": "answer|task|search|memory|feed|event|fuel|weather",
   "store_memory": true|false,
-  "memory_content": "résumé factuel si store_memory=true, sinon null",
+  "memory_content": "factual summary if store_memory=true, otherwise null",
   "task": {
-    "content": "description si intent=task, sinon null",
-    "due_str": "expression FR si échéance mentionnée, sinon null"
+    "content": "description if intent=task, otherwise null",
+    "due_str": "FR expression if a due date is mentioned, otherwise null"
   },
   "feed": {
-    "action": "add|list|remove|summarize, sinon null",
-    "name": "nom du flux, sinon null",
-    "url": "URL si action=add, sinon null"
+    "action": "add|list|remove|summarize, otherwise null",
+    "name": "feed name, otherwise null",
+    "url": "URL if action=add, otherwise null"
   },
   "event": {
-    "action": "create|list, sinon null",
-    "title": "titre si action=create, sinon null",
-    "start_str": "expression FR (ex: 'demain midi'), sinon null",
-    "end_str": "expression FR si fin précisée, sinon null (durée 1h par défaut)",
-    "location": "lieu si mentionné, sinon null",
-    "description": "note, sinon null",
-    "range_str": "plage si action=list (ex: 'cette semaine'), sinon null",
-    "calendar_name": "calendrier cible si précisé (fuzzy match), sinon null"
+    "action": "create|list, otherwise null",
+    "title": "title if action=create, otherwise null",
+    "start_str": "FR expression (e.g. 'demain midi'), otherwise null",
+    "end_str": "FR expression if an end is given, otherwise null (default duration 1h)",
+    "location": "location if mentioned, otherwise null",
+    "description": "note, otherwise null",
+    "range_str": "range if action=list (e.g. 'cette semaine'), otherwise null",
+    "calendar_name": "target calendar if specified (fuzzy match), otherwise null"
   },
   "fuel": {
-    "fuel_type": "gazole|sp95|sp98|e10|e85|gplc si intent=fuel, sinon null",
-    "radius_km": "nombre si rayon mentionné (ex: 'dans 5 km'), sinon null",
-    "location": "ville ou lieu si précisé, sinon null (= autour de HOME_CITY)"
+    "fuel_type": "gazole|sp95|sp98|e10|e85|gplc if intent=fuel, otherwise null",
+    "radius_km": "number if a radius is mentioned (e.g. 'dans 5 km'), otherwise null",
+    "location": "city or place if specified, otherwise null (= around HOME_CITY)"
   },
   "weather": {
-    "location": "ville ou lieu si précisé, sinon null (= HOME_CITY)",
-    "when": "expression FR si précisée (ex: 'demain', 'ce weekend'), sinon null (= aujourd'hui)"
+    "location": "city or place if specified, otherwise null (= HOME_CITY)",
+    "when": "FR expression if specified (e.g. 'demain', 'ce weekend'), otherwise null (= today)"
   },
-  "search_query": "requête si intent=search, sinon null"
+  "search_query": "query if intent=search, otherwise null"
 }
 ```
 
-Le prompt complet est dans `bot/llm/prompt.py` (`SYSTEM_PROMPT_TEMPLATE`). Il
-contient 8 exemples few-shot pour stabiliser le routing de gemma4 (feed,
-event, fuel). Deux règles critiques y sont inscrites :
+The full prompt lives in `bot/llm/prompt.py` (`SYSTEM_PROMPT_TEMPLATE`). It
+contains 8 few-shot examples to stabilise gemma4's routing (feed, event,
+fuel). Two critical rules are written there:
 
-- **Distinction task vs event** : RDV/réunion/meeting AVEC une heure → `event`,
-  sinon → `task`.
-- **Mots temporels** : le LLM recopie textuellement « midi » / « minuit » dans
-  `start_str` ; la normalisation côté code (`_normalize_fr_time_words`) les
-  convertit en `12:00` / `00:00` avant `dateparser.parse`.
+- **Task vs event distinction**: appointment/meeting WITH a time → `event`,
+  otherwise → `task`.
+- **Temporal words**: the LLM copies the literal words `midi` / `minuit`
+  into `start_str`; normalisation on the code side
+  (`_normalize_fr_time_words`) converts them to `12:00` / `00:00` before
+  `dateparser.parse`.
 
 ---
 
-## Logique de traitement d'un message
+## Message processing flow
 
 ```python
 async def _process(user_text, chat_id, deps, images=None) -> str:
-    # 1. Mémoire contextuelle (top-5 via embeddings)
+    # 1. Contextual memory (top-5 via embeddings)
     memory_context = await deps.memory.retrieve_context(user_text)
 
-    # 2. Construit le system prompt (mémoire + historique)
+    # 2. Build the system prompt (memory + history)
     system = build_system_prompt(memory_context, deps.history)
 
-    # 3. Appel LLM (+ images optionnelles en base64)
+    # 3. Call the LLM (+ optional base64 images)
     raw = await deps.llm.call(system=system, user=user_text, images=images)
 
-    # 4. Extrait le bloc <meta> + texte propre
+    # 4. Extract the <meta> block + clean text
     text, meta = extract_meta(raw)
 
-    # 5. Effets de bord selon intent
+    # 5. Side effects depending on the intent
     await _apply_side_effects(user_text, chat_id, meta, deps)
     # → store memory, create task + reminder scheduler
 
-    # 6. Branches qui relancent le LLM ou substituent le texte
+    # 6. Branches that re-run the LLM or replace the text
     if meta["intent"] == "search" and meta["search_query"]:
         results = await deps.search.search(...)
         text = await deps.llm.call_with_search(user_text, results)
@@ -385,68 +389,69 @@ async def _process(user_text, chat_id, deps, images=None) -> str:
     elif meta["intent"] == "event" and meta["event"]["action"]:
         text = await _handle_event(...)  # create (iCloud) / list
     elif meta["intent"] == "fuel" and meta["fuel"]["fuel_type"]:
-        text = await _handle_fuel(...)   # prix carburants + géocoding
+        text = await _handle_fuel(...)   # fuel prices + geocoding
     elif meta["intent"] == "weather":
-        text = await _handle_weather(...) # Open-Meteo + géocoding + plage de jours
+        text = await _handle_weather(...) # Open-Meteo + geocoding + day range
 
-    # 7. Historique glissant + retour
+    # 7. Rolling history + return
     deps.history.extend([f"user: {user_text}", f"assistant: {text}"])
     return text
 ```
 
-Pour les photos, `make_photo_handler` télécharge le blob Telegram et appelle
-le même `_process()` avec `images=[bytes]`. Le LLM multimodal traite caption
-+ image dans le même appel.
+For photos, `make_photo_handler` downloads the Telegram blob and calls the
+same `_process()` with `images=[bytes]`. The multimodal LLM handles caption
++ image in a single call.
 
 ---
 
 ## Scheduler (APScheduler)
 
-Deux jobstores configurés dans `ReminderScheduler` :
+Two jobstores configured in `ReminderScheduler`:
 
-- **`default` (SQLAlchemyJobStore)** — rappels de tâches one-shot persistés
-  entre redémarrages (`add_reminder(task_id, due_at, chat_id, content)`).
-- **`memory` (MemoryJobStore)** — jobs récurrents (cron) dont la fonction est
-  une closure non-sérialisable (ex: briefing). Ils sont re-planifiés au startup
-  via `add_cron_job(job_id, func, hour, minute)` dans `_post_init`.
+- **`default` (SQLAlchemyJobStore)** — one-shot task reminders persisted
+  across restarts (`add_reminder(task_id, due_at, chat_id, content)`).
+- **`memory` (MemoryJobStore)** — recurring jobs (cron) whose function is a
+  non-serialisable closure (e.g. briefing). They are re-scheduled at startup
+  via `add_cron_job(job_id, func, hour, minute)` in `_post_init`.
 
-Les deux respectent la timezone configurée (`settings.timezone`).
-
----
-
-## Calendrier iCloud
-
-`ICloudCalendarClient` se connecte à `https://caldav.icloud.com/` via la lib
-`caldav` (synchrone, wrappée en `asyncio.to_thread`). Auth par App-Specific
-Password.
-
-Au `connect()`, tous les calendriers disponibles sont listés et stockés dans
-`self._all_calendars`. La méthode `resolve_calendar(name)` fait un matching
-tolérant à 3 niveaux :
-
-1. Match exact
-2. Match normalisé (NFC + strip ZWJ `‍` + variation selectors `️` + trim + casefold)
-3. Match « contient » sur la version alphanumérique seule
-
-Conséquence : l'utilisateur peut écrire `ICLOUD_CALENDAR_NAME=Personnel` ou
-demander « dans le calendrier sport » même si les noms réels sont
-`🧘‍♂️ Personnel ` et `🚴‍♂️ Sport ` avec emojis + espaces.
-
-Scope actuel : **create + list**. Pas de delete/modification/récurrence.
+Both honour the configured timezone (`settings.timezone`).
 
 ---
 
-## Sécurité
+## iCloud calendar
 
-**Le bot ne répond qu'à un seul utilisateur.** Vérifié strictement sur chaque
-update dans tous les handlers :
+`ICloudCalendarClient` connects to `https://caldav.icloud.com/` via the
+`caldav` library (synchronous, wrapped in `asyncio.to_thread`). Auth via an
+App-Specific Password.
+
+On `connect()`, all available calendars are listed and stored in
+`self._all_calendars`. The `resolve_calendar(name)` method performs a
+3-level tolerant match:
+
+1. Exact match
+2. Normalised match (NFC + strip ZWJ `‍` + variation selectors `️` + trim +
+   casefold)
+3. "Contains" match on the alphanumeric-only version
+
+Consequence: the user can write `ICLOUD_CALENDAR_NAME=Personnel` or ask "in
+the sport calendar" even if the real names are `🧘‍♂️ Personnel ` and
+`🚴‍♂️ Sport ` with emojis + spaces.
+
+Current scope: **create + list**. No delete/modification/recurrence.
+
+---
+
+## Security
+
+**The bot only replies to a single user.** Strictly checked on every update
+in all handlers:
 
 ```python
 if not is_allowed(update, deps.settings.allowed_user_id):
-    return  # silencieux, warning loggé
+    return  # silent, warning logged
 ```
 
-Les tentatives d'accès non autorisées sont loggées avec `user_id` + `username`.
+Unauthorised access attempts are logged with `user_id` + `username`.
 
 ---
 
@@ -458,7 +463,7 @@ services:
     build: .
     restart: unless-stopped
     env_file: .env
-    network_mode: host          # accès direct à Ollama local sur localhost
+    network_mode: host          # direct access to local Ollama on localhost
     volumes:
       - ./data:/app/data
 
@@ -471,66 +476,67 @@ services:
       - ./searxng:/etc/searxng
 ```
 
-Ollama tourne **hors Docker** sur le Pi (accès GPU/NPU ARM) ; il pointe vers
-le modèle `cloud` quand le model ID contient le suffixe `-cloud`.
+Ollama runs **outside Docker** on the Pi (GPU/NPU ARM access); it targets
+the `cloud` model when the model ID contains the `-cloud` suffix.
 
 ---
 
-## Gestion d'erreurs globale
+## Global error handling
 
-- Les handlers Telegram wrappent chaque appel dans `try/except` et répondent
-  un message générique en cas d'erreur interne.
-- Un `Application.add_error_handler(_error_handler)` est enregistré pour
-  soft-fail sur `NetworkError` / `TimedOut` (coupures momentanées vers
-  `api.telegram.org`), qui sont loggés en warning sans stacktrace. Toute
-  autre erreur passe en `log.exception`.
-- Le `post_init` tolère un échec de `ICloudCalendarClient.connect()` : il
-  logge un warning et laisse le bot démarrer. L'intent `event` renverra
-  alors « calendrier indisponible ».
+- Telegram handlers wrap each call in `try/except` and respond with a
+  generic message on internal errors.
+- An `Application.add_error_handler(_error_handler)` is registered to
+  soft-fail on `NetworkError` / `TimedOut` (momentary dropouts to
+  `api.telegram.org`), which are logged as warnings without stacktrace. Any
+  other error goes through `log.exception`.
+- `post_init` tolerates a failure of `ICloudCalendarClient.connect()`: it
+  logs a warning and lets the bot start. The `event` intent will then return
+  "calendar unavailable".
 
 ---
 
-## Contraintes hardware (Pi 5 8 Go)
+## Hardware constraints (Pi 5 8 GB)
 
-Avec le LLM en cloud, la pression RAM locale est faible :
+With the LLM in the cloud, local RAM pressure is low:
 
-| Composant             | RAM       |
+| Component             | RAM       |
 |-----------------------|-----------|
-| ChromaDB + bot Python | ~1 Go     |
-| SearXNG               | ~0.3 Go   |
-| nomic-embed-text      | ~0.3 Go à la demande |
-| **Total**             | **~1.6 Go sur 7 Go dispo** |
+| ChromaDB + Python bot | ~1 GB     |
+| SearXNG               | ~0.3 GB   |
+| nomic-embed-text      | ~0.3 GB on demand |
+| **Total**             | **~1.6 GB out of 7 GB available** |
 
-Large marge pour ajouter d'autres services (Home Assistant, RSSHub, etc.) si
-besoin à l'avenir.
+Plenty of headroom to add other services (Home Assistant, RSSHub, etc.) if
+needed in the future.
 
 ---
 
-## Conventions de code
+## Code conventions
 
-- **Python 3.12+**, type hints stricts partout (`mypy --strict`)
-- **async/await** pour tous les I/O (Telegram, Ollama, ChromaDB, SQLite,
-  httpx, caldav en `to_thread`)
-- **Gestion d'erreurs explicite**, pas de `bare except`
-- **Logs structurés via `structlog`** (pas le `logging` standard), deux
-  handlers : stdout (console coloré en dev, JSON en prod selon `ENV`) +
-  fichier rotatif JSON `data/logs/bot.log` (5 Mo x 5 backups) si
-  `LOG_FILE_PATH` est défini — persistés dans le volume Docker pour
-  `grep`/`jq` après coup
-- **Variables d'environnement via `python-dotenv`**, jamais de valeurs hardcodées
-  hors de `bot/config.py`
-- **Tests pytest + pytest-asyncio** (mode auto), dépendances externes mockées —
-  la suite tourne sans Ollama/Telegram/iCloud/SearXNG réels
-- **Pre-commit** avec `ruff check --fix`, `ruff format`, `mypy --strict` sur `bot/`
-- **Base SQLAlchemy partagée** entre modules qui cohabitent dans `tasks.db`
-  (tasks + feeds) — importer `Base` depuis `bot.tasks.models`
+- **Python 3.12+**, strict type hints everywhere (`mypy --strict`)
+- **async/await** for all I/O (Telegram, Ollama, ChromaDB, SQLite, httpx,
+  caldav in `to_thread`)
+- **Explicit error handling**, no `bare except`
+- **Structured logs via `structlog`** (not the standard `logging`), two
+  handlers: stdout (coloured console in dev, JSON in prod depending on
+  `ENV`) + rotating JSON file `data/logs/bot.log` (5 MB x 5 backups) if
+  `LOG_FILE_PATH` is set — persisted in the Docker volume for `grep`/`jq`
+  after the fact
+- **Environment variables via `python-dotenv`**, never hardcoded values
+  outside of `bot/config.py`
+- **Tests with pytest + pytest-asyncio** (auto mode), external dependencies
+  mocked — the suite runs without real Ollama/Telegram/iCloud/SearXNG
+- **Pre-commit** with `ruff check --fix`, `ruff format`, `mypy --strict` on
+  `bot/`
+- **Shared SQLAlchemy Base** between modules that live together in
+  `tasks.db` (tasks + feeds) — import `Base` from `bot.tasks.models`
 
-Commandes utiles via `Makefile` :
+Useful commands via the `Makefile`:
 
 ```bash
-make install   # crée .venv, installe deps dev, installe pre-commit hooks
-make run       # lance le bot en foreground
-make test      # pytest (aucune I/O externe)
+make install   # creates .venv, installs dev deps, installs pre-commit hooks
+make run       # runs the bot in foreground
+make test      # pytest (no external I/O)
 make lint      # ruff check
 make format    # ruff format + --fix
 make typecheck # mypy strict

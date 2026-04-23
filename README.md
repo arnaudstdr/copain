@@ -1,4 +1,4 @@
-# copain — assistant Telegram personnel
+# copain — personal Telegram assistant
 
 <p align="center">
   <img src="copain_bot.png" alt="Logo copain" width="200">
@@ -18,71 +18,70 @@
   <img src="https://img.shields.io/badge/host-Raspberry%20Pi%205-c51a4a?logo=raspberrypi&logoColor=white" alt="Raspberry Pi 5">
 </p>
 
-Bot Telegram mono-utilisateur en langage naturel français.
-Hébergé partiellement sur Raspberry Pi 5 (services locaux) + LLM cloud.
+Single-user Telegram bot driven by natural French language.
+Partly self-hosted on a Raspberry Pi 5 (local services) + cloud LLM.
 
-## Capacités
+## Features
 
-- Conversation avec mémoire sémantique automatique
-- Tâches + rappels Telegram en langage naturel
-- Recherche web (SearXNG self-hosted, résumé FR)
-- Flux RSS (ajout/liste/résumé des actus à la demande)
-- Briefing matinal automatique à 8h : météo + tâches + évènements + top 5 RSS
-- Analyse de photos (texte, scène, graphique, menu, reçu, etc.)
-- Calendrier iCloud via CalDAV (création + listing d'évènements dans n'importe
-  quel calendrier iCloud, fuzzy matching du nom)
-- **Proactivité opt-in** (`PROACTIVITY_ENABLED=true`) : alerte pluie dans l'heure
-  + rappel RDV ~1 h avant. Garde-fous intégrés (fenêtre horaire, cooldown par
-  type, budget quotidien max 3).
+- Conversation with automatic semantic memory
+- Tasks + Telegram reminders in natural language
+- Web search (self-hosted SearXNG, summarised in French)
+- RSS feeds (add/list/summarise latest news on demand)
+- Automatic morning briefing at 8am: weather + tasks + events + top 5 RSS
+- Photo analysis (text, scene, chart, menu, receipt, etc.)
+- iCloud calendar via CalDAV (create + list events in any iCloud calendar,
+  fuzzy name matching)
+- **Opt-in proactivity** (`PROACTIVITY_ENABLED=true`): rain alerts within the
+  hour + appointment reminder ~1 h before. Built-in safeguards (time window,
+  per-type cooldown, daily budget capped at 3).
 
-Le routing entre ces capacités est piloté par le LLM via un bloc `<meta>` JSON
-qu'il produit en fin de chaque réponse. Voir [`CLAUDE.md`](./CLAUDE.md) pour
-les détails d'architecture et [`ROADMAP.md`](./ROADMAP.md) pour l'historique
-des phases.
+Routing between these capabilities is driven by the LLM through a `<meta>`
+JSON block it emits at the end of every reply. See [`CLAUDE.md`](./CLAUDE.md)
+for architecture details and [`ROADMAP.md`](./ROADMAP.md) for the phase
+history.
 
 ## Stack
 
-Python 3.12 async · python-telegram-bot v21 · Ollama (`gemma4:31b-cloud` pour
-le LLM multimodal, `nomic-embed-text` local pour les embeddings) · ChromaDB ·
+Python 3.12 async · python-telegram-bot v21 · Ollama (`gemma4:31b-cloud` for
+the multimodal LLM, `nomic-embed-text` local for embeddings) · ChromaDB ·
 SQLAlchemy 2 + aiosqlite · APScheduler · feedparser · caldav + vobject ·
 httpx · structlog.
 
-## Setup local (dev)
+## Local setup (dev)
 
 ```bash
-cp .env.example .env          # puis remplir les variables (voir ci-dessous)
-make install                  # crée .venv, installe deps, installe pre-commit
-make test                     # 59 tests, tout mocké (aucun service externe)
+cp .env.example .env          # then fill in the variables (see below)
+make install                  # creates .venv, installs deps, installs pre-commit
+make test                     # 59 tests, fully mocked (no external services)
 make lint typecheck           # ruff + mypy strict
-make run                      # lance le bot (nécessite Ollama + SearXNG réels)
+make run                      # starts the bot (requires real Ollama + SearXNG)
 ```
 
-### Variables à renseigner dans `.env`
+### Variables to fill in `.env`
 
-Voir [`.env.example`](./.env.example) pour la liste complète. Les indispensables :
+See [`.env.example`](./.env.example) for the full list. The essentials:
 
-- `TELEGRAM_BOT_TOKEN` — token du bot (via @BotFather)
-- `ALLOWED_USER_ID` — ton user_id Telegram (récupérable via @userinfobot)
-- `ICLOUD_USERNAME` — ton Apple ID (email de connexion)
-- `ICLOUD_APP_PASSWORD` — **App-Specific Password** à générer (voir plus bas)
-- `ICLOUD_CALENDAR_NAME` — nom du calendrier iCloud par défaut (matching fuzzy :
-  tu peux écrire `Personnel` même si le vrai nom contient des emojis et des
-  espaces autour)
+- `TELEGRAM_BOT_TOKEN` — bot token (via @BotFather)
+- `ALLOWED_USER_ID` — your Telegram user ID (get it via @userinfobot)
+- `ICLOUD_USERNAME` — your Apple ID (login email)
+- `ICLOUD_APP_PASSWORD` — **App-Specific Password** to generate (see below)
+- `ICLOUD_CALENDAR_NAME` — default iCloud calendar name (fuzzy matching: you
+  can write `Personnel` even if the real name contains emojis and surrounding
+  spaces)
 
-Les autres variables (`TZ`, `BRIEFING_*`, `HOME_*`, `OLLAMA_*`, etc.) ont des
-valeurs par défaut raisonnables et peuvent rester telles quelles pour un
-usage à Sélestat.
+The other variables (`TZ`, `BRIEFING_*`, `HOME_*`, `OLLAMA_*`, etc.) have
+reasonable defaults and can stay as-is for usage in Sélestat.
 
-### Créer un App-Specific Password iCloud
+### Create an iCloud App-Specific Password
 
-Obligatoire à cause du 2FA Apple ID :
+Required because of Apple ID 2FA:
 
-1. Aller sur [appleid.apple.com](https://appleid.apple.com)
-2. Connexion et sécurité → **Mots de passe pour apps** → Générer
-3. Nommer l'app (ex: « copain bot »)
-4. Copier le mot de passe au format `xxxx-xxxx-xxxx-xxxx` dans `.env`
+1. Go to [appleid.apple.com](https://appleid.apple.com)
+2. Sign-In and Security → **App-Specific Passwords** → Generate
+3. Name the app (e.g. "copain bot")
+4. Copy the password in the `xxxx-xxxx-xxxx-xxxx` format into `.env`
 
-## Déploiement Docker (Pi 5)
+## Docker deployment (Pi 5)
 
 ```bash
 make docker-build
@@ -90,26 +89,25 @@ make docker-up
 docker logs -f copain-bot-1
 ```
 
-Ollama doit tourner **hors Docker** sur le Pi (pour accès GPU/NPU ARM) avec
-`gemma4:31b-cloud` configuré.
+Ollama must run **outside Docker** on the Pi (for GPU/NPU ARM access) with
+`gemma4:31b-cloud` configured.
 
-Au démarrage, les logs doivent montrer :
+At startup, the logs should show:
 
 - `startup env=...`
 - `calendars_discovered count=N names=[...]`
 - `calendar_connected calendar=...`
 - `cron_job_scheduled job_id=daily-briefing hour=8`
 
-## Sécurité
+## Security
 
-Le bot ignore silencieusement tout message d'un utilisateur dont l'ID ne
-correspond pas à `ALLOWED_USER_ID`. Les tentatives d'accès non autorisées
-sont loggées en warning.
+The bot silently ignores any message from a user whose ID does not match
+`ALLOWED_USER_ID`. Unauthorised access attempts are logged as warnings.
 
 ## Documentation
 
-- [`CLAUDE.md`](./CLAUDE.md) — architecture détaillée, conventions de code,
-  system prompt, structure complète du projet
-- [`ROADMAP.md`](./ROADMAP.md) — statut d'implémentation des phases (RSS,
-  briefing, vision, iCloud) + historique des commits structurants
-- [`.env.example`](./.env.example) — template des variables d'environnement
+- [`CLAUDE.md`](./CLAUDE.md) — detailed architecture, code conventions,
+  system prompt, full project structure
+- [`ROADMAP.md`](./ROADMAP.md) — implementation phase status (RSS, briefing,
+  vision, iCloud) + log of structuring commits
+- [`.env.example`](./.env.example) — environment variable template
