@@ -6,7 +6,17 @@ from datetime import datetime, timedelta
 from unittest.mock import AsyncMock, MagicMock
 from zoneinfo import ZoneInfo
 
-from bot.briefing.weather import DailyWeather, HourlyPrecipitation, OpenMeteoClient
+import httpx
+import pytest
+
+from bot.briefing import weather as weather_module
+from bot.briefing.weather import (
+    DailyWeather,
+    HourlyPrecipitation,
+    OpenMeteoClient,
+    WeatherError,
+    WeatherSummary,
+)
 
 
 def _fmt(dt: datetime) -> str:
@@ -98,3 +108,78 @@ async def test_get_forecast_returns_daily_list_with_current_temp_on_day0() -> No
     assert result[1].description == "pluie faible"
     assert result[1].precipitation_mm == 2.5
     assert result[2].wind_kmh_max == 10.0
+
+
+def _today_success_response() -> MagicMock:
+    payload = {
+        "current": {
+            "temperature_2m": 14.0,
+            "weather_code": 1,
+            "wind_speed_10m": 10.0,
+        },
+        "daily": {
+            "temperature_2m_max": [18.0],
+            "temperature_2m_min": [10.0],
+            "precipitation_sum": [0.0],
+            "weather_code": [1],
+        },
+    }
+    response = MagicMock()
+    response.json.return_value = payload
+    response.raise_for_status = MagicMock()
+    return response
+
+
+async def test_get_today_retries_on_transient_httpx_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(weather_module, "_BACKOFF_SECONDS", (0.0, 0.0))
+    success = _today_success_response()
+
+    client = OpenMeteoClient(timezone="Europe/Paris")
+    client._client = AsyncMock()
+    client._client.get = AsyncMock(
+        side_effect=[
+            httpx.ReadTimeout("timeout 1"),
+            httpx.ReadTimeout("timeout 2"),
+            success,
+        ]
+    )
+
+    result = await client.get_today(lat=48.26, lon=7.45, city="Sélestat")
+
+    assert isinstance(result, WeatherSummary)
+    assert result.city == "Sélestat"
+    assert result.description == "plutôt dégagé"
+    assert client._client.get.await_count == 3
+
+
+async def test_get_today_raises_weather_error_after_all_retries_fail(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(weather_module, "_BACKOFF_SECONDS", (0.0, 0.0))
+
+    client = OpenMeteoClient(timezone="Europe/Paris")
+    client._client = AsyncMock()
+    client._client.get = AsyncMock(side_effect=httpx.ConnectError("down"))
+
+    with pytest.raises(WeatherError) as excinfo:
+        await client.get_today(lat=48.26, lon=7.45, city="Sélestat")
+
+    assert isinstance(excinfo.value.__cause__, httpx.ConnectError)
+    assert client._client.get.await_count == 3
+
+
+async def test_get_today_does_not_retry_on_malformed_payload() -> None:
+    response = MagicMock()
+    response.raise_for_status = MagicMock()
+    response.json.side_effect = ValueError("not json")
+
+    client = OpenMeteoClient(timezone="Europe/Paris")
+    client._client = AsyncMock()
+    client._client.get = AsyncMock(return_value=response)
+
+    with pytest.raises(WeatherError):
+        await client.get_today(lat=48.26, lon=7.45, city="Sélestat")
+
+    assert client._client.get.await_count == 1

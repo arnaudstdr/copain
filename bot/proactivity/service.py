@@ -22,6 +22,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
 from sqlalchemy.sql import functions as sql_functions
 
+from bot.briefing.weather import WeatherError
 from bot.logging_conf import get_logger
 from bot.proactivity.models import NotificationLog
 from bot.proactivity.rules import Notification, evaluate_rain, evaluate_upcoming_event
@@ -117,8 +118,20 @@ class ProactivityService:
                 lon=self._settings.home_lon,
                 hours_ahead=2,
             )
+        except WeatherError as exc:
+            cause = exc.__cause__
+            log.warning(
+                "proactivity_weather_failed",
+                error=str(exc),
+                exc_type=type(cause).__name__ if cause is not None else "WeatherError",
+            )
+            return None
         except Exception as exc:
-            log.warning("proactivity_weather_failed", error=str(exc))
+            log.warning(
+                "proactivity_weather_failed",
+                error=str(exc),
+                exc_type=type(exc).__name__,
+            )
             return None
         notif = evaluate_rain(hourly)
         if notif is None:

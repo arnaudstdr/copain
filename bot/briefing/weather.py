@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass
 from datetime import date, datetime
 from types import TracebackType
@@ -15,6 +16,12 @@ from bot.logging_conf import get_logger
 log = get_logger(__name__)
 
 BASE_URL = "https://api.open-meteo.com/v1/forecast"
+
+# Retry sur les erreurs réseau transitoires (timeouts, 5xx, DNS). Les
+# backoffs sont volontairement courts : Open-Meteo récupère vite, et on
+# ne veut pas retarder le briefing ou la proactivité.
+_MAX_ATTEMPTS = 3
+_BACKOFF_SECONDS: tuple[float, ...] = (1.0, 2.0)
 
 # Mapping des codes météo WMO → description FR (codes utilisés par Open-Meteo).
 # Référence : https://open-meteo.com/en/docs
@@ -95,9 +102,47 @@ class WeatherError(RuntimeError):
 class OpenMeteoClient:
     """Wrapper httpx async autour de l'API Open-Meteo."""
 
-    def __init__(self, timezone: str = "Europe/Paris", timeout: float = 10.0) -> None:
+    def __init__(self, timezone: str = "Europe/Paris", timeout: float = 20.0) -> None:
         self._timezone = timezone
         self._client = httpx.AsyncClient(timeout=timeout)
+
+    async def _request_with_retry(self, params: dict[str, Any], context: str) -> dict[str, Any]:
+        """GET `BASE_URL` avec retry sur `httpx.HTTPError`.
+
+        Les erreurs réseau/HTTP transitoires sont réessayées jusqu'à
+        `_MAX_ATTEMPTS` fois avec un backoff court. Les payloads non-JSON
+        ne sont pas réessayés (l'erreur ne s'améliorera pas sur retry).
+        """
+        last_exc: httpx.HTTPError | None = None
+        for attempt in range(_MAX_ATTEMPTS):
+            try:
+                response = await self._client.get(BASE_URL, params=params)
+                response.raise_for_status()
+            except httpx.HTTPError as exc:
+                last_exc = exc
+                remaining = _MAX_ATTEMPTS - attempt - 1
+                log.warning(
+                    "weather_request_retry",
+                    context=context,
+                    attempt=attempt + 1,
+                    max_attempts=_MAX_ATTEMPTS,
+                    exc_type=type(exc).__name__,
+                    error=str(exc),
+                    remaining=remaining,
+                )
+                if remaining == 0:
+                    break
+                await asyncio.sleep(_BACKOFF_SECONDS[attempt])
+                continue
+
+            try:
+                return response.json()  # type: ignore[no-any-return]
+            except ValueError as exc:
+                raise WeatherError("Réponse Open-Meteo non-JSON") from exc
+
+        assert last_exc is not None
+        log.error("weather_fetch_failed", context=context, error=str(last_exc))
+        raise WeatherError(f"Open-Meteo échoué ({context}) : {last_exc}") from last_exc
 
     async def get_today(self, lat: float, lon: float, city: str) -> WeatherSummary:
         params: dict[str, Any] = {
@@ -108,17 +153,7 @@ class OpenMeteoClient:
             "timezone": self._timezone,
             "forecast_days": 1,
         }
-        try:
-            response = await self._client.get(BASE_URL, params=params)
-            response.raise_for_status()
-        except httpx.HTTPError as exc:
-            log.error("weather_fetch_failed", lat=lat, lon=lon, error=str(exc))
-            raise WeatherError(f"Open-Meteo échoué : {exc}") from exc
-
-        try:
-            data: dict[str, Any] = response.json()
-        except ValueError as exc:
-            raise WeatherError("Réponse Open-Meteo non-JSON") from exc
+        data = await self._request_with_retry(params, context="get_today")
 
         current = data.get("current") or {}
         daily = data.get("daily") or {}
@@ -161,17 +196,7 @@ class OpenMeteoClient:
             "timezone": self._timezone,
             "forecast_days": clamped,
         }
-        try:
-            response = await self._client.get(BASE_URL, params=params)
-            response.raise_for_status()
-        except httpx.HTTPError as exc:
-            log.error("weather_forecast_failed", lat=lat, lon=lon, error=str(exc))
-            raise WeatherError(f"Open-Meteo forecast échoué : {exc}") from exc
-
-        try:
-            data: dict[str, Any] = response.json()
-        except ValueError as exc:
-            raise WeatherError("Réponse Open-Meteo non-JSON") from exc
+        data = await self._request_with_retry(params, context="get_forecast")
 
         current = data.get("current") or {}
         daily = data.get("daily") or {}
@@ -227,17 +252,7 @@ class OpenMeteoClient:
             "timezone": self._timezone,
             "forecast_days": 1,
         }
-        try:
-            response = await self._client.get(BASE_URL, params=params)
-            response.raise_for_status()
-        except httpx.HTTPError as exc:
-            log.error("weather_hourly_fetch_failed", lat=lat, lon=lon, error=str(exc))
-            raise WeatherError(f"Open-Meteo hourly échoué : {exc}") from exc
-
-        try:
-            data: dict[str, Any] = response.json()
-        except ValueError as exc:
-            raise WeatherError("Réponse Open-Meteo non-JSON") from exc
+        data = await self._request_with_retry(params, context="get_hourly_precipitation")
 
         hourly = data.get("hourly") or {}
         times = hourly.get("time") or []

@@ -61,7 +61,12 @@ class BriefingService:
             )
             parts.append("\n" + _format_weather(weather))
         except WeatherError as exc:
-            log.warning("briefing_weather_skipped", error=str(exc))
+            cause = exc.__cause__
+            log.warning(
+                "briefing_weather_skipped",
+                error=str(exc),
+                exc_type=type(cause).__name__ if cause is not None else "WeatherError",
+            )
             parts.append("\n🌤 Météo indisponible pour le moment.")
 
         today_tasks = await self._today_tasks()
