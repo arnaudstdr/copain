@@ -51,7 +51,7 @@ httpx · structlog.
 ```bash
 cp .env.example .env          # then fill in the variables (see below)
 make install                  # creates .venv, installs deps, installs pre-commit
-make test                     # 59 tests, fully mocked (no external services)
+make test                     # 150 tests, fully mocked (no external services)
 make lint typecheck           # ruff + mypy strict
 make run                      # starts the bot (requires real Ollama + SearXNG)
 ```
