@@ -152,7 +152,6 @@ slow. As a result, most of the initial RAM budget is freed. Only
 copain/
 ├── CLAUDE.md                    # this file (project source of truth)
 ├── README.md                    # user-facing setup
-├── ROADMAP.md                   # implementation phase status
 ├── .env                         # secrets (never committed)
 ├── .env.example
 ├── docker-compose.yml

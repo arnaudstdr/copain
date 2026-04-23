@@ -37,8 +37,7 @@ Partly self-hosted on a Raspberry Pi 5 (local services) + cloud LLM.
 
 Routing between these capabilities is driven by the LLM through a `<meta>`
 JSON block it emits at the end of every reply. See [`CLAUDE.md`](./CLAUDE.md)
-for architecture details and [`ROADMAP.md`](./ROADMAP.md) for the phase
-history.
+for architecture details.
 
 ## Stack
 
@@ -108,6 +107,4 @@ The bot silently ignores any message from a user whose ID does not match
 
 - [`CLAUDE.md`](./CLAUDE.md) — detailed architecture, code conventions,
   system prompt, full project structure
-- [`ROADMAP.md`](./ROADMAP.md) — implementation phase status (RSS, briefing,
-  vision, iCloud) + log of structuring commits
 - [`.env.example`](./.env.example) — environment variable template
