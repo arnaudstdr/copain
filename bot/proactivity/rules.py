@@ -44,8 +44,7 @@ def evaluate_rain(
         return None
     hhmm = first.time.strftime("%H:%M")
     text = (
-        f"☔ Parapluie — pluie probable vers {hhmm} "
-        f"(≈{first.mm:.1f} mm, {first.probability_pct} %)"
+        f"☔ Parapluie — pluie probable vers {hhmm} (≈{first.mm:.1f} mm, {first.probability_pct} %)"
     )
     return Notification(kind="rain", text=text)
 

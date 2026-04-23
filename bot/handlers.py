@@ -464,9 +464,7 @@ async def _handle_weather(meta: Meta, deps: BotDeps, intro: str) -> str:
     days_needed = min(end_offset + 1, 16)
 
     try:
-        forecast = await deps.weather.get_forecast(
-            lat=lat, lon=lon, city=label, days=days_needed
-        )
+        forecast = await deps.weather.get_forecast(lat=lat, lon=lon, city=label, days=days_needed)
     except WeatherError:
         log.exception("weather_fetch_failed")
         return "Désolé, impossible de récupérer la météo pour l'instant."

@@ -54,7 +54,9 @@ async def test_get_hourly_precipitation_filters_past_and_limits_results() -> Non
 
 async def test_get_hourly_precipitation_empty_payload_returns_empty_list() -> None:
     response = MagicMock()
-    response.json.return_value = {"hourly": {"time": [], "precipitation": [], "precipitation_probability": []}}
+    response.json.return_value = {
+        "hourly": {"time": [], "precipitation": [], "precipitation_probability": []}
+    }
     response.raise_for_status = MagicMock()
 
     client = OpenMeteoClient(timezone="Europe/Paris")

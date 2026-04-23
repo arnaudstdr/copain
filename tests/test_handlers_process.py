@@ -461,9 +461,7 @@ async def test_process_weather_demain_requests_two_days_returns_single(
         ),
     ]
     deps.weather.get_forecast = AsyncMock(return_value=forecast)
-    deps.llm.call = AsyncMock(
-        return_value=_meta_block(intent="weather", weather_when="demain")
-    )
+    deps.llm.call = AsyncMock(return_value=_meta_block(intent="weather", weather_when="demain"))
 
     text = await _process("quel temps demain ?", chat_id=42, deps=deps)
 

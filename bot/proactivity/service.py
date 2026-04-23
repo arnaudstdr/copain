@@ -147,8 +147,10 @@ class ProactivityService:
         midnight_local = datetime.combine(now.date(), time.min, tzinfo=self._tz)
         midnight_utc_naive = midnight_local.astimezone(ZoneInfo("UTC")).replace(tzinfo=None)
         async with self._sessionmaker() as session:
-            stmt = select(sql_functions.count()).select_from(NotificationLog).where(
-                NotificationLog.sent_at >= midnight_utc_naive
+            stmt = (
+                select(sql_functions.count())
+                .select_from(NotificationLog)
+                .where(NotificationLog.sent_at >= midnight_utc_naive)
             )
             result = await session.execute(stmt)
             return int(result.scalar_one())
