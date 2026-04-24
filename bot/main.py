@@ -74,6 +74,7 @@ def main() -> None:
         settings.ollama_base_url,
         settings.ollama_llm_model,
         timeout=settings.ollama_timeout_sec,
+        num_ctx=settings.ollama_num_ctx,
     )
     calendar = ICloudCalendarClient(
         username=settings.icloud_username,
