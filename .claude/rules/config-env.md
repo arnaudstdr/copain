@@ -84,6 +84,16 @@ LOG_FILE_PATH=./data/logs/bot.log
 
 # Environment (dev | prod) — controls the structlog log format
 ENV=dev
+
+# Sentry (error monitoring). Empty DSN disables the SDK entirely (no init,
+# no network). log.error / log.exception become Sentry events, log.info /
+# log.warning become breadcrumbs. APScheduler job errors are captured via
+# an EVENT_JOB_ERROR listener. PTB network errors (NetworkError / TimedOut)
+# stay at warning level and are NOT sent to Sentry.
+SENTRY_DSN=                            # empty = disabled
+SENTRY_ENVIRONMENT=                    # defaults to ENV
+SENTRY_RELEASE=                        # git tag/hash, groups errors per release
+SENTRY_TRACES_SAMPLE_RATE=0.0          # 0.0 = no APM, 1.0 = trace everything
 ```
 
 `bot/config.py` loads and validates these variables. Variables marked as
