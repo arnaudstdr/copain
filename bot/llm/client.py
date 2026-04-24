@@ -217,6 +217,30 @@ class LLMClient:
             await self._cache.set(cache_key, content)
         return content
 
+    def _log_prompt_size(self, model: str, messages: list[dict[str, Any]]) -> None:
+        """Log la taille approx du prompt (chars + estim. tokens ~chars/4) par rôle.
+
+        Sert à diagnostiquer les prompts anormalement gros (mémoire non tronquée,
+        history accumulé, résultats de recherche injectés tels quels) qui
+        déclenchent un `prompt too long` côté Ollama.
+        """
+        by_role: dict[str, int] = {}
+        for msg in messages:
+            role = str(msg.get("role", "?"))
+            content = msg.get("content") or ""
+            by_role[role] = by_role.get(role, 0) + len(content)
+            for img_b64 in msg.get("images") or []:
+                by_role[role] += len(img_b64)
+        total_chars = sum(by_role.values())
+        log.info(
+            "llm_prompt_size",
+            model=model,
+            messages=len(messages),
+            total_chars=total_chars,
+            est_tokens=total_chars // 4,
+            by_role=by_role,
+        )
+
     async def chat_stream(
         self,
         messages: list[dict[str, Any]],
@@ -243,6 +267,7 @@ class LLMClient:
 
         buffer_parts: list[str] = []
         produced_any = False
+        self._log_prompt_size(self._model, messages)
         try:
             stream = await self._client.chat(
                 model=self._model,
@@ -331,6 +356,7 @@ class LLMClient:
         messages: list[dict[str, Any]],
     ) -> str:
         """Appel Ollama unitaire (un endpoint), utilisé par primary et fallback."""
+        self._log_prompt_size(model, messages)
         try:
             response: Any = await client.chat(
                 model=model,
