@@ -191,4 +191,4 @@ class ProactivityService:
         if last is None:
             return None
         # SQLite ne préserve pas la tz : on réattache UTC pour comparer à `now`.
-        return last if last.tzinfo is not None else last.replace(tzinfo=ZoneInfo("UTC"))  # type: ignore[no-any-return]
+        return last if last.tzinfo is not None else last.replace(tzinfo=ZoneInfo("UTC"))  # type: ignore[no-any-return, unused-ignore]

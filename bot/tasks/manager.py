@@ -50,7 +50,7 @@ class TaskManager:
                 .order_by(Task.due_at.is_(None), Task.due_at, Task.created_at)
             )
             result = await session.execute(stmt)
-            return result.scalars().all()  # type: ignore[no-any-return]
+            return result.scalars().all()  # type: ignore[no-any-return, unused-ignore]
 
     async def complete(self, task_id: int) -> bool:
         async with self._sessionmaker() as session:

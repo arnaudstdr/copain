@@ -58,12 +58,12 @@ class FeedManager:
             if enabled_only:
                 stmt = stmt.where(Feed.enabled.is_(True))
             result = await session.execute(stmt)
-            return result.scalars().all()  # type: ignore[no-any-return]
+            return result.scalars().all()  # type: ignore[no-any-return, unused-ignore]
 
     async def get(self, name_or_id: str | int) -> Feed | None:
         async with self._sessionmaker() as session:
             if isinstance(name_or_id, int):
-                return await session.get(Feed, name_or_id)  # type: ignore[no-any-return]
+                return await session.get(Feed, name_or_id)  # type: ignore[no-any-return, unused-ignore]
             # Échappe % et _ pour éviter qu'un nom utilisateur style "zd%" fasse
             # un match sauvage (les wildcards LIKE sont réservés).
             pattern = _escape_like(name_or_id)
@@ -74,7 +74,7 @@ class FeedManager:
                 )
             )
             result = await session.execute(stmt)
-            return result.scalar_one_or_none()  # type: ignore[no-any-return]
+            return result.scalar_one_or_none()  # type: ignore[no-any-return, unused-ignore]
 
     async def remove(self, name_or_id: str | int) -> bool:
         async with self._sessionmaker() as session:
@@ -111,7 +111,7 @@ class FeedManager:
             return feed
         stmt = select(Feed).where(Feed.name == name_or_id)
         result = await session.execute(stmt)
-        return result.scalar_one_or_none()  # type: ignore[no-any-return]
+        return result.scalar_one_or_none()  # type: ignore[no-any-return, unused-ignore]
 
 
 def _escape_like(value: str) -> str:

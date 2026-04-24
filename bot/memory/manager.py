@@ -84,7 +84,7 @@ class MemoryManager:
         await asyncio.to_thread(
             self._collection.add,
             ids=[entry_id],
-            embeddings=[vector],
+            embeddings=[vector],  # type: ignore[arg-type, unused-ignore]
             documents=[memory_content],
             metadatas=[metadata],
         )
@@ -110,9 +110,9 @@ class MemoryManager:
         await asyncio.to_thread(
             self._collection.add,
             ids=ids,
-            embeddings=vectors,
+            embeddings=vectors,  # type: ignore[arg-type, unused-ignore]
             documents=contents,
-            metadatas=metadatas,
+            metadatas=metadatas,  # type: ignore[arg-type, unused-ignore]
         )
         log.info("memory_stored_batch", count=len(items))
 
@@ -121,7 +121,7 @@ class MemoryManager:
         vector = await self._embedder.embed(query)
         result = await asyncio.to_thread(
             self._collection.query,
-            query_embeddings=[vector],
+            query_embeddings=[vector],  # type: ignore[arg-type, unused-ignore]
             n_results=top_k,
         )
         documents = result.get("documents") or [[]]
