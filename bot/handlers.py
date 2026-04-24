@@ -23,7 +23,7 @@ from bot.llm.prompt import build_system_prompt
 from bot.logging_conf import get_logger
 from bot.rss.manager import FeedAlreadyExists
 from bot.security import is_allowed
-from bot.telegram_sender import reply_markdown
+from bot.telegram_sender import TelegramStreamSink, reply_markdown, visible_text
 
 if TYPE_CHECKING:
     from telegram import Update
@@ -91,8 +91,9 @@ def make_handler(deps: BotDeps) -> HandlerFn:
         chat_id = message.chat_id
         log.info("message_received", chat_id=chat_id, preview=user_text[:80])
 
+        sink = TelegramStreamSink(message)
         try:
-            reply = await _process(user_text, chat_id, deps)
+            reply = await _process(user_text, chat_id, deps, sink=sink)
         except LLMTimeoutError:
             log.warning("llm_timeout", chat_id=chat_id)
             reply = (
@@ -106,7 +107,7 @@ def make_handler(deps: BotDeps) -> HandlerFn:
             log.exception("handler_failed", error=str(exc))
             reply = "Désolé, une erreur interne est survenue."
 
-        await reply_markdown(message, reply)
+        await sink.finalize(reply)
 
     return handle_message
 
@@ -159,6 +160,7 @@ async def _process(
     chat_id: int,
     deps: BotDeps,
     images: list[bytes] | None = None,
+    sink: TelegramStreamSink | None = None,
 ) -> str:
     memory_context = await deps.memory.retrieve_context(
         user_text or "(image envoyée sans légende)", top_k=5
@@ -175,7 +177,13 @@ async def _process(
     user_content = (
         user_text if user_text else "Analyse cette image et propose une action pertinente."
     )
-    raw = await deps.llm.call(system=system_prompt, user=user_content, images=images)
+    # Streaming opt-in : uniquement si un sink est fourni ET pas d'images
+    # (le fallback local n'est pas multimodal, et le premier appel est plus
+    # risqué — on laisse le chemin non-streamé gérer le fallback proprement).
+    if sink is not None and not images:
+        raw = await _stream_first_call(deps, system_prompt, user_content, sink)
+    else:
+        raw = await deps.llm.call(system=system_prompt, user=user_content, images=images)
 
     try:
         text, meta = extract_meta(raw)
@@ -189,18 +197,28 @@ async def _process(
         results = await deps.search.search(meta["search_query"])
         log.info("search_performed", query=meta["search_query"], hits=len(results))
         text = await deps.llm.call_with_search(user_text, results)
+        if sink is not None:
+            await sink.emit(text)
 
     elif meta["intent"] == "feed" and meta["feed"]["action"]:
         text = await _handle_feed(user_text, meta, deps, intro=text)
+        if sink is not None:
+            await sink.emit(text)
 
     elif meta["intent"] == "event" and meta["event"]["action"]:
         text = await _handle_event(meta, deps, intro=text)
+        if sink is not None:
+            await sink.emit(text)
 
     elif meta["intent"] == "fuel" and meta["fuel"]["fuel_type"]:
         text = await _handle_fuel(meta, deps, intro=text)
+        if sink is not None:
+            await sink.emit(text)
 
     elif meta["intent"] == "weather":
         text = await _handle_weather(meta, deps, intro=text)
+        if sink is not None:
+            await sink.emit(text)
 
     history_user = user_text if user_text else "(image envoyée)"
     if images:
@@ -211,6 +229,24 @@ async def _process(
     deps.history.append(f"assistant: {text}")
 
     return text
+
+
+async def _stream_first_call(
+    deps: BotDeps,
+    system_prompt: str,
+    user_content: str,
+    sink: TelegramStreamSink,
+) -> str:
+    """Streame le premier appel LLM et retourne le texte brut complet (avec bloc meta)."""
+    messages = [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": user_content},
+    ]
+    buffer_parts: list[str] = []
+    async for chunk in deps.llm.chat_stream(messages):
+        buffer_parts.append(chunk)
+        await sink.emit(visible_text("".join(buffer_parts)))
+    return "".join(buffer_parts)
 
 
 async def _apply_side_effects(
@@ -306,7 +342,8 @@ async def _summarize_feed_items(deps: BotDeps, user_text: str, items: Sequence[F
         messages=[
             {"role": "system", "content": system},
             {"role": "user", "content": user},
-        ]
+        ],
+        cacheable=True,
     )
 
 
