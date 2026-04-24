@@ -19,9 +19,26 @@ ALLOWED_USER_ID=                     # required, your Telegram user_id only
 OLLAMA_BASE_URL=http://localhost:11434
 OLLAMA_LLM_MODEL=gemma4:31b-cloud
 OLLAMA_EMBED_MODEL=nomic-embed-text
+OLLAMA_TIMEOUT_SEC=120               # primary timeout (cloud LLM, 2-call chains)
+OLLAMA_NUM_CTX=32768                 # explicit num_ctx to dodge cloud defaults
+
+# Optional local fallback — kicks in when the primary times out or errors
+# (never for multimodal/photo calls). Leave OLLAMA_FALLBACK_MODEL empty to
+# disable. See .claude/rules/llm.md for the full fallback semantics.
+OLLAMA_FALLBACK_MODEL=                # e.g. gemma3:4b (empty = no fallback)
+OLLAMA_FALLBACK_BASE_URL=             # defaults to OLLAMA_BASE_URL if empty
+OLLAMA_FALLBACK_TIMEOUT_SEC=60
+OLLAMA_FALLBACK_NUM_CTX=8192
 
 # SearXNG (local instance)
 SEARXNG_BASE_URL=http://localhost:8888
+
+# Response cache (LLM opt-in via cacheable=True, SearXNG for every search).
+# Fallback LLM responses are never cached.
+CACHE_LLM_TTL_SEC=21600              # 6 h
+CACHE_LLM_MAX_SIZE=128
+CACHE_SEARXNG_TTL_SEC=3600           # 1 h
+CACHE_SEARXNG_MAX_SIZE=128
 
 # Data paths (mounted as a Docker volume)
 DATA_DIR=./data
