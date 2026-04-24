@@ -101,10 +101,7 @@ def make_handler(deps: BotDeps) -> HandlerFn:
             )
         except LLMError as exc:
             log.error("llm_error", chat_id=chat_id, error=str(exc))
-            reply = (
-                "Le modèle LLM a un souci côté serveur pour l'instant. "
-                "Réessaie dans un moment."
-            )
+            reply = "Le modèle LLM a un souci côté serveur pour l'instant. Réessaie dans un moment."
         except Exception as exc:
             log.exception("handler_failed", error=str(exc))
             reply = "Désolé, une erreur interne est survenue."
@@ -147,10 +144,7 @@ def make_photo_handler(deps: BotDeps) -> HandlerFn:
             )
         except LLMError as exc:
             log.error("llm_error", chat_id=chat_id, kind="photo", error=str(exc))
-            reply = (
-                "Le modèle LLM a un souci côté serveur pour l'instant. "
-                "Réessaie dans un moment."
-            )
+            reply = "Le modèle LLM a un souci côté serveur pour l'instant. Réessaie dans un moment."
         except Exception as exc:
             log.exception("photo_handler_failed", error=str(exc))
             reply = "Désolé, je n'ai pas réussi à analyser cette image."

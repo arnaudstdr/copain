@@ -127,7 +127,10 @@ class BriefingService:
             # plante (timeout, prompt too long, API cloud down, etc.). Mieux
             # vaut une liste de titres bruts que pas de briefing du tout.
             log.warning("briefing_rss_summary_failed", error=str(exc))
-            return "📰 *Actus du jour* (titres bruts, résumé LLM indisponible)\n" + _format_raw_items(top)
+            return (
+                "📰 *Actus du jour* (titres bruts, résumé LLM indisponible)\n"
+                + _format_raw_items(top)
+            )
         return "📰 *Actus du jour*\n" + summary
 
     async def _summarize_items(self, items: Sequence[FeedItem]) -> str:
