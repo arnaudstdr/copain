@@ -217,6 +217,25 @@ class LLMClient:
             await self._cache.set(cache_key, content)
         return content
 
+    def _dump_failed_prompt(self, messages: list[dict[str, Any]], exc: BaseException) -> None:
+        """Persiste le prompt dans /tmp/copain_failed_prompt.json pour diagnostic.
+
+        Seulement sur erreurs inattendues (typiquement `prompt too long`).
+        Écrase à chaque fois — on ne garde que le dernier.
+        """
+        if "prompt too long" not in str(exc).lower():
+            return
+        try:
+            import json
+            from pathlib import Path
+
+            Path("/tmp/copain_failed_prompt.json").write_text(
+                json.dumps({"error": str(exc), "messages": messages}, ensure_ascii=False, indent=2)
+            )
+            log.warning("failed_prompt_dumped", path="/tmp/copain_failed_prompt.json")
+        except Exception as dump_exc:
+            log.warning("failed_prompt_dump_error", error=str(dump_exc))
+
     def _log_prompt_size(self, model: str, messages: list[dict[str, Any]]) -> None:
         """Log la taille approx du prompt (chars + estim. tokens ~chars/4) par rôle.
 
@@ -302,6 +321,7 @@ class LLMClient:
             yield fallback_content
         except Exception as exc:
             log.error("ollama_chat_failed", model=self._model, error=str(exc))
+            self._dump_failed_prompt(messages, exc)
             if produced_any:
                 raise LLMError(f"Appel Ollama échoué : {exc}") from exc
             has_images = any("images" in msg for msg in messages)
