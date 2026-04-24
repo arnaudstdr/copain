@@ -28,6 +28,11 @@ class Settings:
     ollama_timeout_sec: float
     ollama_num_ctx: int
 
+    ollama_fallback_model: str | None
+    ollama_fallback_base_url: str | None
+    ollama_fallback_timeout_sec: float
+    ollama_fallback_num_ctx: int
+
     searxng_base_url: str
 
     data_dir: Path
@@ -56,6 +61,11 @@ class Settings:
 
     fuel_default_radius_km: float
     nominatim_user_agent: str
+
+    cache_llm_ttl_sec: float
+    cache_llm_max_size: int
+    cache_searxng_ttl_sec: float
+    cache_searxng_max_size: int
 
     log_file_path: Path | None
 
@@ -146,6 +156,10 @@ def load_settings() -> Settings:
         ollama_embed_model=os.getenv("OLLAMA_EMBED_MODEL", "nomic-embed-text"),
         ollama_timeout_sec=_env_float("OLLAMA_TIMEOUT_SEC", 120.0),
         ollama_num_ctx=_env_int("OLLAMA_NUM_CTX", 32768),
+        ollama_fallback_model=os.getenv("OLLAMA_FALLBACK_MODEL") or None,
+        ollama_fallback_base_url=os.getenv("OLLAMA_FALLBACK_BASE_URL") or None,
+        ollama_fallback_timeout_sec=_env_float("OLLAMA_FALLBACK_TIMEOUT_SEC", 60.0),
+        ollama_fallback_num_ctx=_env_int("OLLAMA_FALLBACK_NUM_CTX", 8192),
         searxng_base_url=os.getenv("SEARXNG_BASE_URL", "http://localhost:8080"),
         data_dir=data_dir,
         chroma_dir=Path(os.getenv("CHROMA_DIR", data_dir / "chroma")).resolve(),
@@ -171,6 +185,10 @@ def load_settings() -> Settings:
             "NOMINATIM_USER_AGENT",
             "copain-bot/1.0 (personal assistant)",
         ),
+        cache_llm_ttl_sec=_env_float("CACHE_LLM_TTL_SEC", 21600.0),
+        cache_llm_max_size=_env_int("CACHE_LLM_MAX_SIZE", 128),
+        cache_searxng_ttl_sec=_env_float("CACHE_SEARXNG_TTL_SEC", 3600.0),
+        cache_searxng_max_size=_env_int("CACHE_SEARXNG_MAX_SIZE", 128),
         log_file_path=_parse_log_file_path(data_dir),
         env=os.getenv("ENV", "dev"),
     )

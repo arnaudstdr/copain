@@ -112,3 +112,32 @@ def test_ollama_num_ctx_custom(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("OLLAMA_NUM_CTX", "16384")
     settings = load_settings()
     assert settings.ollama_num_ctx == 16384
+
+
+def test_cache_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
+    _minimal_env(monkeypatch)
+    for var in (
+        "CACHE_LLM_TTL_SEC",
+        "CACHE_LLM_MAX_SIZE",
+        "CACHE_SEARXNG_TTL_SEC",
+        "CACHE_SEARXNG_MAX_SIZE",
+    ):
+        monkeypatch.delenv(var, raising=False)
+    settings = load_settings()
+    assert settings.cache_llm_ttl_sec == 21600.0
+    assert settings.cache_llm_max_size == 128
+    assert settings.cache_searxng_ttl_sec == 3600.0
+    assert settings.cache_searxng_max_size == 128
+
+
+def test_cache_custom_values(monkeypatch: pytest.MonkeyPatch) -> None:
+    _minimal_env(monkeypatch)
+    monkeypatch.setenv("CACHE_LLM_TTL_SEC", "600")
+    monkeypatch.setenv("CACHE_LLM_MAX_SIZE", "32")
+    monkeypatch.setenv("CACHE_SEARXNG_TTL_SEC", "120")
+    monkeypatch.setenv("CACHE_SEARXNG_MAX_SIZE", "16")
+    settings = load_settings()
+    assert settings.cache_llm_ttl_sec == 600.0
+    assert settings.cache_llm_max_size == 32
+    assert settings.cache_searxng_ttl_sec == 120.0
+    assert settings.cache_searxng_max_size == 16

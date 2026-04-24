@@ -75,6 +75,12 @@ def main() -> None:
         settings.ollama_llm_model,
         timeout=settings.ollama_timeout_sec,
         num_ctx=settings.ollama_num_ctx,
+        cache_ttl_sec=settings.cache_llm_ttl_sec,
+        cache_max_size=settings.cache_llm_max_size,
+        fallback_model=settings.ollama_fallback_model,
+        fallback_base_url=settings.ollama_fallback_base_url,
+        fallback_timeout_sec=settings.ollama_fallback_timeout_sec,
+        fallback_num_ctx=settings.ollama_fallback_num_ctx,
     )
     calendar = ICloudCalendarClient(
         username=settings.icloud_username,
@@ -98,7 +104,11 @@ def main() -> None:
         memory=MemoryManager(settings.chroma_dir, embedder),
         tasks=tasks,
         scheduler=scheduler,
-        search=SearxngClient(settings.searxng_base_url),
+        search=SearxngClient(
+            settings.searxng_base_url,
+            cache_ttl_sec=settings.cache_searxng_ttl_sec,
+            cache_max_size=settings.cache_searxng_max_size,
+        ),
         rss=rss,
         rss_fetcher=rss_fetcher,
         briefing=BriefingService(
