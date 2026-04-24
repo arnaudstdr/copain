@@ -47,13 +47,19 @@ Python bot (python-telegram-bot v21, async)
      ├── Security middleware (ALLOWED_USER_ID whitelist)
      │
      ├── Handlers
-     │     ├── filters.TEXT  → make_handler       → standard pipeline
-     │     └── filters.PHOTO → make_photo_handler → pipeline + images[]
+     │     ├── filters.TEXT  → make_handler       → pipeline + TelegramStreamSink
+     │     └── filters.PHOTO → make_photo_handler → pipeline + images[] (no stream)
      │
-     ├── LLM Client (Ollama — gemma4:31b-cloud multimodal)
+     ├── LLM Client (Ollama — gemma4:31b-cloud multimodal + optional local fallback)
      │     ├── call(system, user, images?)        → Ollama chat API
      │     ├── call_with_search(message, results) → re-run with SearXNG results
-     │     └── chat(messages)                     → low-level call
+     │     ├── chat(messages, cacheable=False)    → low-level call (opt-in cache)
+     │     ├── chat_stream(messages)              → streaming chunks for sink
+     │     └── TTLCache (bot.cache)               → LLM opt-in + SearXNG always-on
+     │
+     ├── Observability (optional)
+     │     ├── bot.sentry_setup.configure_sentry  → opt-in via SENTRY_DSN (empty = no-op)
+     │     └── capture_exception(exc, **context)  → PTB + APScheduler listeners
      │
      ├── <meta> parser
      │     └── Intent ∈ {answer, task, search, memory, feed, event, fuel, weather}
@@ -113,8 +119,9 @@ Python bot (python-telegram-bot v21, async)
 | Geocoding     | Nominatim OSM (HTTP, no key, in-memory cache)           |
 | Logs          | structlog (console in dev, JSON in prod)                |
 | Container     | Docker + Docker Compose                                 |
-| Tests         | pytest + pytest-asyncio (auto mode)                     |
+| Tests         | pytest + pytest-asyncio (auto mode, 219 tests)          |
 | Quality       | ruff (lint+format) + mypy strict via pre-commit         |
+| Monitoring    | Sentry SDK (opt-in via `SENTRY_DSN`)                    |
 
 ---
 

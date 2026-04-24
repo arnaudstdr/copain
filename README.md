@@ -22,17 +22,23 @@ Partly self-hosted on a Raspberry Pi 5 (local services) + cloud LLM.
 
 ## Features
 
-- Conversation with automatic semantic memory
+- Conversation with automatic semantic memory (ChromaDB HNSW + batch embeddings)
+- **Streaming Telegram replies** — progressive message edit while the LLM generates
 - Tasks + Telegram reminders in natural language
-- Web search (self-hosted SearXNG, summarised in French)
+- Web search (self-hosted SearXNG, summarised in French, TTL cache)
 - RSS feeds (add/list/summarise latest news on demand)
 - Automatic morning briefing at 8am: weather + tasks + events + top 5 RSS
 - Photo analysis (text, scene, chart, menu, receipt, etc.)
 - iCloud calendar via CalDAV (create + list events in any iCloud calendar,
   fuzzy name matching)
+- Fuel prices around `HOME_CITY` (data.economie.gouv.fr open data)
+- Weather via Open-Meteo, up to 16 days, FR expressions (`demain`, `ce weekend`)
 - **Opt-in proactivity** (`PROACTIVITY_ENABLED=true`): rain alerts within the
   hour + appointment reminder ~1 h before. Built-in safeguards (time window,
   per-type cooldown, daily budget capped at 3).
+- **Resilience**: TTL response cache (LLM opt-in + SearXNG always-on), optional
+  local LLM fallback (`OLLAMA_FALLBACK_MODEL`) when the cloud is unreachable.
+- **Monitoring**: opt-in Sentry error tracking (`SENTRY_DSN`, empty = disabled).
 
 Routing between these capabilities is driven by the LLM through a `<meta>`
 JSON block it emits at the end of every reply. See [`CLAUDE.md`](./CLAUDE.md)
@@ -41,16 +47,16 @@ for architecture details.
 ## Stack
 
 Python 3.12 async · python-telegram-bot v21 · Ollama (`gemma4:31b-cloud` for
-the multimodal LLM, `nomic-embed-text` local for embeddings) · ChromaDB ·
-SQLAlchemy 2 + aiosqlite · APScheduler · feedparser · caldav + vobject ·
-httpx · structlog.
+the multimodal LLM, optional local `gemma3:4b` fallback, `nomic-embed-text`
+for embeddings) · ChromaDB (HNSW) · SQLAlchemy 2 + aiosqlite · APScheduler ·
+feedparser · caldav + vobject · httpx · structlog · Sentry SDK (opt-in).
 
 ## Local setup (dev)
 
 ```bash
 cp .env.example .env          # then fill in the variables (see below)
 make install                  # creates .venv, installs deps, installs pre-commit
-make test                     # 150 tests, fully mocked (no external services)
+make test                     # 219 tests, fully mocked (no external services)
 make lint typecheck           # ruff + mypy strict
 make run                      # starts the bot (requires real Ollama + SearXNG)
 ```

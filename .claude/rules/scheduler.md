@@ -13,13 +13,23 @@ paths:
 
 - **`default` (SQLAlchemyJobStore)** — one-shot task reminders persisted
   across restarts (`add_reminder(task_id, due_at, chat_id, content)`).
-- **`memory` (MemoryJobStore)** — recurring jobs (cron) whose function is a
+- **`memory` (MemoryJobStore)** — recurring jobs whose function is a
   non-serialisable closure (e.g. briefing, proactivity tick). They are
-  re-scheduled at startup via `add_cron_job(job_id, func, hour, minute)` in
-  `_post_init`.
+  re-scheduled at startup via:
+  - `add_cron_job(job_id, func, hour, minute)` for daily cron jobs (briefing).
+  - `add_interval_job(job_id, func, minutes)` for "every N minutes" jobs
+    (proactivity tick).
 
 Both honour the configured timezone (`settings.timezone`). Never serialise
 closures into `default` — they will fail to re-hydrate after a restart.
+
+### Error capture to Sentry
+
+An `EVENT_JOB_ERROR` listener (`_on_job_error`) logs any job exception
+(`job_error job_id=… error=…`) and forwards it to Sentry via
+`sentry_setup.capture_exception(exc, source="apscheduler", job_id=…)`.
+Covers reminders, briefing, proactivity tick — no wrapping `try/except`
+needed in the job bodies.
 
 ## Briefing
 
