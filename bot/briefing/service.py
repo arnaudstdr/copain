@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING
 from zoneinfo import ZoneInfo
 
 from bot.briefing.weather import OpenMeteoClient, WeatherError, WeatherSummary
+from bot.llm.client import LLMError
 from bot.logging_conf import get_logger
 
 if TYPE_CHECKING:
@@ -119,7 +120,14 @@ class BriefingService:
         top = items[:TOP_RSS_ITEMS]
         if not top:
             return ""
-        summary = await self._summarize_items(top)
+        try:
+            summary = await self._summarize_items(top)
+        except LLMError as exc:
+            # Fallback silencieux : on garde le briefing utile même si le LLM
+            # plante (timeout, prompt too long, API cloud down, etc.). Mieux
+            # vaut une liste de titres bruts que pas de briefing du tout.
+            log.warning("briefing_rss_summary_failed", error=str(exc))
+            return "📰 *Actus du jour* (titres bruts, résumé LLM indisponible)\n" + _format_raw_items(top)
         return "📰 *Actus du jour*\n" + summary
 
     async def _summarize_items(self, items: Sequence[FeedItem]) -> str:
@@ -160,6 +168,10 @@ def _format_tasks(tasks: Sequence[Task]) -> str:
             suffix = f" — {t.due_at.strftime('%H:%M')}"
         lines.append(f"- {t.content}{suffix}")
     return "📋 *Tâches du jour*\n" + "\n".join(lines)
+
+
+def _format_raw_items(items: Sequence[FeedItem]) -> str:
+    return "\n".join(f"- [{it.feed_name}] {it.title} ({it.url})" for it in items)
 
 
 def _format_events(events: Sequence[CalendarEvent]) -> str:
