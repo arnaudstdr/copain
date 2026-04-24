@@ -37,14 +37,25 @@ class LLMClient:
     """
 
     DEFAULT_TIMEOUT_SEC = 120.0
+    DEFAULT_NUM_CTX = 32768
 
-    def __init__(self, base_url: str, model: str, timeout: float = DEFAULT_TIMEOUT_SEC) -> None:
+    def __init__(
+        self,
+        base_url: str,
+        model: str,
+        timeout: float = DEFAULT_TIMEOUT_SEC,
+        num_ctx: int = DEFAULT_NUM_CTX,
+    ) -> None:
         # Timeout explicite : Ollama cloud avec un 31B peut prendre 30-90 s sur
         # une recherche web (2 appels LLM chaînés). Défaut 120 s, configurable
         # via OLLAMA_TIMEOUT_SEC depuis bot.config.Settings.
+        # num_ctx explicite : Ollama applique sinon un default serveur qui peut
+        # retourner `prompt too long` même sur des prompts courts (bug cloud
+        # constaté 04/2026). Passer la valeur explicitement court-circuite ça.
         self._client = AsyncClient(host=base_url, timeout=httpx.Timeout(timeout))
         self._model = model
         self._timeout_sec = timeout
+        self._num_ctx = num_ctx
 
     async def call(
         self,
@@ -93,7 +104,11 @@ class LLMClient:
     async def chat(self, messages: list[dict[str, Any]]) -> str:
         """Appel bas niveau : envoie une liste de messages OpenAI-style, retourne le texte."""
         try:
-            response: Any = await self._client.chat(model=self._model, messages=messages)
+            response: Any = await self._client.chat(
+                model=self._model,
+                messages=messages,
+                options={"num_ctx": self._num_ctx},
+            )
         except httpx.TimeoutException as exc:
             log.warning("ollama_chat_timeout", model=self._model, timeout_sec=self._timeout_sec)
             raise LLMTimeoutError(
