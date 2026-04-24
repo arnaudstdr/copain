@@ -141,3 +141,27 @@ def test_cache_custom_values(monkeypatch: pytest.MonkeyPatch) -> None:
     assert settings.cache_llm_max_size == 32
     assert settings.cache_searxng_ttl_sec == 120.0
     assert settings.cache_searxng_max_size == 16
+
+
+def test_sentry_defaults_when_env_absent(monkeypatch: pytest.MonkeyPatch) -> None:
+    _minimal_env(monkeypatch)
+    for var in ("SENTRY_DSN", "SENTRY_ENVIRONMENT", "SENTRY_RELEASE", "SENTRY_TRACES_SAMPLE_RATE"):
+        monkeypatch.delenv(var, raising=False)
+    settings = load_settings()
+    assert settings.sentry_dsn is None
+    assert settings.sentry_environment is None
+    assert settings.sentry_release is None
+    assert settings.sentry_traces_sample_rate == 0.0
+
+
+def test_sentry_custom_values(monkeypatch: pytest.MonkeyPatch) -> None:
+    _minimal_env(monkeypatch)
+    monkeypatch.setenv("SENTRY_DSN", "https://fake@sentry.io/1234")
+    monkeypatch.setenv("SENTRY_ENVIRONMENT", "prod")
+    monkeypatch.setenv("SENTRY_RELEASE", "0.9.0")
+    monkeypatch.setenv("SENTRY_TRACES_SAMPLE_RATE", "0.25")
+    settings = load_settings()
+    assert settings.sentry_dsn == "https://fake@sentry.io/1234"
+    assert settings.sentry_environment == "prod"
+    assert settings.sentry_release == "0.9.0"
+    assert settings.sentry_traces_sample_rate == 0.25

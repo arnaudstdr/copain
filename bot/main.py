@@ -31,6 +31,7 @@ from bot.proactivity.service import ProactivityService
 from bot.rss.fetcher import RssFetcher
 from bot.rss.manager import FeedAlreadyExists, FeedManager
 from bot.search.searxng import SearxngClient
+from bot.sentry_setup import capture_exception, configure_sentry
 from bot.tasks.manager import TaskManager
 from bot.tasks.scheduler import ReminderScheduler
 
@@ -58,7 +59,8 @@ async def _seed_default_feeds(rss: FeedManager) -> None:
 def main() -> None:
     settings = load_settings()
     configure_logging(env=settings.env, log_file_path=settings.log_file_path)
-    log.info("startup", env=settings.env)
+    sentry_on = configure_sentry(settings)
+    log.info("startup", env=settings.env, sentry=sentry_on)
 
     embedder = Embedder(settings.ollama_base_url, settings.ollama_embed_model)
     weather = OpenMeteoClient(timezone=settings.timezone)
@@ -150,6 +152,9 @@ def main() -> None:
             )
             return
         log.exception("telegram_unhandled_error", error=str(err))
+        if err is not None:
+            update_id = update.update_id if isinstance(update, Update) else None
+            capture_exception(err, source="telegram_handler", update_id=update_id)
 
     async def _post_init(app: Application[Any, Any, Any, Any, Any, Any]) -> None:
         await enable_wal_mode(engine)

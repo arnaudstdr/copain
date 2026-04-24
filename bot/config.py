@@ -69,6 +69,11 @@ class Settings:
 
     log_file_path: Path | None
 
+    sentry_dsn: str | None
+    sentry_environment: str | None
+    sentry_release: str | None
+    sentry_traces_sample_rate: float
+
     env: str
 
     @property
@@ -190,5 +195,9 @@ def load_settings() -> Settings:
         cache_searxng_ttl_sec=_env_float("CACHE_SEARXNG_TTL_SEC", 3600.0),
         cache_searxng_max_size=_env_int("CACHE_SEARXNG_MAX_SIZE", 128),
         log_file_path=_parse_log_file_path(data_dir),
+        sentry_dsn=os.getenv("SENTRY_DSN") or None,
+        sentry_environment=os.getenv("SENTRY_ENVIRONMENT") or None,
+        sentry_release=os.getenv("SENTRY_RELEASE") or None,
+        sentry_traces_sample_rate=_env_float("SENTRY_TRACES_SAMPLE_RATE", 0.0),
         env=os.getenv("ENV", "dev"),
     )

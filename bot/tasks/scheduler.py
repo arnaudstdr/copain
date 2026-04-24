@@ -8,11 +8,13 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 from zoneinfo import ZoneInfo
 
+from apscheduler.events import EVENT_JOB_ERROR, JobExecutionEvent
 from apscheduler.jobstores.memory import MemoryJobStore
 from apscheduler.jobstores.sqlalchemy import SQLAlchemyJobStore
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 from bot.logging_conf import get_logger
+from bot.sentry_setup import capture_exception
 from bot.telegram_sender import send_message
 
 if TYPE_CHECKING:
@@ -51,6 +53,15 @@ class ReminderScheduler:
                 "misfire_grace_time": 3600,  # 1 h de tolérance : rappels persistés envoyés même après un redémarrage tardif
             },
         )
+        self._scheduler.add_listener(self._on_job_error, EVENT_JOB_ERROR)
+
+    @staticmethod
+    def _on_job_error(event: JobExecutionEvent) -> None:
+        """Log + remonte à Sentry les exceptions levées par un job APScheduler."""
+        exc = event.exception
+        log.error("job_error", job_id=event.job_id, error=str(exc))
+        if exc is not None:
+            capture_exception(exc, source="apscheduler", job_id=event.job_id)
 
     def start(self) -> None:
         self._scheduler.start()
