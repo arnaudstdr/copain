@@ -17,7 +17,7 @@ from bot.calendar.client import ICloudCalendarError
 from bot.fuel.client import FuelError
 from bot.fuel.geocoding import NominatimError
 from bot.fuel.models import FUEL_LABELS, GeoPoint, normalize_fuel_type
-from bot.llm.client import LLMTimeoutError
+from bot.llm.client import LLMError, LLMTimeoutError
 from bot.llm.parser import Meta, MetaParseError, extract_meta
 from bot.llm.prompt import build_system_prompt
 from bot.logging_conf import get_logger
@@ -99,6 +99,12 @@ def make_handler(deps: BotDeps) -> HandlerFn:
                 "Le modèle met trop longtemps à répondre pour l'instant. "
                 "Réessaie dans quelques secondes."
             )
+        except LLMError as exc:
+            log.error("llm_error", chat_id=chat_id, error=str(exc))
+            reply = (
+                "Le modèle LLM a un souci côté serveur pour l'instant. "
+                "Réessaie dans un moment."
+            )
         except Exception as exc:
             log.exception("handler_failed", error=str(exc))
             reply = "Désolé, une erreur interne est survenue."
@@ -138,6 +144,12 @@ def make_photo_handler(deps: BotDeps) -> HandlerFn:
             log.warning("llm_timeout", chat_id=chat_id, kind="photo")
             reply = (
                 "Le modèle met trop longtemps à analyser l'image. Réessaie dans quelques secondes."
+            )
+        except LLMError as exc:
+            log.error("llm_error", chat_id=chat_id, kind="photo", error=str(exc))
+            reply = (
+                "Le modèle LLM a un souci côté serveur pour l'instant. "
+                "Réessaie dans un moment."
             )
         except Exception as exc:
             log.exception("photo_handler_failed", error=str(exc))
