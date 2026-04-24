@@ -11,6 +11,7 @@ import pytest
 from bot.briefing.service import BriefingService
 from bot.briefing.weather import WeatherError, WeatherSummary
 from bot.calendar.models import CalendarEvent
+from bot.llm.client import LLMError
 from bot.rss.fetcher import FeedItem
 from bot.tasks.manager import TaskManager
 
@@ -252,6 +253,34 @@ async def test_build_weather_error_is_graceful(
     text = await service.build()
     assert "Météo indisponible" in text
     assert "Tâches du jour" in text
+
+
+async def test_build_falls_back_to_raw_titles_when_llm_fails(
+    fake_settings: MagicMock,
+    mock_weather: MagicMock,
+    mock_rss: MagicMock,
+    mock_rss_fetcher: MagicMock,
+    mock_calendar_empty: MagicMock,
+    real_tasks: TaskManager,
+) -> None:
+    """Si le résumé LLM plante, le briefing doit quand même partir avec les titres bruts."""
+    llm = MagicMock()
+    llm.chat = AsyncMock(side_effect=LLMError("prompt too long"))
+
+    service = BriefingService(
+        settings=fake_settings,
+        weather=mock_weather,
+        tasks=real_tasks,
+        rss=mock_rss,
+        rss_fetcher=mock_rss_fetcher,
+        llm=llm,
+        calendar=mock_calendar_empty,
+    )
+    text = await service.build()
+    assert "Sélestat" in text
+    assert "titres bruts" in text
+    assert "Un gros titre" in text
+    assert "https://example.com/1" in text
 
 
 async def test_build_no_feeds_skips_rss(

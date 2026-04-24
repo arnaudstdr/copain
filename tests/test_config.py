@@ -98,3 +98,17 @@ def test_log_file_path_explicit(monkeypatch: pytest.MonkeyPatch, tmp_path: Path)
 
     settings = load_settings()
     assert settings.log_file_path == (tmp_path / "custom" / "bot.log").resolve()
+
+
+def test_ollama_num_ctx_default(monkeypatch: pytest.MonkeyPatch) -> None:
+    _minimal_env(monkeypatch)
+    monkeypatch.delenv("OLLAMA_NUM_CTX", raising=False)
+    settings = load_settings()
+    assert settings.ollama_num_ctx == 32768
+
+
+def test_ollama_num_ctx_custom(monkeypatch: pytest.MonkeyPatch) -> None:
+    _minimal_env(monkeypatch)
+    monkeypatch.setenv("OLLAMA_NUM_CTX", "16384")
+    settings = load_settings()
+    assert settings.ollama_num_ctx == 16384

@@ -74,3 +74,20 @@ async def test_llmtimeout_is_subclass_of_llmerror() -> None:
     from bot.llm.client import LLMTimeoutError
 
     assert issubclass(LLMTimeoutError, LLMError)
+
+
+async def test_chat_passes_num_ctx_option(fake_client: LLMClient) -> None:
+    """Le num_ctx doit être passé à chaque appel pour court-circuiter le default Ollama."""
+    await fake_client.chat([{"role": "user", "content": "salut"}])
+    args = fake_client._client.chat.call_args  # type: ignore[attr-defined]
+    assert args.kwargs["options"] == {"num_ctx": LLMClient.DEFAULT_NUM_CTX}
+
+
+async def test_chat_uses_configured_num_ctx() -> None:
+    """Le num_ctx passé au constructeur est bien celui envoyé à Ollama."""
+    client = LLMClient(base_url="http://x", model="m", num_ctx=16384)
+    client._client = AsyncMock()  # type: ignore[assignment]
+    client._client.chat = AsyncMock(return_value={"message": {"content": "ok"}})
+    await client.chat([{"role": "user", "content": "salut"}])
+    args = client._client.chat.call_args  # type: ignore[attr-defined]
+    assert args.kwargs["options"] == {"num_ctx": 16384}
