@@ -215,3 +215,19 @@ async def test_notifications_returns_then_marks_read(client: AsyncClient, state:
     # Deuxième poll : la file doit être vide (entrées déjà marquées comme lues).
     response_again = await client.get("/notifications", headers={"X-API-Key": API_KEY})
     assert response_again.json() == {"notifications": []}
+
+
+# --- UI web -----------------------------------------------------------------
+
+
+async def test_chat_ui_returns_html(client: AsyncClient) -> None:
+    response = await client.get("/")
+    assert response.status_code == 200
+    assert "text/html" in response.headers["content-type"]
+    assert "Copain" in response.text
+
+
+async def test_get_config(client: AsyncClient) -> None:
+    response = await client.get("/config")
+    assert response.status_code == 200
+    assert "api_key" in response.json()

@@ -51,6 +51,8 @@ FastAPI app (bot/api.py, served by uvicorn)
         ├── verify_api_key dep (X-API-Key vs settings.api_key, 403 if invalid)
         │
         ├── Endpoints
+        │     ├── GET  /             → FileResponse(index.html) → Safari iOS (PWA)
+        │     ├── GET  /config       → { api_key }  (pas d'auth, réseau Tailscale privé)
         │     ├── POST /ask           → pipeline.process_message(message)
         │     ├── POST /ask/image     → pipeline.process_message(message, [bytes])
         │     └── GET  /notifications → NotificationStore.get_unread() + mark_read()
@@ -132,8 +134,9 @@ FastAPI app (bot/api.py, served by uvicorn)
 | Geocoding     | Nominatim OSM (HTTP, no key, in-memory cache)           |
 | Logs          | structlog (console in dev, JSON in prod)                |
 | Container     | Docker + Docker Compose                                 |
-| Tests         | pytest + pytest-asyncio (auto mode, 213 tests)          |
+| Tests         | pytest + pytest-asyncio (auto mode, 215 tests)          |
 | Quality       | ruff (lint+format) + mypy strict via pre-commit         |
+| Interface web | Vanilla JS PWA, servie par FastAPI à `/`                |
 | Monitoring    | Sentry SDK (opt-in via `SENTRY_DSN`)                    |
 
 ---

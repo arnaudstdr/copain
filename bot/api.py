@@ -18,12 +18,16 @@ dependencies `get_deps` / `get_notifications`.
 from __future__ import annotations
 
 import base64
+import pathlib
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Request, status
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from bot.llm.client import LLMError, LLMTimeoutError
@@ -36,6 +40,8 @@ if TYPE_CHECKING:
     from bot.notifications.store import NotificationStore
 
 log = get_logger(__name__)
+
+STATIC_DIR = pathlib.Path(__file__).parent / "static"
 
 
 # --- Schémas Pydantic --------------------------------------------------------
@@ -142,6 +148,23 @@ def create_app(state: AppState) -> FastAPI:
         lifespan=lifespan,
     )
     app.state.copain = state
+
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["*"],
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+
+    app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+
+    @app.get("/", response_class=FileResponse, include_in_schema=False)
+    async def chat_ui() -> FileResponse:
+        return FileResponse(STATIC_DIR / "index.html")
+
+    @app.get("/config", include_in_schema=False)
+    async def get_config(settings: Settings = Depends(get_settings_dep)) -> dict[str, str]:
+        return {"api_key": settings.api_key}
 
     @app.post(
         "/ask",
