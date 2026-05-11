@@ -162,6 +162,15 @@ def create_app(state: AppState) -> FastAPI:
     async def chat_ui() -> FileResponse:
         return FileResponse(STATIC_DIR / "index.html")
 
+    _TOUCH_ICON = STATIC_DIR / "icon-1024.png"
+
+    @app.get("/apple-touch-icon.png", response_class=FileResponse, include_in_schema=False)
+    @app.get("/apple-touch-icon-precomposed.png", response_class=FileResponse, include_in_schema=False)
+    @app.get("/apple-touch-icon-120x120.png", response_class=FileResponse, include_in_schema=False)
+    @app.get("/apple-touch-icon-120x120-precomposed.png", response_class=FileResponse, include_in_schema=False)
+    async def apple_touch_icon() -> FileResponse:
+        return FileResponse(_TOUCH_ICON, media_type="image/png")
+
     @app.get("/config", include_in_schema=False)
     async def get_config(settings: Settings = Depends(get_settings_dep)) -> dict[str, str]:
         return {"api_key": settings.api_key}
