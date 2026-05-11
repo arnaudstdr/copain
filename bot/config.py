@@ -19,8 +19,8 @@ class ConfigError(RuntimeError):
 
 @dataclass(frozen=True, slots=True)
 class Settings:
-    telegram_bot_token: str
-    allowed_user_id: int
+    api_key: str
+    api_port: int
 
     ollama_base_url: str
     ollama_llm_model: str
@@ -154,8 +154,8 @@ def load_settings() -> Settings:
     data_dir = Path(os.getenv("DATA_DIR", "./data")).resolve()
 
     return Settings(
-        telegram_bot_token=_required("TELEGRAM_BOT_TOKEN"),
-        allowed_user_id=_required_int("ALLOWED_USER_ID"),
+        api_key=_required("API_KEY"),
+        api_port=_env_int("API_PORT", 8000),
         ollama_base_url=os.getenv("OLLAMA_BASE_URL", "http://localhost:11434"),
         ollama_llm_model=os.getenv("OLLAMA_LLM_MODEL", "gemma3:4b"),
         ollama_embed_model=os.getenv("OLLAMA_EMBED_MODEL", "nomic-embed-text"),

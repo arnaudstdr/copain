@@ -48,11 +48,10 @@ Two critical rules to remember when editing the prompt:
   messages); NEVER enable it on a call that carries a `<meta>` block or
   triggers side effects (memory store, task/event creation).
 - `chat_stream(messages, cacheable=False)` — same as `chat` but yields text
-  chunks as Ollama streams them. Used by `handlers._process` when a
-  `TelegramStreamSink` is provided to progressively edit the Telegram
-  message. If the primary model fails **before** the first chunk, the
-  client falls back to a single non-streamed call on the fallback endpoint
-  (if configured).
+  chunks as Ollama streams them. Kept available for future SSE support; the
+  current HTTP API uses `call` only (full response in a single body). If
+  the primary model fails **before** the first chunk, the client falls back
+  to a single non-streamed call on the fallback endpoint (if configured).
 
 ### Cache
 
@@ -77,11 +76,12 @@ primary:
   so that handler-level UX messages (`LLMTimeoutError` → "le modèle met
   trop longtemps") stay consistent.
 
-### Streaming and the `<meta>` block
+### The `<meta>` block
 
-The LLM emits the `<meta>` JSON block at the **end** of its response. During
-streaming, `bot.telegram_sender.visible_text(buffer)` strips any complete
-`<meta>…</meta>` block, any unclosed `<meta>` still being written, and any
-partial opening tag (`<m`, `<me`, `<met`, `<meta`) left at the tail of the
-buffer. The full buffer (meta included) is kept for `extract_meta` at the
-end, which triggers the side effects exactly as in the non-streamed path.
+The LLM emits the `<meta>` JSON block at the **end** of its response.
+`bot.llm.parser.extract_meta` splits the full reply into `(visible_text,
+meta_dict)` and the pipeline routes side effects (memory store, task /
+event creation, search, fuel/weather queries) from `meta_dict`. With the
+HTTP API returning the response in one shot, there is no mid-stream
+filtering to do — the meta block is parsed once at the end and stripped
+from the user-facing text.

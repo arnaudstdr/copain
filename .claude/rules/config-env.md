@@ -11,9 +11,9 @@ paths:
 ## Environment variables (.env)
 
 ```env
-# Telegram
-TELEGRAM_BOT_TOKEN=                  # required
-ALLOWED_USER_ID=                     # required, your Telegram user_id only
+# HTTP API (FastAPI, exposed via Tailscale to the iOS Shortcut)
+API_KEY=                             # required, single shared secret in X-API-Key
+API_PORT=8000                        # uvicorn listen port (host networking)
 
 # Ollama (client + models)
 OLLAMA_BASE_URL=http://localhost:11434
@@ -88,8 +88,7 @@ ENV=dev
 # Sentry (error monitoring). Empty DSN disables the SDK entirely (no init,
 # no network). log.error / log.exception become Sentry events, log.info /
 # log.warning become breadcrumbs. APScheduler job errors are captured via
-# an EVENT_JOB_ERROR listener. PTB network errors (NetworkError / TimedOut)
-# stay at warning level and are NOT sent to Sentry.
+# an EVENT_JOB_ERROR listener.
 SENTRY_DSN=                            # empty = disabled
 SENTRY_ENVIRONMENT=                    # defaults to ENV
 SENTRY_RELEASE=                        # git tag/hash, groups errors per release
@@ -107,7 +106,9 @@ services:
     build: .
     restart: unless-stopped
     env_file: .env
-    network_mode: host          # direct access to local Ollama on localhost
+    # network_mode: host exposes API_PORT directly on the host AND lets the bot
+    # reach Ollama on localhost:11434.
+    network_mode: host
     volumes:
       - ./data:/app/data
 

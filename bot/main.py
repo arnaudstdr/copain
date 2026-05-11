@@ -1,37 +1,43 @@
-"""Point d'entrée du bot : setup + polling Telegram.
+"""Point d'entrée : initialise toutes les dépendances puis lance uvicorn.
 
-`Application.run_polling()` (PTB v21) gère sa propre event loop. On évite donc
-d'appeler `asyncio.get_event_loop()` en amont : l'init asynchrone (schéma DB,
-scheduler start) est branchée via `post_init`, la libération via `post_shutdown`.
+L'app FastAPI est construite à partir d'un `AppState` déjà fully wired ;
+voir `bot.api.create_app`. Les schémas SQLite, le mode WAL, la connexion
+CalDAV et le scheduler sont initialisés ici (de manière asynchrone via
+`asyncio.run`) avant le démarrage du serveur, pour rester proche de l'ancien
+`post_init` PTB tout en évitant que des requêtes HTTP arrivent avant que
+les services soient prêts.
 """
 
 from __future__ import annotations
 
+import asyncio
+import contextlib
+import signal
 from collections import deque
-from typing import Any
+from collections.abc import Awaitable, Callable
 
-from telegram import Update
-from telegram.error import NetworkError, TimedOut
-from telegram.ext import Application, ContextTypes, MessageHandler, filters
+import uvicorn
 
+from bot.api import AppState, create_app
 from bot.briefing.service import BriefingService
 from bot.briefing.weather import OpenMeteoClient
 from bot.calendar.client import ICloudCalendarClient, ICloudCalendarError
-from bot.config import load_settings
+from bot.config import Settings, load_settings
 from bot.db import create_shared_engine, enable_wal_mode
 from bot.fuel.client import FuelClient
 from bot.fuel.geocoding import NominatimClient
-from bot.handlers import MAX_HISTORY, BotDeps, make_handler, make_photo_handler
 from bot.llm.client import LLMClient
 from bot.logging_conf import configure_logging, get_logger
 from bot.memory.embeddings import Embedder
 from bot.memory.manager import MemoryManager
+from bot.notifications.store import NotificationStore
+from bot.pipeline import MAX_HISTORY, BotDeps
 from bot.proactivity import models as _proactivity_models  # noqa: F401 — enregistre la table
 from bot.proactivity.service import ProactivityService
 from bot.rss.fetcher import RssFetcher
 from bot.rss.manager import FeedAlreadyExists, FeedManager
 from bot.search.searxng import SearxngClient
-from bot.sentry_setup import capture_exception, configure_sentry
+from bot.sentry_setup import configure_sentry
 from bot.tasks.manager import TaskManager
 from bot.tasks.scheduler import ReminderScheduler
 
@@ -56,22 +62,22 @@ async def _seed_default_feeds(rss: FeedManager) -> None:
     log.info("default_feeds_seeded", count=len(DEFAULT_FEEDS))
 
 
-def main() -> None:
-    settings = load_settings()
-    configure_logging(env=settings.env, log_file_path=settings.log_file_path)
-    sentry_on = configure_sentry(settings)
-    log.info("startup", env=settings.env, sentry=sentry_on)
-
+async def _build_state(
+    settings: Settings,
+) -> tuple[AppState, list[Callable[[], Awaitable[None]]]]:
+    """Instancie toutes les dépendances et retourne l'AppState + la liste des cleanups."""
     embedder = Embedder(settings.ollama_base_url, settings.ollama_embed_model)
     weather = OpenMeteoClient(timezone=settings.timezone)
     scheduler = ReminderScheduler(
         settings.scheduler_db_path,
+        notifications_db_path=settings.db_path,
         timezone=settings.timezone,
     )
     engine = create_shared_engine(settings.db_path)
     tasks = TaskManager(engine, scheduler=scheduler)
     rss = FeedManager(engine)
     rss_fetcher = RssFetcher()
+    notifications = NotificationStore(engine)
     llm = LLMClient(
         settings.ollama_base_url,
         settings.ollama_llm_model,
@@ -97,7 +103,23 @@ def main() -> None:
         weather=weather,
         calendar=calendar,
         engine=engine,
-        chat_id=settings.allowed_user_id,
+        notifications=notifications,
+    )
+    search = SearxngClient(
+        settings.searxng_base_url,
+        cache_ttl_sec=settings.cache_searxng_ttl_sec,
+        cache_max_size=settings.cache_searxng_max_size,
+    )
+
+    briefing = BriefingService(
+        settings=settings,
+        weather=weather,
+        tasks=tasks,
+        rss=rss,
+        rss_fetcher=rss_fetcher,
+        llm=llm,
+        calendar=calendar,
+        notifications=notifications,
     )
 
     deps = BotDeps(
@@ -106,22 +128,10 @@ def main() -> None:
         memory=MemoryManager(settings.chroma_dir, embedder),
         tasks=tasks,
         scheduler=scheduler,
-        search=SearxngClient(
-            settings.searxng_base_url,
-            cache_ttl_sec=settings.cache_searxng_ttl_sec,
-            cache_max_size=settings.cache_searxng_max_size,
-        ),
+        search=search,
         rss=rss,
         rss_fetcher=rss_fetcher,
-        briefing=BriefingService(
-            settings=settings,
-            weather=weather,
-            tasks=tasks,
-            rss=rss,
-            rss_fetcher=rss_fetcher,
-            llm=llm,
-            calendar=calendar,
-        ),
+        briefing=briefing,
         calendar=calendar,
         fuel=fuel,
         geocoder=geocoder,
@@ -129,84 +139,96 @@ def main() -> None:
         history=deque(maxlen=MAX_HISTORY),
     )
 
+    # Initialisations asynchrones — équivalent de l'ancien `post_init` PTB.
+    await enable_wal_mode(engine)
+    await tasks.init_schema()
+    await rss.init_schema()
+    await notifications.init_schema()
+    await _seed_default_feeds(rss)
+    try:
+        await calendar.connect()
+    except ICloudCalendarError as exc:
+        log.warning("calendar_connect_failed", error=str(exc))
+
+    scheduler.start()
+
     async def _daily_briefing_job() -> None:
-        await deps.briefing.send_daily(chat_id=settings.allowed_user_id)
+        await briefing.send_daily()
 
     async def _proactivity_tick_job() -> None:
         await proactivity.tick()
 
-    async def _error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
-        """Soft-fail sur les erreurs réseau Telegram (DNS/TLS momentanés).
-
-        Sans ce handler, PTB laisse les stacktraces remonter au logger et l'erreur
-        paraît critique. En pratique les NetworkError/TimedOut sont rattrapés au
-        prochain poll, donc on log warning et on laisse tomber cet update.
-        """
-        err = context.error
-        if isinstance(err, NetworkError | TimedOut):
-            update_id = update.update_id if isinstance(update, Update) else None
-            log.warning(
-                "telegram_network_error",
-                error=type(err).__name__,
-                update_id=update_id,
-            )
-            return
-        log.exception("telegram_unhandled_error", error=str(err))
-        if err is not None:
-            update_id = update.update_id if isinstance(update, Update) else None
-            capture_exception(err, source="telegram_handler", update_id=update_id)
-
-    async def _post_init(app: Application[Any, Any, Any, Any, Any, Any]) -> None:
-        await enable_wal_mode(engine)
-        await deps.tasks.init_schema()
-        await deps.rss.init_schema()
-        await _seed_default_feeds(deps.rss)
-        try:
-            await deps.calendar.connect()
-        except ICloudCalendarError as exc:
-            log.warning("calendar_connect_failed", error=str(exc))
-        deps.scheduler.start()
-        deps.scheduler.attach_application(app)
-        deps.scheduler.add_cron_job(
-            job_id=BRIEFING_JOB_ID,
-            func=_daily_briefing_job,
-            hour=settings.briefing_hour,
-            minute=settings.briefing_minute,
-        )
-        if settings.proactivity_enabled:
-            deps.scheduler.add_interval_job(
-                job_id=PROACTIVITY_JOB_ID,
-                func=_proactivity_tick_job,
-                minutes=settings.proactivity_check_interval_min,
-            )
-            log.info(
-                "proactivity_job_scheduled",
-                interval_min=settings.proactivity_check_interval_min,
-                window=f"{settings.proactivity_window_start_hour}-{settings.proactivity_window_end_hour}",
-                budget=settings.proactivity_daily_budget,
-            )
-        log.info("post_init_done")
-
-    async def _post_shutdown(_app: Application[Any, Any, Any, Any, Any, Any]) -> None:
-        deps.scheduler.shutdown()
-        await deps.search.aclose()
-        await weather.aclose()
-        await deps.fuel.aclose()
-        await deps.geocoder.aclose()
-        await engine.dispose()
-        log.info("post_shutdown_done")
-
-    application = (
-        Application.builder()
-        .token(settings.telegram_bot_token)
-        .post_init(_post_init)
-        .post_shutdown(_post_shutdown)
-        .build()
+    scheduler.add_cron_job(
+        job_id=BRIEFING_JOB_ID,
+        func=_daily_briefing_job,
+        hour=settings.briefing_hour,
+        minute=settings.briefing_minute,
     )
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, make_handler(deps)))
-    application.add_handler(MessageHandler(filters.PHOTO, make_photo_handler(deps)))
-    application.add_error_handler(_error_handler)
-    application.run_polling()
+    if settings.proactivity_enabled:
+        scheduler.add_interval_job(
+            job_id=PROACTIVITY_JOB_ID,
+            func=_proactivity_tick_job,
+            minutes=settings.proactivity_check_interval_min,
+        )
+        log.info(
+            "proactivity_job_scheduled",
+            interval_min=settings.proactivity_check_interval_min,
+            window=f"{settings.proactivity_window_start_hour}-{settings.proactivity_window_end_hour}",
+            budget=settings.proactivity_daily_budget,
+        )
+
+    state = AppState(settings=settings, deps=deps, notifications=notifications)
+
+    async def _cleanup() -> None:
+        scheduler.shutdown()
+        await search.aclose()
+        await weather.aclose()
+        await fuel.aclose()
+        await geocoder.aclose()
+        await engine.dispose()
+        log.info("shutdown_done")
+
+    return state, [_cleanup]
+
+
+def main() -> None:
+    settings = load_settings()
+    configure_logging(env=settings.env, log_file_path=settings.log_file_path)
+    sentry_on = configure_sentry(settings)
+    log.info("startup", env=settings.env, sentry=sentry_on, port=settings.api_port)
+
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    state, cleanups = loop.run_until_complete(_build_state(settings))
+    app = create_app(state)
+
+    config = uvicorn.Config(
+        app,
+        host="0.0.0.0",
+        port=settings.api_port,
+        log_config=None,  # on garde structlog comme seule source de logs
+        loop="asyncio",
+    )
+    server = uvicorn.Server(config)
+
+    # uvicorn gère lui-même SIGINT/SIGTERM, on enchaîne juste les cleanups.
+    def _install_signal_handlers() -> None:
+        def _on_signal(sig: signal.Signals) -> None:
+            log.info("signal_received", signal=sig.name)
+
+        for s in (signal.SIGINT, signal.SIGTERM):
+            loop.add_signal_handler(s, _on_signal, s)
+
+    # Windows / certains conteneurs minimaux : signaux non supportés, on laisse uvicorn gérer.
+    with contextlib.suppress(NotImplementedError):
+        _install_signal_handlers()
+
+    try:
+        loop.run_until_complete(server.serve())
+    finally:
+        for cleanup in cleanups:
+            loop.run_until_complete(cleanup())
+        loop.close()
 
 
 if __name__ == "__main__":

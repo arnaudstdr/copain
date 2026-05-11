@@ -68,7 +68,7 @@ Règles pour intent :
 - "event"  → RDV, réunion, rendez-vous, cours, anniversaire — tout ce qui a une heure
              précise et mérite une place dans le calendrier iCloud (visible sur iPhone,
              Apple Watch, etc.). À distinguer de "task" qui est un todo léger rappelé
-             par Telegram. Règle : si l'utilisateur dit "RDV", "réunion", "meeting",
+             via une notification poussée. Règle : si l'utilisateur dit "RDV", "réunion", "meeting",
              "rendez-vous" ou équivalent AVEC une heure, c'est event. Sinon c'est task.
              IMPORTANT pour start_str/end_str : recopie TEXTUELLEMENT l'expression
              temporelle telle que donnée par l'utilisateur, y compris les mots comme

@@ -12,7 +12,11 @@ paths:
 `ReminderScheduler` configures two stores:
 
 - **`default` (SQLAlchemyJobStore)** — one-shot task reminders persisted
-  across restarts (`add_reminder(task_id, due_at, chat_id, content)`).
+  across restarts (`add_reminder(task_id, due_at, content)`). At due time
+  the job executes `_send_reminder(db_path, content)`, which builds a
+  `NotificationStore` from the serialised path and enqueues a row into
+  `pending_notifications`. No live object (engine, store) is ever pickled
+  into the job — only primitives.
 - **`memory` (MemoryJobStore)** — recurring jobs whose function is a
   non-serialisable closure (e.g. briefing, proactivity tick). They are
   re-scheduled at startup via:
@@ -35,8 +39,9 @@ needed in the job bodies.
 
 `BriefingService.send_daily` runs as a cron job at `BRIEFING_HOUR:BRIEFING_MINUTE`
 and aggregates: local weather (Open-Meteo), today's tasks, today's events
-(iCloud), top 5 RSS summaries. It is one of the `memory` jobstore closures
-re-added in `_post_init`.
+(iCloud), top 5 RSS summaries. The final string is enqueued via
+`NotificationStore.add(text)`. The closure is registered in the `memory`
+jobstore at startup (`bot/main.py::_build_state`).
 
 ## Proactivity (opt-in)
 
@@ -44,6 +49,10 @@ re-added in `_post_init`.
 minutes (default 30) and may push **at most one** notification per tick.
 Two rules in v1: rain alert within the hour (Open-Meteo hourly) and
 appointment reminder ~1 h before (iCloud).
+
+The service accepts either a `NotificationStore` (production) or a `send`
+callable (`Callable[[str], Awaitable[None]]`) used by tests with an
+`AsyncMock`. The signature is `send(text)` — no chat_id since the API era.
 
 Five safeguards to preserve when editing `tick` or the rules:
 
@@ -55,5 +64,6 @@ Five safeguards to preserve when editing `tick` or the rules:
 5. Temporal cooldown for rain (`PROACTIVITY_RAIN_COOLDOWN_HOURS`).
 
 `notification_logs` lives in `tasks.db` and shares the SQLAlchemy `Base`
-from `bot.tasks.models`. Rules in `bot/proactivity/rules.py` are pure
-functions — side effects (logging, push) belong in the service.
+from `bot.tasks.models` (alongside `tasks`, `feeds`, `pending_notifications`).
+Rules in `bot/proactivity/rules.py` are pure functions — side effects
+(logging, push) belong in the service.

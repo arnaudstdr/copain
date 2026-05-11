@@ -23,8 +23,6 @@ def fake_settings() -> MagicMock:
     s.home_lon = 7.45
     s.home_city = "Sélestat"
     s.timezone = "Europe/Paris"
-    s.telegram_bot_token = "fake-token"
-    s.allowed_user_id = 42
     return s
 
 

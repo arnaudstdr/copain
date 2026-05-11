@@ -1,13 +1,19 @@
-"""Handler message entrant principal — orchestre LLM + mémoire + tâches + recherche + RSS."""
+"""Pipeline applicatif : mémoire + LLM + routing `<meta>` + side effects.
+
+La couche transport (HTTP via FastAPI dans `bot/api.py`) appelle
+`process_message(text, images?)` pour obtenir la réponse texte finale.
+Les rappels de tâche écrivent dans la file `pending_notifications` qui sera
+consommée par `GET /notifications` côté client iOS.
+"""
 
 from __future__ import annotations
 
 import re
 from collections import deque
-from collections.abc import Callable, Coroutine, Sequence
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 from zoneinfo import ZoneInfo
 
 import dateparser
@@ -17,18 +23,12 @@ from bot.calendar.client import ICloudCalendarError
 from bot.fuel.client import FuelError
 from bot.fuel.geocoding import NominatimError
 from bot.fuel.models import FUEL_LABELS, GeoPoint, normalize_fuel_type
-from bot.llm.client import LLMError, LLMTimeoutError
 from bot.llm.parser import Meta, MetaParseError, extract_meta
 from bot.llm.prompt import build_system_prompt
 from bot.logging_conf import get_logger
 from bot.rss.manager import FeedAlreadyExists
-from bot.security import is_allowed
-from bot.telegram_sender import TelegramStreamSink, reply_markdown, visible_text
 
 if TYPE_CHECKING:
-    from telegram import Update
-    from telegram.ext import ContextTypes
-
     from bot.briefing.service import BriefingService
     from bot.briefing.weather import DailyWeather, OpenMeteoClient
     from bot.calendar.client import ICloudCalendarClient
@@ -55,7 +55,7 @@ FALLBACK_TEXT = (
 
 @dataclass
 class BotDeps:
-    """Conteneur pour toutes les dépendances injectées dans le handler."""
+    """Conteneur pour toutes les dépendances injectées dans le pipeline."""
 
     settings: Settings
     llm: LLMClient
@@ -73,95 +73,17 @@ class BotDeps:
     history: deque[str]
 
 
-HandlerFn = Callable[["Update", "ContextTypes.DEFAULT_TYPE"], Coroutine[Any, Any, None]]
-
-
-def make_handler(deps: BotDeps) -> HandlerFn:
-    """Retourne la coroutine handler texte à enregistrer dans python-telegram-bot."""
-
-    async def handle_message(update: Update, _context: ContextTypes.DEFAULT_TYPE) -> None:
-        if not is_allowed(update, deps.settings.allowed_user_id):
-            return
-
-        message = update.message
-        if message is None or message.text is None:
-            return
-
-        user_text = message.text
-        chat_id = message.chat_id
-        log.info("message_received", chat_id=chat_id, preview=user_text[:80])
-
-        sink = TelegramStreamSink(message)
-        try:
-            reply = await _process(user_text, chat_id, deps, sink=sink)
-        except LLMTimeoutError:
-            log.warning("llm_timeout", chat_id=chat_id)
-            reply = (
-                "Le modèle met trop longtemps à répondre pour l'instant. "
-                "Réessaie dans quelques secondes."
-            )
-        except LLMError as exc:
-            log.error("llm_error", chat_id=chat_id, error=str(exc))
-            reply = "Le modèle LLM a un souci côté serveur pour l'instant. Réessaie dans un moment."
-        except Exception as exc:
-            log.exception("handler_failed", error=str(exc))
-            reply = "Désolé, une erreur interne est survenue."
-
-        await sink.finalize(reply)
-
-    return handle_message
-
-
-def make_photo_handler(deps: BotDeps) -> HandlerFn:
-    """Retourne le handler pour les messages PHOTO (multimodal via Ollama)."""
-
-    async def handle_photo(update: Update, _context: ContextTypes.DEFAULT_TYPE) -> None:
-        if not is_allowed(update, deps.settings.allowed_user_id):
-            return
-
-        message = update.message
-        if message is None or not message.photo:
-            return
-
-        caption = message.caption or ""
-        chat_id = message.chat_id
-        # On télécharge la plus grande résolution disponible (dernière de la liste).
-        largest = message.photo[-1]
-        tg_file = await largest.get_file()
-        image_bytes = bytes(await tg_file.download_as_bytearray())
-        log.info(
-            "photo_received",
-            chat_id=chat_id,
-            size=len(image_bytes),
-            caption_preview=caption[:80],
-        )
-
-        try:
-            reply = await _process(caption, chat_id, deps, images=[image_bytes])
-        except LLMTimeoutError:
-            log.warning("llm_timeout", chat_id=chat_id, kind="photo")
-            reply = (
-                "Le modèle met trop longtemps à analyser l'image. Réessaie dans quelques secondes."
-            )
-        except LLMError as exc:
-            log.error("llm_error", chat_id=chat_id, kind="photo", error=str(exc))
-            reply = "Le modèle LLM a un souci côté serveur pour l'instant. Réessaie dans un moment."
-        except Exception as exc:
-            log.exception("photo_handler_failed", error=str(exc))
-            reply = "Désolé, je n'ai pas réussi à analyser cette image."
-
-        await reply_markdown(message, reply)
-
-    return handle_photo
-
-
-async def _process(
+async def process_message(
     user_text: str,
-    chat_id: int,
     deps: BotDeps,
     images: list[bytes] | None = None,
-    sink: TelegramStreamSink | None = None,
 ) -> str:
+    """Point d'entrée unique appelé par la couche transport (`bot/api.py`).
+
+    Retourne la réponse complète (pas de streaming). Les rappels créés en
+    chemin par `_apply_side_effects` écrivent dans `pending_notifications`
+    via `ReminderScheduler.add_reminder`.
+    """
     memory_context = await deps.memory.retrieve_context(
         user_text or "(image envoyée sans légende)", top_k=5
     )
@@ -177,13 +99,7 @@ async def _process(
     user_content = (
         user_text if user_text else "Analyse cette image et propose une action pertinente."
     )
-    # Streaming opt-in : uniquement si un sink est fourni ET pas d'images
-    # (le fallback local n'est pas multimodal, et le premier appel est plus
-    # risqué — on laisse le chemin non-streamé gérer le fallback proprement).
-    if sink is not None and not images:
-        raw = await _stream_first_call(deps, system_prompt, user_content, sink)
-    else:
-        raw = await deps.llm.call(system=system_prompt, user=user_content, images=images)
+    raw = await deps.llm.call(system=system_prompt, user=user_content, images=images)
 
     try:
         text, meta = extract_meta(raw)
@@ -191,67 +107,36 @@ async def _process(
         log.warning("meta_parse_failed", error=str(exc), raw_preview=raw[:200])
         return FALLBACK_TEXT
 
-    await _apply_side_effects(user_text, chat_id, meta, deps)
+    await _apply_side_effects(user_text, meta, deps)
 
     if meta["intent"] == "search" and meta["search_query"]:
         results = await deps.search.search(meta["search_query"])
         log.info("search_performed", query=meta["search_query"], hits=len(results))
         text = await deps.llm.call_with_search(user_text, results)
-        if sink is not None:
-            await sink.emit(text)
 
     elif meta["intent"] == "feed" and meta["feed"]["action"]:
         text = await _handle_feed(user_text, meta, deps, intro=text)
-        if sink is not None:
-            await sink.emit(text)
 
     elif meta["intent"] == "event" and meta["event"]["action"]:
         text = await _handle_event(meta, deps, intro=text)
-        if sink is not None:
-            await sink.emit(text)
 
     elif meta["intent"] == "fuel" and meta["fuel"]["fuel_type"]:
         text = await _handle_fuel(meta, deps, intro=text)
-        if sink is not None:
-            await sink.emit(text)
 
     elif meta["intent"] == "weather":
         text = await _handle_weather(meta, deps, intro=text)
-        if sink is not None:
-            await sink.emit(text)
 
     history_user = user_text if user_text else "(image envoyée)"
     if images:
         history_user = f"[photo] {history_user}"
-    # deps.history est un deque(maxlen=MAX_HISTORY) créé dans main.py :
-    # la troncature est atomique, pas de boucle pop manuelle à maintenir.
     deps.history.append(f"user: {history_user}")
     deps.history.append(f"assistant: {text}")
 
     return text
 
 
-async def _stream_first_call(
-    deps: BotDeps,
-    system_prompt: str,
-    user_content: str,
-    sink: TelegramStreamSink,
-) -> str:
-    """Streame le premier appel LLM et retourne le texte brut complet (avec bloc meta)."""
-    messages = [
-        {"role": "system", "content": system_prompt},
-        {"role": "user", "content": user_content},
-    ]
-    buffer_parts: list[str] = []
-    async for chunk in deps.llm.chat_stream(messages):
-        buffer_parts.append(chunk)
-        await sink.emit(visible_text("".join(buffer_parts)))
-    return "".join(buffer_parts)
-
-
 async def _apply_side_effects(
     user_text: str,
-    chat_id: int,
     meta: Meta,
     deps: BotDeps,
 ) -> None:
@@ -274,7 +159,6 @@ async def _apply_side_effects(
             deps.scheduler.add_reminder(
                 task_id=task.id,
                 due_at=due_dt,
-                chat_id=chat_id,
                 content=task.content,
             )
 

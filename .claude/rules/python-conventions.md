@@ -7,7 +7,7 @@ paths:
 # Python code conventions
 
 - **Python 3.12+**, strict type hints everywhere (`mypy --strict`)
-- **async/await** for all I/O (Telegram, Ollama, ChromaDB, SQLite, httpx,
+- **async/await** for all I/O (FastAPI, Ollama, ChromaDB, SQLite, httpx,
   caldav in `to_thread`)
 - **Explicit error handling**, no `bare except`
 - **Structured logs via `structlog`** (not the standard `logging`), two
@@ -18,12 +18,13 @@ paths:
 - **Environment variables via `python-dotenv`**, never hardcoded values
   outside of `bot/config.py`
 - **Tests with pytest + pytest-asyncio** (auto mode), external dependencies
-  mocked — the suite runs without real Ollama/Telegram/iCloud/SearXNG
+  mocked — the suite runs without real Ollama/iCloud/SearXNG. The HTTP
+  layer is tested via `httpx.AsyncClient` against an in-process ASGI app.
 - **Pre-commit** with `ruff check --fix`, `ruff format`, `mypy --strict` on
   `bot/`
 - **Shared SQLAlchemy Base** between modules that live together in
-  `tasks.db` (tasks + feeds + notification_logs) — import `Base` from
-  `bot.tasks.models`
+  `tasks.db` (tasks + feeds + notification_logs + pending_notifications)
+  — import `Base` from `bot.tasks.models`
 
 Useful commands via the `Makefile`:
 

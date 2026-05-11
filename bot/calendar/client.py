@@ -27,7 +27,7 @@ class ICloudCalendarClient:
     """Wrapper async minimal autour de `caldav.DAVClient`.
 
     La lib caldav est synchrone, donc chaque appel réseau passe par
-    `asyncio.to_thread` pour ne pas bloquer l'event loop Telegram.
+    `asyncio.to_thread` pour ne pas bloquer l'event loop du serveur HTTP.
 
     La connexion est lazy : appeler `connect()` une fois au démarrage pour
     résoudre le calendrier cible. En cas d'échec, l'erreur est levée à

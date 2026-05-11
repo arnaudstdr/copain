@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import AsyncIterator, Iterator
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -51,20 +51,3 @@ async def chroma_persist_dir(tmp_data_dir: Path) -> AsyncIterator[Path]:
     chroma = tmp_data_dir / "chroma"
     chroma.mkdir()
     yield chroma
-
-
-@pytest.fixture
-def mock_update_allowed() -> MagicMock:
-    """Update Telegram factice dont l'user.id matche ALLOWED_USER_ID=42."""
-    update = MagicMock()
-    update.effective_user.id = 42
-    update.effective_user.username = "arnaud"
-    return update
-
-
-@pytest.fixture
-def mock_update_denied() -> MagicMock:
-    update = MagicMock()
-    update.effective_user.id = 9999
-    update.effective_user.username = "intrus"
-    return update

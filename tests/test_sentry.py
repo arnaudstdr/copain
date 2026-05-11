@@ -12,8 +12,8 @@ def _settings(sentry_dsn: str | None, traces: float = 0.0) -> Settings:
     from pathlib import Path
 
     return Settings(
-        telegram_bot_token="t",
-        allowed_user_id=1,
+        api_key="test-key",
+        api_port=8000,
         ollama_base_url="x",
         ollama_llm_model="m",
         ollama_embed_model="e",

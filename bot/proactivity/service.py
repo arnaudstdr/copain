@@ -26,16 +26,16 @@ from bot.briefing.weather import WeatherError
 from bot.logging_conf import get_logger
 from bot.proactivity.models import NotificationLog
 from bot.proactivity.rules import Notification, evaluate_rain, evaluate_upcoming_event
-from bot.telegram_sender import send_message
 
 if TYPE_CHECKING:
     from bot.briefing.weather import OpenMeteoClient
     from bot.calendar.client import ICloudCalendarClient
     from bot.config import Settings
+    from bot.notifications.store import NotificationStore
 
 log = get_logger(__name__)
 
-SendFn = Callable[[int, str], Awaitable[None]]
+SendFn = Callable[[str], Awaitable[None]]
 
 
 class ProactivityService:
@@ -46,16 +46,18 @@ class ProactivityService:
         weather: OpenMeteoClient,
         calendar: ICloudCalendarClient,
         engine: AsyncEngine,
-        chat_id: int,
-        send: SendFn = send_message,
+        notifications: NotificationStore | None = None,
+        send: SendFn | None = None,
     ) -> None:
+        if send is None and notifications is None:
+            raise ValueError("ProactivityService requiert `notifications` ou `send`")
         self._settings = settings
         self._weather = weather
         self._calendar = calendar
         self._engine = engine
         self._sessionmaker = async_sessionmaker(engine, expire_on_commit=False)
-        self._chat_id = chat_id
-        self._send = send
+        # Privilégie le store : permet aux tests d'injecter un AsyncMock via `send`.
+        self._send: SendFn = send if send is not None else _store_dispatcher(notifications)
         self._tz = ZoneInfo(settings.timezone)
 
     async def tick(self) -> None:
@@ -144,7 +146,7 @@ class ProactivityService:
         return notif
 
     async def _dispatch(self, notif: Notification) -> None:
-        await self._send(self._chat_id, notif.text)
+        await self._send(notif.text)
         async with self._sessionmaker() as session:
             session.add(NotificationLog(kind=notif.kind, event_uid=notif.event_uid))
             await session.commit()
@@ -192,3 +194,13 @@ class ProactivityService:
             return None
         # SQLite ne préserve pas la tz : on réattache UTC pour comparer à `now`.
         return last if last.tzinfo is not None else last.replace(tzinfo=ZoneInfo("UTC"))  # type: ignore[no-any-return, unused-ignore]
+
+
+def _store_dispatcher(notifications: NotificationStore | None) -> SendFn:
+    """Adapte un `NotificationStore` à la signature `SendFn` attendue par le service."""
+    assert notifications is not None  # garanti par le ctor
+
+    async def _send(text: str) -> None:
+        await notifications.add(text)
+
+    return _send

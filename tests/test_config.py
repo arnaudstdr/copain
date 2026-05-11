@@ -11,8 +11,7 @@ from bot.config import ConfigError, _env_bool, load_settings
 
 def _minimal_env(monkeypatch: pytest.MonkeyPatch) -> None:
     """Remplit les variables requises pour que `load_settings` n'échoue pas."""
-    monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "fake-token")
-    monkeypatch.setenv("ALLOWED_USER_ID", "42")
+    monkeypatch.setenv("API_KEY", "test-api-key")
     monkeypatch.setenv("ICLOUD_USERNAME", "arnaud@example.com")
     monkeypatch.setenv("ICLOUD_APP_PASSWORD", "aaaa-bbbb-cccc-dddd")
 
@@ -152,6 +151,28 @@ def test_sentry_defaults_when_env_absent(monkeypatch: pytest.MonkeyPatch) -> Non
     assert settings.sentry_environment is None
     assert settings.sentry_release is None
     assert settings.sentry_traces_sample_rate == 0.0
+
+
+def test_api_key_required(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("ICLOUD_USERNAME", "arnaud@example.com")
+    monkeypatch.setenv("ICLOUD_APP_PASSWORD", "aaaa-bbbb-cccc-dddd")
+    monkeypatch.delenv("API_KEY", raising=False)
+    with pytest.raises(ConfigError, match="API_KEY"):
+        load_settings()
+
+
+def test_api_port_default(monkeypatch: pytest.MonkeyPatch) -> None:
+    _minimal_env(monkeypatch)
+    monkeypatch.delenv("API_PORT", raising=False)
+    settings = load_settings()
+    assert settings.api_port == 8000
+
+
+def test_api_port_custom(monkeypatch: pytest.MonkeyPatch) -> None:
+    _minimal_env(monkeypatch)
+    monkeypatch.setenv("API_PORT", "9090")
+    settings = load_settings()
+    assert settings.api_port == 9090
 
 
 def test_sentry_custom_values(monkeypatch: pytest.MonkeyPatch) -> None:

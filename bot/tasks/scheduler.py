@@ -1,11 +1,18 @@
-"""Planificateur de jobs : rappels (persistés) et cron (mémoire)."""
+"""Planificateur de jobs : rappels (persistés) et cron (mémoire).
+
+Les rappels écrivent dans la file `pending_notifications` (SQLite),
+consommée par `GET /notifications` côté client iOS. Le chemin de la base
+est sérialisé dans les args du job (au même titre que le contenu) afin de
+pouvoir reconstruire un `NotificationStore` lors d'une exécution post-
+redémarrage : aucune référence à un objet vivant n'est picklée, seulement
+des primitifs (str, int).
+"""
 
 from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
 from datetime import datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
 from zoneinfo import ZoneInfo
 
 from apscheduler.events import EVENT_JOB_ERROR, JobExecutionEvent
@@ -13,34 +20,41 @@ from apscheduler.jobstores.memory import MemoryJobStore
 from apscheduler.jobstores.sqlalchemy import SQLAlchemyJobStore
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
+from bot.db import create_shared_engine
 from bot.logging_conf import get_logger
+from bot.notifications.store import NotificationStore
 from bot.sentry_setup import capture_exception
-from bot.telegram_sender import send_message
-
-if TYPE_CHECKING:
-    from telegram.ext import Application
 
 log = get_logger(__name__)
 
 REMINDER_PREFIX = "⏰ Rappel : "
 
 
-async def _send_reminder(chat_id: int, content: str) -> None:
-    """Envoie le message de rappel via l'API Telegram.
+async def _send_reminder(db_path: str, content: str) -> None:
+    """Empile un rappel dans `pending_notifications`.
 
-    Cette fonction est rappelée par APScheduler à l'échéance. Le token n'est
-    PAS passé en argument (il serait picklé dans `scheduler.db`) ; il est lu
-    via `os.environ` dans `bot.telegram_sender.send_message`.
+    Cette fonction est rappelée par APScheduler à l'échéance. Pour rester
+    sérialisable (jobstore SQLAlchemy), elle reçoit le chemin de la base et
+    reconstruit un `NotificationStore` à la volée — c'est le seul moment où
+    le job s'exécute, l'overhead est négligeable.
     """
-    await send_message(chat_id=chat_id, text=f"{REMINDER_PREFIX}{content}")
+    engine = create_shared_engine(Path(db_path))
+    store = NotificationStore(engine)
+    try:
+        await store.add(f"{REMINDER_PREFIX}{content}")
+    finally:
+        await engine.dispose()
 
 
 class ReminderScheduler:
     """Ajoute/supprime des jobs de rappel persistés entre redémarrages."""
 
-    def __init__(self, db_path: Path, timezone: str = "Europe/Paris") -> None:
+    def __init__(
+        self, db_path: Path, notifications_db_path: Path, timezone: str = "Europe/Paris"
+    ) -> None:
         db_path.parent.mkdir(parents=True, exist_ok=True)
         self._timezone = timezone
+        self._notifications_db_path = notifications_db_path
         # default = rappels one-shot persistés (SQLAlchemy)
         # memory = cron/recurrent (closures, non-sérialisables, re-planifiés au startup)
         self._scheduler = AsyncIOScheduler(
@@ -74,7 +88,6 @@ class ReminderScheduler:
         self,
         task_id: int,
         due_at: datetime,
-        chat_id: int,
         content: str,
     ) -> None:
         now = datetime.now(ZoneInfo(self._timezone))
@@ -89,7 +102,7 @@ class ReminderScheduler:
             _send_reminder,
             trigger="date",
             run_date=due_at,
-            args=[chat_id, content],
+            args=[str(self._notifications_db_path), content],
             id=f"task-{task_id}",
             replace_existing=True,
         )
@@ -146,7 +159,3 @@ class ReminderScheduler:
             jobstore="memory",
         )
         log.info("interval_job_scheduled", job_id=job_id, minutes=minutes)
-
-    def attach_application(self, _app: Application[Any, Any, Any, Any, Any, Any]) -> None:
-        """Hook réservé pour de futurs jobs qui auraient besoin de l'Application."""
-        # Pas utilisé pour l'instant : le job reconstruit un Bot à partir du token.

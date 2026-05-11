@@ -1,7 +1,7 @@
 """Tests d'intégration du ProactivityService avec les 5 garde-fous.
 
 Engine SQLite réel sur `tmp_path`, Open-Meteo + iCloud mockés, `send` est un
-`AsyncMock` pour vérifier les envois sans toucher à Telegram.
+`AsyncMock` pour vérifier les envois sans toucher au store réel.
 """
 
 from __future__ import annotations
@@ -98,7 +98,6 @@ async def _build_service(
             weather=weather or _weather_returning([]),
             calendar=calendar or _calendar_with([]),
             engine=engine,
-            chat_id=42,
             send=send,
         ),
         send,
@@ -168,7 +167,7 @@ async def test_event_in_window_triggers_and_logs(engine: AsyncEngine) -> None:
     await service.tick()
 
     send.assert_awaited_once()
-    assert "Réunion équipe" in send.call_args.args[1]
+    assert "Réunion équipe" in send.call_args.args[0]
     assert await _count_logs(engine) == 1
 
 
@@ -195,7 +194,7 @@ async def test_rain_triggers_when_no_event(engine: AsyncEngine) -> None:
     await service.tick()
 
     send.assert_awaited_once()
-    assert "Parapluie" in send.call_args.args[1]
+    assert "Parapluie" in send.call_args.args[0]
 
 
 async def test_rain_cooldown_blocks_second_call(engine: AsyncEngine) -> None:
@@ -226,7 +225,7 @@ async def test_event_wins_over_rain(engine: AsyncEngine) -> None:
     await service.tick()
 
     send.assert_awaited_once()
-    text = send.call_args.args[1]
+    text = send.call_args.args[0]
     assert "Réunion" in text and "Parapluie" not in text
 
 
@@ -261,4 +260,4 @@ async def test_disconnected_calendar_skips_events_but_allows_rain(engine: AsyncE
     await service.tick()
 
     send.assert_awaited_once()
-    assert "Parapluie" in send.call_args.args[1]
+    assert "Parapluie" in send.call_args.args[0]

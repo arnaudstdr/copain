@@ -3,6 +3,8 @@ services:
     build: .
     restart: unless-stopped
     env_file: .env
+    # network_mode: host expose directement le port API_PORT sur l'hôte
+    # ET permet d'atteindre Ollama sur localhost:11434.
     network_mode: host
     volumes:
       - ./data:/app/data

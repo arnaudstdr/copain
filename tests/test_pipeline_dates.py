@@ -1,8 +1,8 @@
-"""Tests unitaires du parsing de dates FR dans handlers."""
+"""Tests unitaires du parsing de dates FR dans le pipeline."""
 
 from __future__ import annotations
 
-from bot.handlers import _normalize_fr_time_words, _parse_due
+from bot.pipeline import _normalize_fr_time_words, _parse_due
 
 
 def test_normalize_midi_and_minuit() -> None:

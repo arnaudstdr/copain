@@ -12,5 +12,7 @@ repos:
       - id: mypy
         additional_dependencies:
           - types-dateparser
+          - fastapi>=0.115,<1
+          - pydantic>=2,<3
         args: [--strict, --ignore-missing-imports]
         files: ^bot/

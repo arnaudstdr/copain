@@ -1,7 +1,7 @@
 [project]
 name = "copain"
 version = "0.1.0"
-description = "Assistant personnel Telegram self-hosted (Ollama + ChromaDB + SearXNG)"
+description = "Assistant personnel HTTP self-hosted (FastAPI + Ollama + ChromaDB + SearXNG)"
 requires-python = ">=3.12"
 
 [tool.ruff]
@@ -22,6 +22,10 @@ select = [
 ]
 ignore = ["E501"]  # handled by formatter
 
+[tool.ruff.lint.per-file-ignores]
+# `Depends(...)` en default value est la convention FastAPI standard.
+"bot/api.py" = ["B008"]
+
 [tool.ruff.format]
 quote-style = "double"
 
@@ -40,12 +44,10 @@ show_error_codes = true
 module = [
     "chromadb.*",
     "apscheduler.*",
-    "telegram.*",
     "ollama.*",
     "feedparser.*",
     "caldav.*",
     "vobject.*",
-    "telegramify_markdown.*",
 ]
 ignore_missing_imports = true
 

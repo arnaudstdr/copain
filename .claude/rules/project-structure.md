@@ -24,16 +24,15 @@ copain/
 │
 ├── bot/
 │   ├── __init__.py
-│   ├── main.py                  # entrypoint + PTB post_init/post_shutdown
-│   ├── handlers.py              # make_handler + make_photo_handler + _handle_*
-│   ├── security.py              # is_allowed(update, allowed_user_id)
+│   ├── main.py                  # entrypoint: build deps + launch uvicorn
+│   ├── api.py                   # FastAPI app + endpoints + verify_api_key dep
+│   ├── pipeline.py              # process_message + _handle_* (transport-agnostic)
 │   ├── config.py                # Settings dataclass + load_settings()
 │   ├── logging_conf.py          # structlog setup
 │   ├── sentry_setup.py          # opt-in Sentry init + capture_exception helper
 │   ├── cache.py                 # TTLCache (LRU async) — LLM opt-in + SearXNG
 │   ├── db.py                    # AsyncEngine partagé + WAL mode
 │   ├── http_retry.py            # httpx retry + JSON helper (Open-Meteo, ODS, …)
-│   ├── telegram_sender.py       # send_message + TelegramStreamSink + visible_text
 │   │
 │   ├── llm/
 │   │   ├── client.py            # LLMClient (chat + chat_stream + fallback + cache)
@@ -43,6 +42,10 @@ copain/
 │   ├── memory/
 │   │   ├── manager.py           # MemoryManager (ChromaDB HNSW + store_many)
 │   │   └── embeddings.py        # Embedder (nomic-embed-text, embed_many async)
+│   │
+│   ├── notifications/
+│   │   ├── models.py            # PendingNotification (shares Base with tasks)
+│   │   └── store.py             # NotificationStore (add / get_unread / mark_read)
 │   │
 │   ├── tasks/
 │   │   ├── manager.py           # TaskManager async
@@ -77,11 +80,12 @@ copain/
 │
 ├── data/                        # persisted Docker volume
 │   ├── chroma/
-│   ├── tasks.db                 # SQLite shared by tasks + feeds + notification_logs
+│   ├── tasks.db                 # SQLite : tasks + feeds + notification_logs + pending_notifications
 │   └── scheduler.db             # persisted APScheduler jobs
 │
 └── tests/                       # pytest-asyncio, everything mocked (no external I/O)
     ├── conftest.py
+    ├── test_api.py
     ├── test_briefing.py
     ├── test_cache.py
     ├── test_calendar.py
@@ -89,23 +93,21 @@ copain/
     ├── test_embedder.py
     ├── test_feeds.py
     ├── test_fuel_client.py
-    ├── test_handlers_dates.py
-    ├── test_handlers_process.py
     ├── test_http_retry.py
     ├── test_llm_client.py
     ├── test_logging_conf.py
     ├── test_memory.py
     ├── test_nominatim.py
+    ├── test_notifications_store.py
     ├── test_parser.py
+    ├── test_pipeline_dates.py
+    ├── test_pipeline_process.py
     ├── test_proactivity_models.py
     ├── test_proactivity_rules.py
     ├── test_proactivity_service.py
     ├── test_scheduler_interval.py
-    ├── test_scheduler_security.py
     ├── test_searxng_cache.py
-    ├── test_security.py
     ├── test_sentry.py
-    ├── test_streaming.py
     ├── test_tasks.py
     └── test_weather.py
 ```

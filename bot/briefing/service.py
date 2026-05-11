@@ -16,6 +16,7 @@ if TYPE_CHECKING:
     from bot.calendar.models import CalendarEvent
     from bot.config import Settings
     from bot.llm.client import LLMClient
+    from bot.notifications.store import NotificationStore
     from bot.rss.fetcher import FeedItem, RssFetcher
     from bot.rss.manager import FeedManager
     from bot.tasks.manager import TaskManager
@@ -42,6 +43,7 @@ class BriefingService:
         rss_fetcher: RssFetcher,
         llm: LLMClient,
         calendar: ICloudCalendarClient,
+        notifications: NotificationStore | None = None,
     ) -> None:
         self._settings = settings
         self._weather = weather
@@ -50,6 +52,7 @@ class BriefingService:
         self._rss_fetcher = rss_fetcher
         self._llm = llm
         self._calendar = calendar
+        self._notifications = notifications
 
     async def build(self) -> str:
         parts: list[str] = ["☀️ Bonjour ! Voici ton briefing du jour."]
@@ -82,13 +85,13 @@ class BriefingService:
 
         return "\n".join(parts)
 
-    async def send_daily(self, chat_id: int) -> None:
-        """Construit le briefing et l'envoie sur Telegram via le helper partagé."""
-        from bot.telegram_sender import send_message
-
+    async def send_daily(self) -> None:
+        """Construit le briefing et l'empile dans la file `pending_notifications`."""
+        if self._notifications is None:
+            raise RuntimeError("BriefingService.send_daily() appelé sans NotificationStore injecté")
         text = await self.build()
-        await send_message(chat_id=chat_id, text=text)
-        log.info("briefing_sent", chat_id=chat_id, chars=len(text))
+        await self._notifications.add(text)
+        log.info("briefing_sent", chars=len(text))
 
     async def _today_events(self) -> list[CalendarEvent]:
         if not self._calendar.is_connected:
