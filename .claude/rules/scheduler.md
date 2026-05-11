@@ -13,10 +13,11 @@ paths:
 
 - **`default` (SQLAlchemyJobStore)** — one-shot task reminders persisted
   across restarts (`add_reminder(task_id, due_at, content)`). At due time
-  the job executes `_send_reminder(db_path, content)`, which builds a
-  `NotificationStore` from the serialised path and enqueues a row into
-  `pending_notifications`. No live object (engine, store) is ever pickled
-  into the job — only primitives.
+  the job executes `_send_reminder(db_path, content, pushover_token, pushover_user)`,
+  which builds a `NotificationStore` + `PushoverClient` from the serialised
+  primitives and enqueues the reminder. No live object is ever pickled — only
+  primitives. Jobs persisted before the Pushover migration use default empty
+  values for token/user (= no push, silent backwards compat).
 - **`memory` (MemoryJobStore)** — recurring jobs whose function is a
   non-serialisable closure (e.g. briefing, proactivity tick). They are
   re-scheduled at startup via:
@@ -40,8 +41,18 @@ needed in the job bodies.
 `BriefingService.send_daily` runs as a cron job at `BRIEFING_HOUR:BRIEFING_MINUTE`
 and aggregates: local weather (Open-Meteo), today's tasks, today's events
 (iCloud), top 5 RSS summaries. The final string is enqueued via
-`NotificationStore.add(text)`. The closure is registered in the `memory`
-jobstore at startup (`bot/main.py::_build_state`).
+`NotificationStore.add(text, title="☀️ Briefing du jour", priority=0, sound="morning")`.
+The closure is registered in the `memory` jobstore at startup
+(`bot/main.py::_build_state`).
+
+## NotificationStore — double canal
+
+`NotificationStore.add(text, title, priority, sound)` écrit simultanément :
+1. SQLite `pending_notifications` (consommé par `GET /notifications`)
+2. Pushover via `PushoverClient.push()` — fail silently si non configuré
+
+`PushoverClient` est injecté dans le constructeur de `NotificationStore`. Si token
+ou user est vide, aucun appel réseau n'est tenté. Les deux canaux coexistent toujours.
 
 ## Proactivity (opt-in)
 
@@ -50,9 +61,18 @@ minutes (default 30) and may push **at most one** notification per tick.
 Two rules in v1: rain alert within the hour (Open-Meteo hourly) and
 appointment reminder ~1 h before (iCloud).
 
-The service accepts either a `NotificationStore` (production) or a `send`
+The service accepts either a `NotificationStore` (production — uses `add()`
+with title/priority/sound from the `Notification` dataclass) or a `send`
 callable (`Callable[[str], Awaitable[None]]`) used by tests with an
-`AsyncMock`. The signature is `send(text)` — no chat_id since the API era.
+`AsyncMock` (text only). Each `Notification` carries its own `title`,
+`priority`, and `sound` set by the rule function (`evaluate_rain`,
+`evaluate_upcoming_event`).
+
+Pushover priorities used:
+- Rain alert: `priority=0`, `sound="rain"`, `title="🌧️ Alerte pluie"`
+- Event reminder: `priority=1` (bypasses silent mode), `sound="magic"`, `title="📅 Rappel RDV"`
+- Task reminder: `priority=1`, `sound="pushover"`, `title="Rappel"`
+- Briefing: `priority=0`, `sound="morning"`, `title="☀️ Briefing du jour"`
 
 Five safeguards to preserve when editing `tick` or the rules:
 

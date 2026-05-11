@@ -74,6 +74,9 @@ class Settings:
     sentry_release: str | None
     sentry_traces_sample_rate: float
 
+    pushover_token: str
+    pushover_user: str
+
     env: str
 
     @property
@@ -199,5 +202,7 @@ def load_settings() -> Settings:
         sentry_environment=os.getenv("SENTRY_ENVIRONMENT") or None,
         sentry_release=os.getenv("SENTRY_RELEASE") or None,
         sentry_traces_sample_rate=_env_float("SENTRY_TRACES_SAMPLE_RATE", 0.0),
+        pushover_token=os.getenv("PUSHOVER_TOKEN", ""),
+        pushover_user=os.getenv("PUSHOVER_USER", ""),
         env=os.getenv("ENV", "dev"),
     )

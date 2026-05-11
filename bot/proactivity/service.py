@@ -56,8 +56,8 @@ class ProactivityService:
         self._calendar = calendar
         self._engine = engine
         self._sessionmaker = async_sessionmaker(engine, expire_on_commit=False)
-        # Privilégie le store : permet aux tests d'injecter un AsyncMock via `send`.
-        self._send: SendFn = send if send is not None else _store_dispatcher(notifications)
+        self._notifications = notifications
+        self._send: SendFn | None = send
         self._tz = ZoneInfo(settings.timezone)
 
     async def tick(self) -> None:
@@ -146,7 +146,13 @@ class ProactivityService:
         return notif
 
     async def _dispatch(self, notif: Notification) -> None:
-        await self._send(notif.text)
+        if self._notifications is not None:
+            await self._notifications.add(
+                notif.text, title=notif.title, priority=notif.priority, sound=notif.sound
+            )
+        else:
+            assert self._send is not None
+            await self._send(notif.text)
         async with self._sessionmaker() as session:
             session.add(NotificationLog(kind=notif.kind, event_uid=notif.event_uid))
             await session.commit()
@@ -196,11 +202,3 @@ class ProactivityService:
         return last if last.tzinfo is not None else last.replace(tzinfo=ZoneInfo("UTC"))  # type: ignore[no-any-return, unused-ignore]
 
 
-def _store_dispatcher(notifications: NotificationStore | None) -> SendFn:
-    """Adapte un `NotificationStore` à la signature `SendFn` attendue par le service."""
-    assert notifications is not None  # garanti par le ctor
-
-    async def _send(text: str) -> None:
-        await notifications.add(text)
-
-    return _send

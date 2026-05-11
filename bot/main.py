@@ -30,6 +30,7 @@ from bot.llm.client import LLMClient
 from bot.logging_conf import configure_logging, get_logger
 from bot.memory.embeddings import Embedder
 from bot.memory.manager import MemoryManager
+from bot.notifications.pushover import PushoverClient
 from bot.notifications.store import NotificationStore
 from bot.pipeline import MAX_HISTORY, BotDeps
 from bot.proactivity import models as _proactivity_models  # noqa: F401 — enregistre la table
@@ -72,12 +73,15 @@ async def _build_state(
         settings.scheduler_db_path,
         notifications_db_path=settings.db_path,
         timezone=settings.timezone,
+        pushover_token=settings.pushover_token,
+        pushover_user=settings.pushover_user,
     )
     engine = create_shared_engine(settings.db_path)
     tasks = TaskManager(engine, scheduler=scheduler)
     rss = FeedManager(engine)
     rss_fetcher = RssFetcher()
-    notifications = NotificationStore(engine)
+    pushover = PushoverClient(token=settings.pushover_token, user=settings.pushover_user)
+    notifications = NotificationStore(engine, pushover=pushover)
     llm = LLMClient(
         settings.ollama_base_url,
         settings.ollama_llm_model,
@@ -196,6 +200,10 @@ def main() -> None:
     configure_logging(env=settings.env, log_file_path=settings.log_file_path)
     sentry_on = configure_sentry(settings)
     log.info("startup", env=settings.env, sentry=sentry_on, port=settings.api_port)
+    if settings.pushover_token and settings.pushover_user:
+        log.info("pushover_configured")
+    else:
+        log.warning("pushover_not_configured", hint="set PUSHOVER_TOKEN and PUSHOVER_USER in .env")
 
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)

@@ -22,6 +22,7 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 from bot.db import create_shared_engine
 from bot.logging_conf import get_logger
+from bot.notifications.pushover import PushoverClient
 from bot.notifications.store import NotificationStore
 from bot.sentry_setup import capture_exception
 
@@ -30,18 +31,28 @@ log = get_logger(__name__)
 REMINDER_PREFIX = "⏰ Rappel : "
 
 
-async def _send_reminder(db_path: str, content: str) -> None:
-    """Empile un rappel dans `pending_notifications`.
+async def _send_reminder(
+    db_path: str,
+    content: str,
+    pushover_token: str = "",
+    pushover_user: str = "",
+) -> None:
+    """Empile un rappel dans `pending_notifications` et le pousse via Pushover.
 
-    Cette fonction est rappelée par APScheduler à l'échéance. Pour rester
-    sérialisable (jobstore SQLAlchemy), elle reçoit le chemin de la base et
-    reconstruit un `NotificationStore` à la volée — c'est le seul moment où
-    le job s'exécute, l'overhead est négligeable.
+    Sérialisable (jobstore SQLAlchemy) : seuls des primitifs sont passés en args.
+    Les jobs persistés avant l'ajout de Pushover utilisent les valeurs par défaut
+    (token/user vides = pas de push, comportement identique à l'ancienne version).
     """
     engine = create_shared_engine(Path(db_path))
-    store = NotificationStore(engine)
+    pushover = PushoverClient(token=pushover_token, user=pushover_user)
+    store = NotificationStore(engine, pushover=pushover)
     try:
-        await store.add(f"{REMINDER_PREFIX}{content}")
+        await store.add(
+            f"{REMINDER_PREFIX}{content}",
+            title="Rappel",
+            priority=1,
+            sound="pushover",
+        )
     finally:
         await engine.dispose()
 
@@ -50,11 +61,18 @@ class ReminderScheduler:
     """Ajoute/supprime des jobs de rappel persistés entre redémarrages."""
 
     def __init__(
-        self, db_path: Path, notifications_db_path: Path, timezone: str = "Europe/Paris"
+        self,
+        db_path: Path,
+        notifications_db_path: Path,
+        timezone: str = "Europe/Paris",
+        pushover_token: str = "",
+        pushover_user: str = "",
     ) -> None:
         db_path.parent.mkdir(parents=True, exist_ok=True)
         self._timezone = timezone
         self._notifications_db_path = notifications_db_path
+        self._pushover_token = pushover_token
+        self._pushover_user = pushover_user
         # default = rappels one-shot persistés (SQLAlchemy)
         # memory = cron/recurrent (closures, non-sérialisables, re-planifiés au startup)
         self._scheduler = AsyncIOScheduler(
@@ -102,7 +120,7 @@ class ReminderScheduler:
             _send_reminder,
             trigger="date",
             run_date=due_at,
-            args=[str(self._notifications_db_path), content],
+            args=[str(self._notifications_db_path), content, self._pushover_token, self._pushover_user],
             id=f"task-{task_id}",
             replace_existing=True,
         )

@@ -86,9 +86,12 @@ FastAPI app (bot/api.py, served by uvicorn)
         │           └── MemoryJobStore     → cron (non-serialisable closures)
         │
         ├── NotificationStore (bot/notifications/store.py)
-        │     ├── add(text)         → enqueue a pending_notifications row
-        │     ├── get_unread()      → read FIFO
-        │     └── mark_read(ids)    → stamp read_at
+        │     ├── add(text, title, priority, sound) → SQLite row + Pushover push
+        │     ├── get_unread()                      → read FIFO
+        │     └── mark_read(ids)                    → stamp read_at
+        │
+        ├── PushoverClient (bot/notifications/pushover.py)
+        │     └── push(message, title, priority, sound) → api.pushover.net → iOS
         │
         ├── RSS Manager
         │     ├── FeedManager (SQLAlchemy, table `feeds`)
@@ -138,6 +141,7 @@ FastAPI app (bot/api.py, served by uvicorn)
 | Quality       | ruff (lint+format) + mypy strict via pre-commit         |
 | Interface web | Vanilla JS PWA, servie par FastAPI à `/`                |
 | Monitoring    | Sentry SDK (opt-in via `SENTRY_DSN`)                    |
+| Push iOS      | Pushover (opt-in via `PUSHOVER_TOKEN` + `PUSHOVER_USER`)|
 
 ---
 

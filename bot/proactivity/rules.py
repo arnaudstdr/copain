@@ -23,6 +23,9 @@ class Notification:
     kind: NotificationKind
     text: str
     event_uid: str | None = None
+    title: str = "Copain"
+    priority: int = 0
+    sound: str | None = None
 
 
 def evaluate_rain(
@@ -46,7 +49,7 @@ def evaluate_rain(
     text = (
         f"☔ Parapluie — pluie probable vers {hhmm} (≈{first.mm:.1f} mm, {first.probability_pct} %)"
     )
-    return Notification(kind="rain", text=text)
+    return Notification(kind="rain", text=text, title="🌧️ Alerte pluie", priority=0, sound="rain")
 
 
 def evaluate_upcoming_event(
@@ -69,5 +72,5 @@ def evaluate_upcoming_event(
         hhmm = event.start.strftime("%H:%M")
         minutes = round(delta_min)
         text = f'📅 RDV "{event.title}" à {hhmm} (dans {minutes} min)'
-        return Notification(kind="event", text=text, event_uid=event.uid)
+        return Notification(kind="event", text=text, event_uid=event.uid, title="📅 Rappel RDV", priority=1, sound="magic")
     return None

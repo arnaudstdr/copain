@@ -90,7 +90,7 @@ class BriefingService:
         if self._notifications is None:
             raise RuntimeError("BriefingService.send_daily() appelé sans NotificationStore injecté")
         text = await self.build()
-        await self._notifications.add(text)
+        await self._notifications.add(text, title="☀️ Briefing du jour", priority=0, sound="morning")
         log.info("briefing_sent", chars=len(text))
 
     async def _today_events(self) -> list[CalendarEvent]:
