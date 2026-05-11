@@ -210,7 +210,10 @@ class OpenMeteoClient:
     ) -> list[HourlyPrecipitation]:
         """Retourne les précipitations prévues pour les N prochaines heures.
 
-        Les heures déjà passées (avant l'heure courante tronquée) sont filtrées.
+        Le bucket Open-Meteo `HH:00` couvre la fenêtre `[HH:00, HH+1:00[`.
+        On filtre l'heure courante en plus du passé : si on est à 10:22, le
+        bucket `10:00` est ignoré (on est déjà dedans, parler de « vers 10:00 »
+        serait trompeur) et le premier bucket renvoyé est `11:00`.
         Les timestamps retournés sont timezone-aware dans `self._timezone`.
         """
         params: dict[str, Any] = {
@@ -241,7 +244,7 @@ class OpenMeteoClient:
                 t = datetime.fromisoformat(iso).replace(tzinfo=tz)
             except (TypeError, ValueError):
                 continue
-            if t < now_hour:
+            if t <= now_hour:
                 continue
             out.append(
                 HourlyPrecipitation(

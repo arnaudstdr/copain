@@ -52,13 +52,13 @@ async def test_get_hourly_precipitation_filters_past_and_limits_results() -> Non
 
     assert len(result) == 3
     assert all(isinstance(item, HourlyPrecipitation) for item in result)
-    # L'heure passée est bien filtrée (h0 est la première).
-    assert result[0].time == h0.replace(tzinfo=tz)
-    assert result[0].mm == 0.0
-    assert result[1].time == h1.replace(tzinfo=tz)
-    assert result[1].probability_pct == 70
-    assert result[2].time == h2.replace(tzinfo=tz)
-    assert result[2].mm == 1.2
+    # Le passé ET l'heure courante (h0) sont filtrés : h1 est la première.
+    assert result[0].time == h1.replace(tzinfo=tz)
+    assert result[0].probability_pct == 70
+    assert result[1].time == h2.replace(tzinfo=tz)
+    assert result[1].mm == 1.2
+    assert result[2].time == h3.replace(tzinfo=tz)
+    assert result[2].probability_pct == 10
 
 
 async def test_get_hourly_precipitation_empty_payload_returns_empty_list() -> None:
