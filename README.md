@@ -17,44 +17,94 @@
   <img src="https://img.shields.io/badge/host-Raspberry%20Pi%205-c51a4a?logo=raspberrypi&logoColor=white" alt="Raspberry Pi 5">
 </p>
 
-Single-user personal assistant driven by natural French language, exposed as
-a FastAPI HTTP service and called directly from an iOS Shortcut over
-Tailscale. Partly self-hosted on a Raspberry Pi 5 (local services) + cloud LLM.
+Single-user personal assistant driven by natural French language. Three
+entry points, all served by the same FastAPI core over Tailscale :
+
+1. **PWA dashboard** — Safari iOS opens `/` and gets a tableau-de-bord
+   web app with cards (weather, next event, tasks, notifications,
+   briefing) + an interactive task overlay (check / swipe-to-delete).
+2. **Siri voice shortcut** — "Dis à Copain…" sends the dictated text via
+   `POST /ask` with `X-Source: siri`, gets back a TTS-friendly answer.
+3. **Geofence automations** — iOS Shortcuts post arrival/departure events
+   on `POST /event/location`, the bot keeps track of where you are and
+   may push contextual notifications.
+
+Hosted partly on a Raspberry Pi 5 (local services) with the main LLM in
+the cloud (Ollama Cloud).
 
 ## Features
 
-- Conversation with automatic semantic memory (ChromaDB HNSW + batch embeddings)
-- Tasks + push reminders in natural language (consumed via `GET /notifications`)
-- Web search (self-hosted SearXNG, summarised in French, TTL cache)
-- RSS feeds (add/list/summarise latest news on demand)
-- Automatic morning briefing at 8am: weather + tasks + events + top 5 RSS,
-  pushed into the `pending_notifications` queue
-- Photo analysis via `POST /ask/image` (base64 payload)
-- iCloud calendar via CalDAV (create + list events in any iCloud calendar,
-  fuzzy name matching)
-- Fuel prices around `HOME_CITY` (data.economie.gouv.fr open data)
-- Weather via Open-Meteo, up to 16 days, FR expressions (`demain`, `ce weekend`)
-- **Opt-in proactivity** (`PROACTIVITY_ENABLED=true`): rain alerts within the
-  hour + appointment reminder ~1 h before. Built-in safeguards (time window,
-  per-type cooldown, daily budget capped at 3).
-- **Resilience**: TTL response cache (LLM opt-in + SearXNG always-on), optional
-  local LLM fallback (`OLLAMA_FALLBACK_MODEL`) when the cloud is unreachable.
-- **Monitoring**: opt-in Sentry error tracking (`SENTRY_DSN`, empty = disabled).
+### Core conversation
 
-Routing between these capabilities is driven by the LLM through a `<meta>`
-JSON block it emits at the end of every reply. See [`CLAUDE.md`](./CLAUDE.md)
-for architecture details.
+- LLM routing via a `<meta>` JSON block emitted at the end of every reply
+  (intent ∈ `answer | task | search | memory | feed | event | fuel | weather`).
+- Automatic **semantic memory** (ChromaDB HNSW + batch embeddings).
+- **User profile** (`data/profile.yaml`, hand-edited) injected as stable
+  facts into the system prompt — the LLM knows your name, family, work,
+  vehicles, routines, preferences.
+- **Photo analysis** via `POST /ask/image` (multimodal LLM).
+- **TTS-friendly mode** when the request carries `X-Source: siri` (1-2
+  sentence answers, no markdown, no emoji).
+
+### Productivity
+
+- **Tasks + push reminders** in natural language. Reminders write to
+  `pending_notifications` consumed by the PWA (or pushed via Pushover).
+- **Interactive task overlay** in the PWA : tap on the "Tâches" card →
+  see all pending tasks → tap to complete, swipe left to delete.
+- **iCloud calendar** (CalDAV) : create + list events, fuzzy match on
+  calendar name, overlap detection at creation time with a warning.
+- **RSS feeds** : add / list / summarize latest news on demand.
+- **Web search** via self-hosted SearXNG, summarised in French.
+- **Fuel prices** around `HOME_CITY` (`data.economie.gouv.fr` open data).
+- **Weather** via Open-Meteo (up to 16 days, FR expressions like
+  `demain` / `ce weekend`). Dashboard card auto-switches to `WORK_*`
+  coordinates when geofence says you're at work.
+
+### Proactive notifications
+
+Strictly opt-in via `PROACTIVITY_ENABLED=true`. Two channels :
+
+- **Cron tick** (every 30 min) — rain alert in the next hour,
+  appointment reminder ~1h before. Five safeguards : window, daily
+  budget (3), per-kind cooldown, dedup by event UID.
+- **Event-driven** (on `POST /event/location`) — "briefing retour" when
+  you leave work after 5pm (cooldown 4h, same safeguards).
+
+### Automation & briefing
+
+- **Morning briefing** every day at 8am : weather + today's tasks +
+  today's events + top-5 RSS, pushed into the queue + via Pushover.
+- **iOS Shortcuts integration** : see [`docs/ios-shortcuts.md`](./docs/ios-shortcuts.md)
+  for the Siri voice command and the four geofence automations.
+
+### Resilience & monitoring
+
+- **TTL response cache** (LLM opt-in + SearXNG always-on).
+- **Optional local LLM fallback** (`OLLAMA_FALLBACK_MODEL`) when the
+  cloud is unreachable. Fallback responses are never cached.
+- **Sentry** opt-in error tracking (`SENTRY_DSN`, empty = disabled).
+- **Pushover** opt-in iOS push notifications (`PUSHOVER_TOKEN/USER`).
 
 ## HTTP endpoints
 
-All endpoints require the `X-API-Key` header (matched against `API_KEY` from
-`.env`). Missing or invalid → **403**.
+All endpoints require the `X-API-Key` header (matched against `API_KEY`
+from `.env`). Missing or invalid → **403**.
 
-| Method | Path             | Body                                                            |
-| ------ | ---------------- | --------------------------------------------------------------- |
-| POST   | `/ask`           | `{ "message": str }`                                            |
-| POST   | `/ask/image`     | `{ "message": str, "image_b64": str, "media_type": str }`       |
-| GET    | `/notifications` | —                                                               |
+| Method | Path                       | Body / params                                                          |
+| ------ | -------------------------- | ---------------------------------------------------------------------- |
+| GET    | `/`                        | — (serves the PWA HTML)                                                |
+| GET    | `/config`                  | — (returns `api_key` for the PWA, no auth required, Tailscale-only)    |
+| POST   | `/ask`                     | `{ "message": str }` (header `X-Source: siri` → voice mode)            |
+| POST   | `/ask/image`               | `{ "message": str, "image_b64": str, "media_type": str }`              |
+| GET    | `/notifications`           | — (returns + marks as read)                                            |
+| GET    | `/dashboard`               | — (weather + next event + today tasks + unread count + briefing)       |
+| GET    | `/tasks`                   | — (all pending tasks)                                                  |
+| POST   | `/tasks/{id}/complete`     | — (mark task as done)                                                  |
+| DELETE | `/tasks/{id}`              | — (delete task)                                                        |
+| POST   | `/event/location`          | `{ "event": "arrived"\|"left", "place": str, "lat"?, "lon"?, "at"? }`  |
+
+Quick smoke test :
 
 ```bash
 curl -H "X-API-Key: changeme" \
@@ -66,43 +116,78 @@ curl -H "X-API-Key: changeme" \
 ## Stack
 
 Python 3.12 async · FastAPI + uvicorn · Ollama (`gemma4:31b-cloud` for
-the multimodal LLM, optional local `gemma3:4b` fallback, `nomic-embed-text`
-for embeddings) · ChromaDB (HNSW) · SQLAlchemy 2 + aiosqlite · APScheduler ·
-feedparser · caldav + vobject · httpx · structlog · Sentry SDK (opt-in).
+the multimodal LLM, optional local `gemma3:4b` fallback,
+`nomic-embed-text` for embeddings) · ChromaDB (HNSW) · SQLAlchemy 2 +
+aiosqlite · APScheduler · feedparser · caldav + vobject · httpx ·
+structlog · PyYAML · Sentry SDK (opt-in) · Pushover (opt-in) · vanilla
+JS PWA served by FastAPI.
 
 ## Local setup (dev)
 
 ```bash
 cp .env.example .env          # then fill in the variables (see below)
-make install                  # creates .venv, installs deps, installs pre-commit
-make test                     # 213 tests, fully mocked (no external services)
+cp data/profile.example.yaml data/profile.yaml  # then edit with your info
+make install                  # creates .venv, installs deps, pre-commit
+make test                     # ~294 tests, fully mocked (no external services)
 make lint typecheck           # ruff + mypy strict
-make run                      # starts uvicorn on API_PORT (requires real Ollama + SearXNG)
+make run                      # uvicorn on API_PORT (real Ollama + SearXNG required)
 ```
 
 ### Variables to fill in `.env`
 
-See [`.env.example`](./.env.example) for the full list. The essentials:
+See [`.env.example`](./.env.example) for the full list. The essentials :
 
-- `API_KEY` — shared secret for `X-API-Key` (generate something random)
-- `API_PORT` — uvicorn listen port (default 8000)
-- `ICLOUD_USERNAME` — your Apple ID (login email)
-- `ICLOUD_APP_PASSWORD` — **App-Specific Password** to generate (see below)
-- `ICLOUD_CALENDAR_NAME` — default iCloud calendar name (fuzzy matching: you
-  can write `Personnel` even if the real name contains emojis and surrounding
-  spaces)
+- `API_KEY` — shared secret for `X-API-Key` (generate something random).
+- `API_PORT` — uvicorn listen port (default 8000).
+- `ICLOUD_USERNAME` — your Apple ID (login email).
+- `ICLOUD_APP_PASSWORD` — **App-Specific Password** (see below).
+- `ICLOUD_CALENDAR_NAME` — default iCloud calendar (fuzzy matching :
+  `Personnel` matches `🧘 Personnel`).
+- `HOME_LAT` / `HOME_LON` / `HOME_CITY` — used for weather + fuel
+  defaults.
+- `WORK_LAT` / `WORK_LON` / `WORK_CITY` — used for context-aware
+  dashboard weather card.
+- `PROFILE_PATH` — path to the user profile YAML (default
+  `data/profile.yaml`).
+- `PUSHOVER_TOKEN` / `PUSHOVER_USER` — optional, enables iOS push notifs.
+- `SENTRY_DSN` — optional, enables error monitoring.
 
-The other variables (`TZ`, `BRIEFING_*`, `HOME_*`, `OLLAMA_*`, etc.) have
-reasonable defaults and can stay as-is for usage in Sélestat.
+The other variables (`TZ`, `BRIEFING_*`, `OLLAMA_*`, `PROACTIVITY_*`,
+etc.) have reasonable defaults and can stay as-is for usage in Sélestat.
 
 ### Create an iCloud App-Specific Password
 
-Required because of Apple ID 2FA:
+Required because of Apple ID 2FA :
 
-1. Go to [appleid.apple.com](https://appleid.apple.com)
-2. Sign-In and Security → **App-Specific Passwords** → Generate
-3. Name the app (e.g. "copain bot")
-4. Copy the password in the `xxxx-xxxx-xxxx-xxxx` format into `.env`
+1. Go to [appleid.apple.com](https://appleid.apple.com).
+2. Sign-In and Security → **App-Specific Passwords** → Generate.
+3. Name the app (e.g. "copain bot").
+4. Copy the password in the `xxxx-xxxx-xxxx-xxxx` format into `.env`.
+
+### User profile YAML
+
+The file `data/profile.yaml` (gitignored) describes who you are : name,
+city, family, work, vehicles, routines, preferences. It's injected into
+the LLM system prompt at every call so the assistant has stable context
+about you without having to re-discover it via RAG.
+
+Copy `data/profile.example.yaml` as a starting point. Edit by hand
+whenever your situation changes (rare). The bot needs a restart to pick
+up changes (no live reload).
+
+## iOS configuration
+
+After the bot is running on the Pi, configure two Shortcuts on your
+iPhone — see [`docs/ios-shortcuts.md`](./docs/ios-shortcuts.md) for the
+step-by-step :
+
+1. **"Dis à Copain"** — Siri voice shortcut for hands-free interaction.
+2. **Geofence automations** — 4 silent automations (home arrived / left,
+   work arrived / left) that POST to `/event/location`.
+
+The PWA itself doesn't need any setup : open `https://<pi-tailscale-host>:8000/`
+in Safari and "Add to Home Screen" — the manifest takes care of the rest
+(splash screen, fullscreen mode, app icon).
 
 ## Docker deployment (Pi 5)
 
@@ -112,28 +197,34 @@ make docker-up
 docker logs -f copain-bot-1
 ```
 
-Ollama must run **outside Docker** on the Pi (for GPU/NPU ARM access) with
-`gemma4:31b-cloud` configured. The container uses `network_mode: host` so
-`API_PORT` is exposed directly on the Pi and the bot can reach Ollama on
-`localhost:11434`.
+Ollama must run **outside Docker** on the Pi (for GPU/NPU ARM access)
+with `gemma4:31b-cloud` configured. The container uses
+`network_mode: host` so `API_PORT` is exposed directly on the Pi and the
+bot reaches Ollama on `localhost:11434`.
 
-At startup, the logs should show:
+At startup, the logs should show :
 
-- `startup env=... port=8000`
-- `calendars_discovered count=N names=[...]`
-- `calendar_connected calendar=...`
-- `cron_job_scheduled job_id=daily-briefing hour=8`
-- `api_lifespan_startup port=8000`
+```
+startup env=... port=8000
+profile_loaded path=/app/data/profile.yaml top_keys=[...]
+calendars_discovered count=N names=[...]
+calendar_connected calendar=...
+cron_job_scheduled job_id=daily-briefing hour=8
+api_lifespan_startup port=8000
+```
 
 ## Security
 
-The API answers only callers presenting a valid `X-API-Key` header matching
-`API_KEY`. Anything else returns 403 and the attempt is logged with the
-source IP. The single-user model is enforced at the network layer
-(Tailscale-only access) and at the auth layer (single shared secret).
+The API answers only callers presenting a valid `X-API-Key` header
+matching `API_KEY`. Anything else returns 403 and the attempt is logged
+with the source IP. The single-user model is enforced at the network
+layer (Tailscale-only access) and at the auth layer (single shared
+secret).
 
 ## Documentation
 
 - [`CLAUDE.md`](./CLAUDE.md) — detailed architecture, code conventions,
-  system prompt, full project structure
-- [`.env.example`](./.env.example) — environment variable template
+  system prompt structure, full project tree.
+- [`.env.example`](./.env.example) — environment variable template.
+- [`docs/ios-shortcuts.md`](./docs/ios-shortcuts.md) — Apple Shortcuts
+  setup (Siri voice command + geofence automations).
