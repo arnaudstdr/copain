@@ -35,6 +35,7 @@ from bot.notifications.store import NotificationStore
 from bot.pipeline import MAX_HISTORY, BotDeps
 from bot.proactivity import models as _proactivity_models  # noqa: F401 — enregistre la table
 from bot.proactivity.service import ProactivityService
+from bot.profile import load_profile
 from bot.rss.fetcher import RssFetcher
 from bot.rss.manager import FeedAlreadyExists, FeedManager
 from bot.search.searxng import SearxngClient
@@ -126,6 +127,8 @@ async def _build_state(
         notifications=notifications,
     )
 
+    profile = load_profile(settings.profile_path)
+
     deps = BotDeps(
         settings=settings,
         llm=llm,
@@ -140,6 +143,7 @@ async def _build_state(
         fuel=fuel,
         geocoder=geocoder,
         weather=weather,
+        profile=profile,
         history=deque(maxlen=MAX_HISTORY),
     )
 

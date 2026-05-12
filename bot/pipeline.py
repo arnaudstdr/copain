@@ -38,6 +38,7 @@ if TYPE_CHECKING:
     from bot.fuel.models import FuelStation
     from bot.llm.client import LLMClient
     from bot.memory.manager import MemoryManager
+    from bot.profile import UserProfile
     from bot.rss.fetcher import FeedItem, RssFetcher
     from bot.rss.manager import FeedManager
     from bot.rss.models import Feed
@@ -94,6 +95,7 @@ class BotDeps:
     fuel: FuelClient
     geocoder: NominatimClient
     weather: OpenMeteoClient
+    profile: UserProfile
     history: deque[str]
 
 
@@ -122,6 +124,7 @@ async def process_message(
         recent_history=list(deps.history),
         current_datetime=now_str,
         home_city=deps.settings.home_city,
+        user_profile=deps.profile,
     )
 
     user_content = (

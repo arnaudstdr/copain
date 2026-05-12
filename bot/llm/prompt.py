@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
+from bot.profile import UserProfile
+
 SYSTEM_PROMPT_TEMPLATE = """\
 Tu es l'assistant personnel d'Arnaud. Tu communiques en français, de façon
 naturelle, concise et directe. Pas de formules de politesse inutiles.
@@ -168,7 +170,7 @@ Réponse attendue :
 Je récupère les prévisions.
 <meta>{{"intent":"weather","store_memory":false,"memory_content":null,"task":{{"content":null,"due_str":null}},"feed":{{"action":null,"name":null,"url":null}},"event":{{"action":null,"title":null,"start_str":null,"end_str":null,"location":null,"description":null,"range_str":null,"calendar_name":null}},"fuel":{{"fuel_type":null,"radius_km":null,"location":null}},"weather":{{"location":"Strasbourg","when":"ce weekend"}},"search_query":null}}</meta>
 
---- Contexte mémoire (notes et conversations passées pertinentes) ---
+{profile_section}--- Contexte mémoire (notes et conversations passées pertinentes) ---
 {memory_context}
 
 --- Historique récent de la conversation ---
@@ -187,11 +189,24 @@ def build_system_prompt(
     recent_history: Sequence[str],
     current_datetime: str,
     home_city: str,
+    user_profile: UserProfile,
 ) -> str:
-    """Formate le template avec les blocs mémoire, historique, datetime et ville injectés."""
+    """Formate le template avec les blocs mémoire, historique, profil, datetime et ville.
+
+    Le bloc `--- Profil utilisateur ---` n'est inséré que si `user_profile.is_loaded`.
+    Sinon on omet la section pour ne pas polluer le prompt avec une ligne vide.
+    """
+    if user_profile.is_loaded:
+        profile_section = (
+            "--- Profil utilisateur (faits stables sur l'utilisateur) ---\n"
+            f"{user_profile.raw_yaml}\n\n"
+        )
+    else:
+        profile_section = ""
     return SYSTEM_PROMPT_TEMPLATE.format(
         current_datetime=current_datetime,
         home_city=home_city,
+        profile_section=profile_section,
         memory_context=_format_block(memory_context, "élément pertinent"),
         recent_history=_format_block(recent_history, "échange récent"),
     )

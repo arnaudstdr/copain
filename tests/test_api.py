@@ -23,6 +23,7 @@ from bot.api import AppState, create_app
 from bot.db import create_shared_engine
 from bot.notifications.store import NotificationStore
 from bot.pipeline import BotDeps
+from bot.profile import UserProfile
 
 API_KEY = "test-secret"
 
@@ -68,6 +69,7 @@ def _build_deps() -> BotDeps:
         fuel=MagicMock(),
         geocoder=MagicMock(),
         weather=MagicMock(),
+        profile=UserProfile(raw_yaml="", is_loaded=False),
         history=deque(maxlen=6),
     )
 

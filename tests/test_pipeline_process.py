@@ -12,6 +12,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from bot.pipeline import BotDeps, process_message
+from bot.profile import UserProfile
 
 
 def _meta_block(
@@ -124,6 +125,7 @@ def deps() -> BotDeps:
         fuel=fuel,
         geocoder=geocoder,
         weather=weather,
+        profile=UserProfile(raw_yaml="", is_loaded=False),
         history=deque(maxlen=6),
     )
 

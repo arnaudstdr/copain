@@ -19,6 +19,7 @@ from bot.calendar.client import ICloudCalendarError
 from bot.calendar.models import CalendarEvent
 from bot.dashboard import BRIEFING_TEXT_PREFIX, build_dashboard, today_tasks
 from bot.pipeline import BotDeps
+from bot.profile import UserProfile
 from bot.tasks.models import Task
 
 TZ = ZoneInfo("Europe/Paris")
@@ -46,6 +47,7 @@ def deps() -> BotDeps:
         fuel=MagicMock(),
         geocoder=MagicMock(),
         weather=MagicMock(),
+        profile=UserProfile(raw_yaml="", is_loaded=False),
         history=deque(maxlen=6),
     )
 

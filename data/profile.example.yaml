@@ -1,0 +1,38 @@
+# Profil utilisateur — édité à la main, injecté à chaque appel LLM.
+#
+# Le fichier est lu une fois au démarrage du bot. Pour appliquer un changement,
+# il faut redémarrer le container (ou relancer `make run`).
+#
+# Structure libre : ajoute / enlève les sections que tu veux. Le LLM lit
+# tout le YAML tel quel comme contexte de base. Seules contraintes :
+# - le top niveau doit être un dict (pas une liste),
+# - le fichier doit parser en YAML valide.
+#
+# Pour activer : copie ce fichier en `data/profile.yaml` et édite-le.
+
+identity:
+  name: Arnaud
+  city: Sélestat
+  language: fr
+
+# Personnes proches souvent mentionnées
+family: []
+  # - { name: ..., relation: épouse, birthday: 1990-01-01 }
+
+work:
+  role:
+  hours: 8h30-17h30 en semaine
+  location:
+
+vehicles: []
+  # - { brand: ..., model: ..., fuel_type: gazole }
+
+# Habitudes que l'assistant peut anticiper
+routines: []
+  # - Sport mardi/jeudi 19h
+  # - Course le samedi matin
+
+preferences:
+  tone: tutoiement
+  response_length: court    # court | normal | détaillé
+  emoji: rare               # rare | normal | sans

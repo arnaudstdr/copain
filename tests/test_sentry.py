@@ -28,6 +28,7 @@ def _settings(sentry_dsn: str | None, traces: float = 0.0) -> Settings:
         chroma_dir=Path("/tmp"),
         db_path=Path("/tmp"),
         scheduler_db_path=Path("/tmp"),
+        profile_path=Path("/tmp/profile.yaml"),
         timezone="Europe/Paris",
         briefing_hour=8,
         briefing_minute=0,

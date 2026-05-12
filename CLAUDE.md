@@ -35,6 +35,10 @@ Tailscale tunnel. Partly self-hosted (local services on a Raspberry Pi 5
   accordéon + raccourcis carburant et RSS). `GET /dashboard` agrège l'état
   en un seul appel. Mode chat optionnel via icône 💬 pour les conversations
   longues.
+- **Profil utilisateur YAML** (`data/profile.yaml`): fichier édité à la main
+  décrivant l'utilisateur (identité, famille, travail, voiture, routines,
+  préférences). Injecté tel quel dans le system prompt à chaque appel LLM,
+  avant le contexte mémoire RAG.
 
 Everything flows through the same pipeline: an LLM decides the intent via a
 `<meta>` JSON block, the code executes the side effects, then a text reply
