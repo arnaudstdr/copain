@@ -140,6 +140,21 @@
     .weather-day-temps { font-size: 13px; font-weight: 500; white-space: nowrap; }
     .weather-day-precip { font-size: 11px; color: var(--blue); margin-left: 8px; white-space: nowrap; }
 
+    /* ── Fuel overlay ── */
+    .fuel-chips { display: flex; gap: 6px; padding: 4px 16px 12px; overflow-x: auto; scrollbar-width: none; flex-shrink: 0; }
+    .fuel-chips::-webkit-scrollbar { display: none; }
+    .fuel-chip { flex-shrink: 0; padding: 6px 13px; border-radius: 16px; background: var(--bg3); border: 1px solid var(--border2); color: var(--text2); font-size: 12.5px; font-family: inherit; cursor: pointer; transition: background 0.15s, color 0.15s, border-color 0.15s; }
+    .fuel-chip.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+    .fuel-chip:active { transform: scale(0.95); }
+    .fuel-station { background: var(--bg3); border: 1px solid var(--border2); border-radius: 12px; padding: 11px 13px; display: flex; align-items: center; gap: 12px; flex-shrink: 0; }
+    .fuel-rank { width: 26px; height: 26px; border-radius: 50%; background: var(--bg4); display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 600; color: var(--text2); flex-shrink: 0; }
+    .fuel-rank.top { background: var(--green); color: #0f0f11; }
+    .fuel-station-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+    .fuel-price { font-size: 15px; font-weight: 600; }
+    .fuel-address { font-size: 12px; color: var(--text2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .fuel-distance { font-size: 11px; color: var(--text3); white-space: nowrap; }
+    .fuel-freshness { font-size: 11px; color: var(--text3); text-align: center; padding: 6px 0; flex-shrink: 0; }
+
     /* ── Events overlay ── */
     .events-day-group { display: flex; flex-direction: column; gap: 6px; flex-shrink: 0; }
     .events-day-label { font-size: 11.5px; color: var(--text3); text-transform: uppercase; letter-spacing: 0.5px; font-weight: 500; padding: 8px 4px 2px; }
@@ -308,6 +323,20 @@
     </div>
   </div>
 
+  <!-- Fuel panel -->
+  <div id="fuel-overlay" class="overlay hidden" onclick="if(event.target===this)closeFuel()">
+    <div class="panel">
+      <div class="panel-head">
+        <span class="panel-title" id="fuel-title">⛽ Carburant</span>
+        <button class="close-btn" onclick="closeFuel()">✕</button>
+      </div>
+      <div id="fuel-chips" class="fuel-chips"></div>
+      <div class="panel-list" id="fuel-list">
+        <div class="panel-empty">Chargement…</div>
+      </div>
+    </div>
+  </div>
+
   <!-- Chat overlay (mode conversation) -->
   <div id="chat-view" class="hidden">
     <header>
@@ -347,10 +376,12 @@
   const API_BASE = "";
   const PROFILE_NAME = "Arnaud";
 
-  // Raccourcis shortcuts cards (déclenchent un /ask scripté)
+  // Raccourcis du dashboard. Si `onTap` est défini → appel direct (pas
+  // d'appel LLM), sinon `msg` est envoyé via /ask. On préfère onTap dès
+  // qu'on a un endpoint REST dédié pour la donnée.
   const SHORTCUTS = [
     { icon: "⛽", label: "Carburant", sub: "Stations proches",
-      msg: "Où trouver du gazole le moins cher autour de chez moi ?" },
+      onTap: () => openFuel() },
     { icon: "📰", label: "Actu", sub: "Résumé du jour",
       msg: "Résume les dernières actus de mes flux RSS" },
   ];
@@ -534,7 +565,7 @@
     const row = el("div", "shortcut-row");
     SHORTCUTS.forEach(s => {
       const node = el("div", "shortcut");
-      node.onclick = () => triggerAsk(s.msg);
+      node.onclick = s.onTap ? s.onTap : () => triggerAsk(s.msg);
       node.appendChild(el("div", "shortcut-icon", s.icon));
       node.appendChild(el("div", "shortcut-label", s.label));
       node.appendChild(el("div", "shortcut-sub", s.sub));
@@ -905,6 +936,114 @@
     if (e.location) item.appendChild(el("div", "event-location", `📍 ${e.location}`));
     item.appendChild(el("div", "event-calendar", e.calendar_name));
     return item;
+  }
+
+  // ── Carburant (overlay) ──────────────────────────────────────────────────
+  const FUEL_TYPES = [
+    { key: "gazole", label: "Gazole" },
+    { key: "sp95",   label: "SP95" },
+    { key: "sp98",   label: "SP98" },
+    { key: "e10",    label: "E10" },
+    { key: "e85",    label: "E85" },
+    { key: "gplc",   label: "GPLc" },
+  ];
+  let currentFuelType = "gazole";
+
+  function openFuel() {
+    currentFuelType = "gazole";
+    document.getElementById("fuel-overlay").classList.remove("hidden");
+    renderFuelChips();
+    loadFuelStations();
+  }
+
+  function closeFuel() {
+    document.getElementById("fuel-overlay").classList.add("hidden");
+  }
+
+  function renderFuelChips() {
+    const row = document.getElementById("fuel-chips");
+    row.innerHTML = "";
+    FUEL_TYPES.forEach(f => {
+      const chip = document.createElement("button");
+      chip.className = "fuel-chip" + (f.key === currentFuelType ? " active" : "");
+      chip.type = "button";
+      chip.textContent = f.label;
+      chip.onclick = () => {
+        if (f.key === currentFuelType) return;
+        currentFuelType = f.key;
+        renderFuelChips();
+        loadFuelStations();
+      };
+      row.appendChild(chip);
+    });
+  }
+
+  async function loadFuelStations() {
+    const list = document.getElementById("fuel-list");
+    list.innerHTML = '<div class="panel-empty">Chargement…</div>';
+    try {
+      const res = await fetch(
+        `${API_BASE}/fuel/stations?fuel_type=${currentFuelType}`,
+        { headers: { "X-API-Key": API_KEY } }
+      );
+      if (!res.ok) throw new Error(`${res.status}`);
+      const data = await res.json();
+      document.getElementById("fuel-title").textContent =
+        `⛽ ${data.fuel_label} · ${data.city} (${formatKm(data.radius_km)})`;
+      renderFuelStations(data.stations);
+    } catch (e) {
+      list.innerHTML = '<div class="panel-empty">Impossible de charger les prix</div>';
+    }
+  }
+
+  function renderFuelStations(stations) {
+    const list = document.getElementById("fuel-list");
+    list.innerHTML = "";
+    if (!stations || stations.length === 0) {
+      list.innerHTML = '<div class="panel-empty">Aucune station trouvée dans le rayon</div>';
+      return;
+    }
+    stations.forEach((s, i) => list.appendChild(makeFuelStation(s, i)));
+    // Ligne "Prix mis à jour il y a X" sur la plus fraîche.
+    const freshness = computeFreshness(stations);
+    if (freshness) {
+      list.appendChild(el("div", "fuel-freshness", `Prix mis à jour ${freshness}`));
+    }
+  }
+
+  function makeFuelStation(s, index) {
+    const item = el("div", "fuel-station");
+    const rank = el("div", "fuel-rank" + (index === 0 ? " top" : ""), String(index + 1));
+    item.appendChild(rank);
+
+    const body = el("div", "fuel-station-body");
+    body.appendChild(el("div", "fuel-price", `${s.price_eur.toFixed(3)} €`));
+    const addressParts = [s.address, s.postal_code, s.city].filter(Boolean).join(", ");
+    body.appendChild(el("div", "fuel-address", addressParts || "adresse inconnue"));
+    item.appendChild(body);
+
+    item.appendChild(el("div", "fuel-distance", `${s.distance_km.toFixed(1)} km`));
+    return item;
+  }
+
+  function computeFreshness(stations) {
+    let freshest = null;
+    for (const s of stations) {
+      if (!s.updated_at) continue;
+      const d = new Date(s.updated_at);
+      if (freshest === null || d > freshest) freshest = d;
+    }
+    if (freshest === null) return null;
+    const ageMin = Math.floor((Date.now() - freshest.getTime()) / 60000);
+    if (ageMin < 1) return "à l'instant";
+    if (ageMin < 60) return `il y a ${ageMin} min`;
+    const ageH = Math.floor(ageMin / 60);
+    if (ageH < 24) return `il y a ${ageH}h`;
+    return `il y a ${Math.floor(ageH / 24)} j`;
+  }
+
+  function formatKm(km) {
+    return Number.isInteger(km) ? `${km} km` : `${km.toFixed(1)} km`;
   }
 
   function renderTasks(tasks) {
