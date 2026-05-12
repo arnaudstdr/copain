@@ -10,7 +10,7 @@
   <link rel="manifest" href="/static/manifest.json" />
   <link rel="apple-touch-icon" href="/static/icon-1024.png" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
-  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -18,76 +18,81 @@
       --bg: #0f0f11;
       --bg2: #13131a;
       --bg3: #1e1e2e;
+      --bg4: #26263a;
       --border: #1e1e24;
       --border2: #2a2a3a;
       --text: #e8e8ec;
       --text2: #9999aa;
       --text3: #6b6b80;
       --accent: #5b5bd6;
+      --accent2: #7a7ae8;
       --green: #4ade80;
       --red: #ef4444;
+      --orange: #f59e0b;
       --purple: #a855f7;
+      --blue: #60a5fa;
     }
 
-    html, body { height: 100%; background: var(--bg); color: var(--text); font-family: 'DM Sans', sans-serif; overflow: hidden; }
+    html, body { height: 100%; background: var(--bg); color: var(--text); font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, sans-serif; overflow: hidden; -webkit-font-smoothing: antialiased; }
 
     #app { display: flex; flex-direction: column; height: 100dvh; max-width: 480px; margin: 0 auto; background: var(--bg); position: relative; overflow: hidden; }
 
     /* ── Header ── */
-    header { display: flex; align-items: center; gap: 12px; padding: 14px 16px; padding-top: max(14px, env(safe-area-inset-top)); border-bottom: 1px solid var(--border); background: var(--bg2); flex-shrink: 0; }
-    .avatar { font-size: 22px; background: var(--bg3); border-radius: 12px; width: 42px; height: 42px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
-    .header-name { font-weight: 600; font-size: 15px; letter-spacing: -0.2px; }
-    .header-sub { font-size: 11px; color: var(--text3); margin-top: 1px; }
-    .status-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--green); box-shadow: 0 0 8px #4ade8066; }
-    .bell-btn { position: relative; width: 36px; height: 36px; border-radius: 50%; background: var(--bg3); border: 1px solid var(--border2); color: var(--text2); cursor: pointer; display: flex; align-items: center; justify-content: center; flex-shrink: 0; transition: transform 0.1s; }
-    .bell-btn:active { transform: scale(0.92); }
-    .badge { position: absolute; top: -3px; right: -3px; background: var(--red); color: #fff; font-size: 9px; font-weight: 700; width: 16px; height: 16px; border-radius: 50%; display: flex; align-items: center; justify-content: center; }
+    header { display: flex; align-items: center; gap: 12px; padding: 12px 16px; padding-top: max(12px, env(safe-area-inset-top)); border-bottom: 1px solid var(--border); background: var(--bg2); flex-shrink: 0; }
+    .greeting { flex: 1; min-width: 0; }
+    .greeting-name { font-weight: 600; font-size: 15px; letter-spacing: -0.2px; }
+    .greeting-date { font-size: 11.5px; color: var(--text3); margin-top: 1px; text-transform: capitalize; }
+    .header-btn { position: relative; width: 36px; height: 36px; border-radius: 50%; background: var(--bg3); border: 1px solid var(--border2); color: var(--text2); cursor: pointer; display: flex; align-items: center; justify-content: center; flex-shrink: 0; transition: transform 0.1s, background 0.15s; }
+    .header-btn:active { transform: scale(0.92); }
+    .header-btn:hover { background: var(--bg4); }
+    .badge { position: absolute; top: -3px; right: -3px; background: var(--red); color: #fff; font-size: 9px; font-weight: 700; min-width: 16px; height: 16px; padding: 0 4px; border-radius: 8px; display: flex; align-items: center; justify-content: center; }
 
-    /* ── Feed ── */
-    #feed { flex: 1; overflow-y: auto; padding: 16px 14px; display: flex; flex-direction: column; gap: 10px; scroll-behavior: smooth; }
-    #feed::-webkit-scrollbar { width: 3px; }
-    #feed::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 4px; }
+    /* ── Dashboard feed ── */
+    #dashboard { flex: 1; overflow-y: auto; padding: 12px 14px; display: flex; flex-direction: column; gap: 10px; scroll-behavior: smooth; }
+    #dashboard::-webkit-scrollbar { width: 3px; }
+    #dashboard::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 4px; }
 
-    .row { display: flex; align-items: flex-end; gap: 8px; animation: fadeUp 0.2s ease; }
-    .row.user { justify-content: flex-end; }
-    .row.bot { justify-content: flex-start; }
+    .card { background: var(--bg2); border: 1px solid var(--border); border-radius: 16px; padding: 14px 16px; display: flex; flex-direction: column; gap: 4px; transition: background 0.2s, transform 0.15s; }
+    .card.tappable { cursor: pointer; }
+    .card.tappable:active { transform: scale(0.985); background: var(--bg3); }
+    .card.flash { animation: flash 0.6s ease; }
+    @keyframes flash { 0% { background: var(--bg2); } 30% { background: rgba(91, 91, 214, 0.18); } 100% { background: var(--bg2); } }
 
-    .avatar-sm { font-size: 14px; background: var(--bg3); border-radius: 9px; width: 28px; height: 28px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+    .card-head { display: flex; align-items: center; gap: 10px; }
+    .card-icon { width: 28px; height: 28px; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 15px; background: var(--bg3); flex-shrink: 0; }
+    .card-label { font-size: 11.5px; color: var(--text3); text-transform: uppercase; letter-spacing: 0.5px; font-weight: 500; }
+    .card-primary { font-size: 16px; font-weight: 600; letter-spacing: -0.2px; }
+    .card-secondary { font-size: 13px; color: var(--text2); margin-top: 2px; }
+    .card-meta { font-size: 11.5px; color: var(--text3); margin-top: 4px; }
+    .card.empty .card-primary { color: var(--text3); font-weight: 400; font-style: italic; }
 
-    .bubble { max-width: 78%; padding: 9px 13px; border-radius: 18px; display: flex; flex-direction: column; gap: 5px; }
-    .bubble.user { background: var(--accent); border-bottom-right-radius: 4px; }
-    .bubble.bot { background: var(--bg3); border: 1px solid var(--border2); border-bottom-left-radius: 4px; cursor: pointer; }
-    .bubble.error { background: #2a1a1a; border-color: var(--red); }
-    .bubble-text { font-size: 14px; line-height: 1.6; white-space: pre-wrap; }
-    .bubble-img { width: 100%; max-width: 220px; border-radius: 10px; display: block; }
-    .bubble-meta { display: flex; align-items: center; justify-content: flex-end; gap: 5px; }
-    .copy-hint { color: var(--text3); display: flex; align-items: center; opacity: 0.6; }
-    .ts { font-size: 10px; color: var(--text3); }
+    .card-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 
-    .typing { flex-direction: row; align-items: center; gap: 5px; padding: 12px 14px; }
-    .dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--accent); animation: bounce 1.2s infinite; }
-    .dot:nth-child(2) { animation-delay: 0.2s; }
-    .dot:nth-child(3) { animation-delay: 0.4s; }
+    /* Accordéon briefing */
+    .card-briefing-toggle { display: flex; align-items: center; justify-content: space-between; cursor: pointer; }
+    .card-briefing-toggle .chevron { transition: transform 0.2s; color: var(--text3); }
+    .card-briefing.open .chevron { transform: rotate(90deg); }
+    .card-briefing-body { display: none; margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--border2); font-size: 13.5px; line-height: 1.55; color: var(--text2); white-space: pre-wrap; }
+    .card-briefing.open .card-briefing-body { display: block; }
 
-    /* ── Raccourcis ── */
-    #quick-row { display: flex; gap: 8px; padding: 8px 14px; overflow-x: auto; flex-shrink: 0; border-top: 1px solid #1a1a22; scrollbar-width: none; }
-    #quick-row::-webkit-scrollbar { display: none; }
-    .chip { flex-shrink: 0; padding: 6px 12px; border-radius: 20px; background: var(--bg3); border: 1px solid var(--border2); color: #c8c8d8; font-size: 12.5px; cursor: pointer; white-space: nowrap; font-family: inherit; transition: background 0.15s, transform 0.1s; }
-    .chip:hover { background: #26263a; }
-    .chip:active { transform: scale(0.94); }
-    .chip:disabled { opacity: 0.4; cursor: default; }
+    /* Cards secondaires : raccourcis carburant + RSS */
+    .shortcut-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    .shortcut { background: var(--bg2); border: 1px solid var(--border); border-radius: 14px; padding: 12px 14px; cursor: pointer; display: flex; flex-direction: column; gap: 4px; transition: background 0.15s, transform 0.1s; }
+    .shortcut:active { transform: scale(0.96); }
+    .shortcut:hover { background: var(--bg3); }
+    .shortcut-icon { font-size: 18px; }
+    .shortcut-label { font-size: 13px; font-weight: 500; }
+    .shortcut-sub { font-size: 11px; color: var(--text3); }
 
-    /* ── Preview photo ── */
-    #preview-bar { padding: 8px 14px; border-top: 1px solid var(--border); background: var(--bg2); display: flex; align-items: center; gap: 12px; flex-shrink: 0; }
-    .preview-wrap { position: relative; width: 48px; height: 48px; flex-shrink: 0; }
-    .preview-img { width: 48px; height: 48px; object-fit: cover; border-radius: 9px; }
-    .remove-btn { position: absolute; top: -5px; right: -5px; width: 16px; height: 16px; border-radius: 50%; background: var(--red); border: none; color: #fff; font-size: 8px; cursor: pointer; display: flex; align-items: center; justify-content: center; }
-    .preview-label { font-size: 12px; color: var(--text2); }
+    /* ── Bulle de réponse éphémère ── */
+    #ephemeral { position: absolute; bottom: 70px; left: 14px; right: 14px; background: var(--bg3); border: 1px solid var(--border2); border-radius: 14px; padding: 12px 14px; font-size: 13.5px; line-height: 1.5; color: var(--text); z-index: 8; box-shadow: 0 8px 32px rgba(0,0,0,0.4); animation: slideUpFade 0.2s ease; cursor: pointer; white-space: pre-wrap; max-height: 50dvh; overflow-y: auto; }
+    #ephemeral.hidden { display: none; }
 
-    /* ── Barre saisie ── */
-    #bar { display: flex; align-items: flex-end; gap: 7px; padding: 10px 14px; border-top: 1px solid var(--border); background: var(--bg2); flex-shrink: 0; padding-bottom: max(10px, env(safe-area-inset-bottom)); }
-    .icon-btn { width: 36px; height: 36px; border-radius: 50%; background: var(--bg3); border: 1px solid var(--border2); color: var(--text2); cursor: pointer; display: flex; align-items: center; justify-content: center; flex-shrink: 0; transition: transform 0.1s; }
+    /* ── Input bar ── */
+    .bar, #bar { display: flex; align-items: flex-end; gap: 7px; padding: 9px 14px; border-top: 1px solid var(--border); background: var(--bg2); flex-shrink: 0; padding-bottom: max(9px, env(safe-area-inset-bottom)); }
+    .icon-btn { width: 36px; height: 36px; border-radius: 50%; background: var(--bg3); border: 1px solid var(--border2); color: var(--text2); cursor: pointer; display: flex; align-items: center; justify-content: center; flex-shrink: 0; transition: transform 0.1s, background 0.15s; }
     .icon-btn:active { transform: scale(0.92); }
+    .icon-btn:hover { background: var(--bg4); }
     .icon-btn.recording { background: #3b1f4a; border-color: var(--purple); color: var(--purple); }
     #msg-input { flex: 1; background: var(--bg3); border: 1px solid var(--border2); border-radius: 18px; padding: 9px 14px; color: var(--text); font-size: 14px; resize: none; line-height: 1.5; font-family: inherit; max-height: 110px; overflow-y: auto; outline: none; transition: border-color 0.15s; }
     #msg-input:focus { border-color: var(--accent); }
@@ -95,207 +100,436 @@
     #send-btn:active { transform: scale(0.92); }
     #send-btn:disabled { opacity: 0.4; cursor: default; }
 
-    /* ── Panneau notifications ── */
-    #notif-overlay { position: absolute; inset: 0; background: rgba(0,0,0,0.5); z-index: 10; display: flex; flex-direction: column; justify-content: flex-end; animation: fadeIn 0.15s ease; }
-    #notif-panel { background: var(--bg2); border-top: 1px solid var(--border2); border-radius: 20px 20px 0 0; padding-bottom: 24px; animation: slideUp 0.25s ease; max-height: 65vh; display: flex; flex-direction: column; }
-    .notif-header { display: flex; align-items: center; justify-content: space-between; padding: 18px 20px 14px; }
-    .notif-title { font-weight: 600; font-size: 15px; }
-    .close-btn { background: var(--bg3); border: 1px solid var(--border2); color: var(--text2); width: 28px; height: 28px; border-radius: 50%; cursor: pointer; font-size: 11px; display: flex; align-items: center; justify-content: center; }
-    #notif-list { overflow-y: auto; padding: 0 16px; display: flex; flex-direction: column; gap: 8px; }
-    .notif-item { background: var(--bg3); border: 1px solid var(--border2); border-radius: 14px; padding: 12px 14px; display: flex; flex-direction: column; gap: 6px; }
-    .notif-text { font-size: 13.5px; line-height: 1.55; }
-    .notif-time { font-size: 11px; color: var(--text3); align-self: flex-end; }
-    .notif-empty { padding: 32px 20px; color: var(--text3); font-size: 13px; text-align: center; }
+    /* ── Preview photo ── */
+    #preview-bar { padding: 8px 14px; border-top: 1px solid var(--border); background: var(--bg2); display: flex; align-items: center; gap: 12px; flex-shrink: 0; }
+    #preview-bar.hidden { display: none; }
+    .preview-wrap { position: relative; width: 44px; height: 44px; flex-shrink: 0; }
+    .preview-img { width: 44px; height: 44px; object-fit: cover; border-radius: 8px; }
+    .remove-btn { position: absolute; top: -5px; right: -5px; width: 16px; height: 16px; border-radius: 50%; background: var(--red); border: none; color: #fff; font-size: 8px; cursor: pointer; display: flex; align-items: center; justify-content: center; }
+    .preview-label { font-size: 12px; color: var(--text2); }
 
     /* ── Toast ── */
-    #toast { position: absolute; bottom: 90px; left: 50%; transform: translateX(-50%); background: #2a2a3a; border: 1px solid #3a3a4a; border-radius: 20px; padding: 8px 18px; font-size: 13px; color: var(--text); white-space: nowrap; z-index: 20; animation: toastIn 0.2s ease; pointer-events: none; }
+    #toast { position: absolute; bottom: 76px; left: 50%; transform: translateX(-50%); background: var(--bg4); border: 1px solid var(--border2); border-radius: 20px; padding: 8px 18px; font-size: 13px; color: var(--text); white-space: nowrap; z-index: 20; animation: toastIn 0.2s ease; pointer-events: none; max-width: 86%; overflow: hidden; text-overflow: ellipsis; }
+
+    /* ── Notifications overlay ── */
+    .overlay { position: absolute; inset: 0; background: rgba(0,0,0,0.55); z-index: 15; display: flex; flex-direction: column; justify-content: flex-end; animation: fadeIn 0.15s ease; }
+    .overlay.hidden { display: none; }
+    .panel { background: var(--bg2); border-top: 1px solid var(--border2); border-radius: 20px 20px 0 0; padding-bottom: max(20px, env(safe-area-inset-bottom)); animation: slideUp 0.25s ease; max-height: 75dvh; display: flex; flex-direction: column; }
+    .panel-head { display: flex; align-items: center; justify-content: space-between; padding: 16px 20px 12px; }
+    .panel-title { font-weight: 600; font-size: 15px; }
+    .close-btn { background: var(--bg3); border: 1px solid var(--border2); color: var(--text2); width: 28px; height: 28px; border-radius: 50%; cursor: pointer; font-size: 11px; display: flex; align-items: center; justify-content: center; }
+    .panel-list { overflow-y: auto; padding: 0 16px 8px; display: flex; flex-direction: column; gap: 8px; }
+    .notif-item { background: var(--bg3); border: 1px solid var(--border2); border-radius: 12px; padding: 11px 13px; display: flex; flex-direction: column; gap: 4px; }
+    .notif-text { font-size: 13.5px; line-height: 1.5; white-space: pre-wrap; }
+    .notif-time { font-size: 11px; color: var(--text3); align-self: flex-end; }
+    .panel-empty { padding: 28px 20px; color: var(--text3); font-size: 13px; text-align: center; }
+
+    /* ── Chat overlay (mode conversation) ── */
+    .chat-feed { flex: 1; overflow-y: auto; padding: 12px 14px; display: flex; flex-direction: column; gap: 10px; }
+    .chat-feed::-webkit-scrollbar { width: 3px; }
+    .chat-feed::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 4px; }
+    .row { display: flex; align-items: flex-end; gap: 8px; animation: fadeUp 0.2s ease; }
+    .row.user { justify-content: flex-end; }
+    .row.bot { justify-content: flex-start; }
+    .avatar-sm { font-size: 14px; background: var(--bg3); border-radius: 9px; width: 28px; height: 28px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+    .bubble { max-width: 78%; padding: 9px 13px; border-radius: 16px; }
+    .bubble.user { background: var(--accent); border-bottom-right-radius: 4px; }
+    .bubble.bot { background: var(--bg3); border: 1px solid var(--border2); border-bottom-left-radius: 4px; }
+    .bubble-text { font-size: 14px; line-height: 1.55; white-space: pre-wrap; }
+    .typing { padding: 12px 14px; }
+    .dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--accent); animation: bounce 1.2s infinite; margin-right: 4px; }
+    .dot:nth-child(2) { animation-delay: 0.2s; }
+    .dot:nth-child(3) { animation-delay: 0.4s; }
+
+    /* Chat overlay = full-app */
+    #chat-view { position: absolute; inset: 0; background: var(--bg); z-index: 12; display: flex; flex-direction: column; animation: slideRight 0.2s ease; }
+    #chat-view.hidden { display: none; }
 
     /* ── Animations ── */
     @keyframes bounce { 0%,80%,100%{transform:translateY(0)} 40%{transform:translateY(-6px)} }
     @keyframes fadeUp { from{opacity:0;transform:translateY(8px)} to{opacity:1;transform:translateY(0)} }
     @keyframes slideUp { from{transform:translateY(100%)} to{transform:translateY(0)} }
+    @keyframes slideRight { from{transform:translateX(8%);opacity:0} to{transform:translateX(0);opacity:1} }
+    @keyframes slideUpFade { from{opacity:0;transform:translateY(8px)} to{opacity:1;transform:translateY(0)} }
     @keyframes fadeIn { from{opacity:0} to{opacity:1} }
     @keyframes toastIn { from{opacity:0;transform:translateX(-50%) translateY(8px)} to{opacity:1;transform:translateX(-50%) translateY(0)} }
   </style>
 </head>
 <body>
 <div id="app">
+
+  <!-- Header -->
   <header>
-    <div class="avatar">🤝</div>
-    <div style="flex:1">
-      <div class="header-name">Copain</div>
-      <div class="header-sub">Assistant personnel · Pi 5</div>
+    <div class="greeting">
+      <div class="greeting-name" id="greeting-name">Bonjour</div>
+      <div class="greeting-date" id="greeting-date">—</div>
     </div>
-    <div class="status-dot"></div>
-    <button class="bell-btn" id="bell-btn" onclick="openNotifs()">
-      <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <button class="header-btn" id="chat-btn" title="Ouvrir la conversation" onclick="openChat()">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+      </svg>
+    </button>
+    <button class="header-btn" id="bell-btn" title="Notifications" onclick="openNotifs()">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
         <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/>
       </svg>
     </button>
   </header>
 
-  <div id="feed"></div>
+  <!-- Dashboard cards -->
+  <div id="dashboard"></div>
 
-  <div id="quick-row"></div>
+  <!-- Bulle éphémère réponse LLM -->
+  <div id="ephemeral" class="hidden" onclick="hideEphemeral()"></div>
 
-  <div id="preview-bar" style="display:none">
+  <!-- Photo preview -->
+  <div id="preview-bar" class="hidden">
     <div class="preview-wrap">
-      <img class="preview-img" id="preview-img" src="" alt="preview" />
+      <img class="preview-img" id="preview-img" src="" alt="" />
       <button class="remove-btn" onclick="removeAttachment()">✕</button>
     </div>
     <span class="preview-label">Photo jointe</span>
   </div>
 
+  <!-- Input bar -->
   <div id="bar">
     <input type="file" id="file-input" accept="image/*" style="display:none" onchange="handleFileChange(event)" />
     <button class="icon-btn" onclick="document.getElementById('file-input').click()" title="Joindre une photo">
-      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
         <path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48"/>
       </svg>
     </button>
     <button class="icon-btn" id="mic-btn" onclick="toggleMic()" title="Dicter">
-      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
         <path d="M12 1a3 3 0 00-3 3v8a3 3 0 006 0V4a3 3 0 00-3-3z"/>
         <path d="M19 10v2a7 7 0 01-14 0v-2"/>
         <line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/>
       </svg>
     </button>
-    <textarea id="msg-input" placeholder="Écris un message…" rows="1" onkeydown="handleKey(event)" oninput="autoResize(this)"></textarea>
+    <textarea id="msg-input" placeholder="Écris un mot…" rows="1" onkeydown="handleKey(event)" oninput="autoResize(this); updateSendBtn();"></textarea>
     <button id="send-btn" onclick="send()" disabled>
-      <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
         <line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/>
       </svg>
     </button>
   </div>
+
+  <!-- Notifications panel -->
+  <div id="notif-overlay" class="overlay hidden" onclick="if(event.target===this)closeNotifs()">
+    <div class="panel">
+      <div class="panel-head">
+        <span class="panel-title">🔔 Notifications</span>
+        <button class="close-btn" onclick="closeNotifs()">✕</button>
+      </div>
+      <div class="panel-list" id="notif-list">
+        <div class="panel-empty">Chargement…</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Chat overlay (mode conversation) -->
+  <div id="chat-view" class="hidden">
+    <header>
+      <button class="header-btn" onclick="closeChat()" title="Retour">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M15 18l-6-6 6-6"/>
+        </svg>
+      </button>
+      <div class="greeting" style="margin-left:8px">
+        <div class="greeting-name">Conversation</div>
+        <div class="greeting-date">Mode dialogue</div>
+      </div>
+    </header>
+    <div class="chat-feed" id="chat-feed"></div>
+    <div class="bar" id="chat-bar">
+      <button class="icon-btn" id="chat-mic-btn" onclick="toggleChatMic()" title="Dicter">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 1a3 3 0 00-3 3v8a3 3 0 006 0V4a3 3 0 00-3-3z"/>
+          <path d="M19 10v2a7 7 0 01-14 0v-2"/>
+          <line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/>
+        </svg>
+      </button>
+      <textarea id="chat-input" placeholder="Écris…" rows="1" onkeydown="handleChatKey(event)" oninput="autoResize(this); updateChatSendBtn();"></textarea>
+      <button id="chat-send-btn" onclick="chatSend()" disabled>
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          <line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/>
+        </svg>
+      </button>
+    </div>
+  </div>
+
 </div>
 
 <script>
-  // ── Config ─────────────────────────────────────────────────────────────
+  // ── Config ────────────────────────────────────────────────────────────────
   let API_KEY = "";
-  fetch("/config").then(r => r.json()).then(d => { API_KEY = d.api_key; });
-  const API_BASE  = "";                  // vide = même origin (FastAPI sert ce fichier)
+  const API_BASE = "";
+  const PROFILE_NAME = "Arnaud";
 
-  const QUICK_ACTIONS = [
-    { label: "☀️ Briefing",   msg: "Donne-moi mon briefing du jour" },
-    { label: "✅ Tâches",     msg: "Quelles sont mes tâches en cours ?" },
-    { label: "📅 Agenda",     msg: "Quels sont mes prochains événements ?" },
-    { label: "🌤 Météo",      msg: "Quelle est la météo aujourd'hui à Sélestat ?" },
-    { label: "⛽ Carburant",  msg: "Où est le gazole le moins cher près de chez moi ?" },
-    { label: "📰 Actu",       msg: "Résume les dernières actus de mes flux RSS" },
+  // Raccourcis shortcuts cards (déclenchent un /ask scripté)
+  const SHORTCUTS = [
+    { icon: "⛽", label: "Carburant", sub: "Stations proches",
+      msg: "Où trouver du gazole le moins cher autour de chez moi ?" },
+    { icon: "📰", label: "Actu", sub: "Résumé du jour",
+      msg: "Résume les dernières actus de mes flux RSS" },
   ];
 
-  // ── État ────────────────────────────────────────────────────────────────
+  // ── État ──────────────────────────────────────────────────────────────────
   let loading      = false;
   let attachment   = null;   // { b64, mediaType, preview }
   let recognition  = null;
   let toastTimer   = null;
-  let unreadCount  = 0;
+  let ephemeralTimer = null;
+  let dashboardData = null;
+  let chatHistory  = [];     // [{role, text}]
 
-  // ── Init ────────────────────────────────────────────────────────────────
-  document.addEventListener("DOMContentLoaded", () => {
-    renderQuickActions();
-    appendMessage("assistant", "Bonjour ! Comment puis-je t'aider aujourd'hui ?");
-    document.getElementById("msg-input").addEventListener("input", updateSendBtn);
+  // ── Init ──────────────────────────────────────────────────────────────────
+  document.addEventListener("DOMContentLoaded", async () => {
+    renderGreeting();
+    try {
+      const cfg = await fetch("/config").then(r => r.json());
+      API_KEY = cfg.api_key;
+    } catch (e) {
+      // /config est sur le même réseau Tailscale ; un échec ici est critique.
+      showToast("Configuration indisponible");
+    }
+    await loadDashboard();
+    // Refresh périodique léger pour le count notif et la météo (toutes les 2 min).
+    setInterval(loadDashboard, 120_000);
   });
 
-  function renderQuickActions() {
-    const row = document.getElementById("quick-row");
-    QUICK_ACTIONS.forEach(a => {
-      const btn = document.createElement("button");
-      btn.className = "chip";
-      btn.textContent = a.label;
-      btn.onclick = () => send(a.msg);
-      row.appendChild(btn);
+  function renderGreeting() {
+    document.getElementById("greeting-name").textContent = `Bonjour ${PROFILE_NAME}`;
+    const d = new Date();
+    const opts = { weekday: "long", day: "numeric", month: "long" };
+    document.getElementById("greeting-date").textContent = d.toLocaleDateString("fr-FR", opts);
+  }
+
+  // ── Dashboard ─────────────────────────────────────────────────────────────
+  async function loadDashboard() {
+    try {
+      const res = await fetch(`${API_BASE}/dashboard`, { headers: { "X-API-Key": API_KEY } });
+      if (!res.ok) throw new Error(`${res.status}`);
+      dashboardData = await res.json();
+      renderDashboard(dashboardData);
+      renderBellBadge(dashboardData.unread_notifications);
+    } catch (e) {
+      renderDashboardError();
+    }
+  }
+
+  function renderDashboard(d) {
+    const root = document.getElementById("dashboard");
+    root.innerHTML = "";
+
+    // Météo
+    root.appendChild(weatherCard(d.weather));
+    // Prochain évent
+    root.appendChild(eventCard(d.next_event));
+    // Tâches
+    root.appendChild(tasksCard(d.today_tasks));
+    // Notifs (count)
+    root.appendChild(notifCard(d.unread_notifications));
+    // Briefing accordéon
+    if (d.briefing) root.appendChild(briefingCard(d.briefing));
+    // Shortcuts (Carburant + Actu)
+    root.appendChild(shortcutRow());
+  }
+
+  function renderDashboardError() {
+    const root = document.getElementById("dashboard");
+    root.innerHTML = `
+      <div class="card empty">
+        <div class="card-primary">Dashboard indisponible</div>
+        <div class="card-secondary">Vérifie que le Pi est accessible via Tailscale, puis tire pour rafraîchir.</div>
+      </div>`;
+  }
+
+  function weatherCard(w) {
+    const card = el("div", "card");
+    if (!w) {
+      card.classList.add("empty");
+      card.appendChild(makeHead("🌤", "Météo"));
+      card.appendChild(el("div", "card-primary", "Indisponible"));
+      return card;
+    }
+    card.classList.add("tappable");
+    card.onclick = () => triggerAsk("Donne-moi la météo détaillée pour aujourd'hui");
+    card.appendChild(makeHead("🌤", "Météo · " + w.city));
+    const tempLine = `${Math.round(w.temp_current)}° · ${w.description}`;
+    card.appendChild(el("div", "card-primary", tempLine));
+    const detail = `min ${Math.round(w.temp_min)}° / max ${Math.round(w.temp_max)}°`
+      + (w.precipitation_mm > 0 ? ` · ${w.precipitation_mm.toFixed(1)} mm` : "");
+    card.appendChild(el("div", "card-secondary", detail));
+    return card;
+  }
+
+  function eventCard(e) {
+    const card = el("div", "card");
+    if (!e) {
+      card.classList.add("empty");
+      card.appendChild(makeHead("📅", "Prochain évènement"));
+      card.appendChild(el("div", "card-primary", "Rien à venir"));
+      return card;
+    }
+    card.classList.add("tappable");
+    card.onclick = () => triggerAsk("Quels sont mes prochains évènements ?");
+    card.appendChild(makeHead("📅", "Prochain évènement · " + e.calendar_name));
+    const start = new Date(e.start);
+    const dayLabel = sameDay(start, new Date())
+      ? `Aujourd'hui ${formatHM(start)}`
+      : `${formatRelativeDay(start)} ${formatHM(start)}`;
+    card.appendChild(el("div", "card-primary", `${dayLabel} — ${e.title}`));
+    if (e.location) card.appendChild(el("div", "card-secondary", e.location));
+    return card;
+  }
+
+  function tasksCard(tasks) {
+    const card = el("div", "card");
+    if (!tasks || tasks.length === 0) {
+      card.classList.add("empty");
+      card.appendChild(makeHead("✅", "Tâches du jour"));
+      card.appendChild(el("div", "card-primary", "Aucune tâche aujourd'hui"));
+      return card;
+    }
+    card.classList.add("tappable");
+    card.onclick = () => triggerAsk("Liste mes tâches du jour");
+    const label = tasks.length === 1 ? "1 tâche aujourd'hui" : `${tasks.length} tâches aujourd'hui`;
+    card.appendChild(makeHead("✅", label));
+    // Première tâche en focus
+    const t = tasks[0];
+    const suffix = t.due_at ? ` · ${formatHM(new Date(t.due_at))}` : "";
+    card.appendChild(el("div", "card-primary", t.content + suffix));
+    if (tasks.length > 1) {
+      card.appendChild(el("div", "card-meta", `+ ${tasks.length - 1} autre${tasks.length > 2 ? "s" : ""}`));
+    }
+    return card;
+  }
+
+  function notifCard(count) {
+    const card = el("div", "card tappable");
+    card.onclick = openNotifs;
+    card.appendChild(makeHead("🔔", "Notifications"));
+    if (count === 0) {
+      card.classList.add("empty");
+      card.appendChild(el("div", "card-primary", "Aucune notif non lue"));
+    } else {
+      card.appendChild(el("div", "card-primary", count === 1 ? "1 notif non lue" : `${count} notifs non lues`));
+      card.appendChild(el("div", "card-secondary", "Tape pour les consulter"));
+    }
+    return card;
+  }
+
+  function briefingCard(b) {
+    const card = el("div", "card card-briefing");
+    const head = el("div", "card-briefing-toggle");
+    head.onclick = () => card.classList.toggle("open");
+    const left = el("div", "card-head");
+    left.appendChild(el("div", "card-icon", "☀️"));
+    const meta = el("div", "");
+    meta.appendChild(el("div", "card-label", "Briefing du matin"));
+    meta.appendChild(el("div", "card-primary", "Tape pour déplier"));
+    left.appendChild(meta);
+    const chev = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    chev.setAttribute("class", "chevron");
+    chev.setAttribute("width", "16"); chev.setAttribute("height", "16");
+    chev.setAttribute("viewBox", "0 0 24 24"); chev.setAttribute("fill", "none");
+    chev.setAttribute("stroke", "currentColor"); chev.setAttribute("stroke-width", "2");
+    chev.innerHTML = '<path d="M9 18l6-6-6-6"/>';
+    head.appendChild(left);
+    head.appendChild(chev);
+    card.appendChild(head);
+    const body = el("div", "card-briefing-body", b.text);
+    card.appendChild(body);
+    return card;
+  }
+
+  function shortcutRow() {
+    const row = el("div", "shortcut-row");
+    SHORTCUTS.forEach(s => {
+      const node = el("div", "shortcut");
+      node.onclick = () => triggerAsk(s.msg);
+      node.appendChild(el("div", "shortcut-icon", s.icon));
+      node.appendChild(el("div", "shortcut-label", s.label));
+      node.appendChild(el("div", "shortcut-sub", s.sub));
+      row.appendChild(node);
     });
+    return row;
   }
 
-  // ── Messages ────────────────────────────────────────────────────────────
-  function appendMessage(role, text, imgSrc, isError) {
-    const feed = document.getElementById("feed");
-    const ts   = new Date().toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
-
-    const row  = document.createElement("div");
-    row.className = `row ${role}`;
-
-    if (role === "assistant") {
-      const av = document.createElement("div");
-      av.className = "avatar-sm";
-      av.textContent = "🤝";
-      row.appendChild(av);
+  function renderBellBadge(count) {
+    const btn = document.getElementById("bell-btn");
+    btn.querySelector(".badge")?.remove();
+    if (count > 0) {
+      const badge = el("span", "badge", count > 9 ? "9+" : String(count));
+      btn.appendChild(badge);
     }
-
-    const bubble = document.createElement("div");
-    bubble.className = `bubble ${role}${isError ? " error" : ""}`;
-
-    if (imgSrc) {
-      const img = document.createElement("img");
-      img.src = imgSrc; img.className = "bubble-img"; img.alt = "photo";
-      bubble.appendChild(img);
-    }
-    if (text) {
-      const t = document.createElement("span");
-      t.className = "bubble-text"; t.textContent = text;
-      bubble.appendChild(t);
-    }
-
-    const meta = document.createElement("div");
-    meta.className = "bubble-meta";
-    if (role === "assistant") {
-      meta.innerHTML = `<span class="copy-hint"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg></span>`;
-      bubble.style.cursor = "pointer";
-      bubble.onclick = () => { navigator.clipboard?.writeText(text); showToast("Copié !"); };
-    }
-    const tsEl = document.createElement("span");
-    tsEl.className = "ts"; tsEl.textContent = ts;
-    meta.appendChild(tsEl);
-    bubble.appendChild(meta);
-    row.appendChild(bubble);
-    feed.appendChild(row);
-    feed.scrollTop = feed.scrollHeight;
   }
 
-  function showTyping() {
-    const feed = document.getElementById("feed");
-    const row = document.createElement("div");
-    row.className = "row bot"; row.id = "typing-row";
-    const av = document.createElement("div"); av.className = "avatar-sm"; av.textContent = "🤝";
-    const b  = document.createElement("div"); b.className = "bubble bot typing";
-    b.innerHTML = `<span class="dot"></span><span class="dot"></span><span class="dot"></span>`;
-    row.appendChild(av); row.appendChild(b); feed.appendChild(row);
-    feed.scrollTop = feed.scrollHeight;
+  // ── Envoi /ask ────────────────────────────────────────────────────────────
+  async function triggerAsk(prefill) {
+    document.getElementById("msg-input").value = prefill;
+    updateSendBtn();
+    await send();
   }
 
-  function hideTyping() {
-    document.getElementById("typing-row")?.remove();
-  }
-
-  // ── Envoi ───────────────────────────────────────────────────────────────
-  async function send(overrideText) {
-    const text = (overrideText ?? document.getElementById("msg-input").value).trim();
+  async function send() {
+    const text = document.getElementById("msg-input").value.trim();
     if ((!text && !attachment) || loading) return;
 
     setLoading(true);
-    appendMessage("user", text || null, attachment?.preview ?? null);
+    const att = attachment;
+    removeAttachment();
     document.getElementById("msg-input").value = "";
     autoResize(document.getElementById("msg-input"));
     updateSendBtn();
 
-    const att = attachment;
-    removeAttachment();
-    showTyping();
-
     try {
-      const reply = att
+      const body = att
         ? await callImage(text, att)
         : await callText(text);
-      hideTyping();
-      appendMessage("assistant", reply);
+      handleAskResponse(body, text);
     } catch (e) {
-      hideTyping();
-      appendMessage("assistant", "⚠️ Impossible de joindre Copain. Vérifie que le Pi est accessible via Tailscale.", null, true);
+      showEphemeral("⚠️ Impossible de joindre Copain. Vérifie Tailscale.", true);
     } finally {
       setLoading(false);
     }
+  }
+
+  function handleAskResponse(body, userText) {
+    const intent = body.intent || "answer";
+    const refresh = body.refresh_cards || [];
+    // Mode action : toast court + rafraîchissement des cards concernées
+    if (refresh.length > 0) {
+      showToast(actionToast(intent));
+      loadDashboard().then(() => flashCards(refresh));
+    } else {
+      // Mode question : on affiche la réponse texte en éphémère
+      showEphemeral(body.response, false);
+    }
+  }
+
+  function actionToast(intent) {
+    switch (intent) {
+      case "task":  return "✓ Tâche ajoutée";
+      case "event": return "✓ Évènement créé";
+      case "feed":  return "✓ Flux mis à jour";
+      case "memory":return "✓ Noté en mémoire";
+      default:      return "✓ Fait";
+    }
+  }
+
+  function flashCards(names) {
+    // On flash visuellement les cards concernées pour que l'œil les repère.
+    document.querySelectorAll("#dashboard .card").forEach(c => c.classList.remove("flash"));
+    // Pas de mapping précis name→DOM (le dashboard est rendu fraîchement) ;
+    // on flash juste TOUTES les cards une fois pour signaler le rafraîchissement.
+    // Une version v2 ferait un mapping par data-attr si besoin.
+    setTimeout(() => {
+      document.querySelectorAll("#dashboard .card").forEach((c, i) => {
+        if (names.length > 0 && i < 3) c.classList.add("flash");
+      });
+    }, 30);
   }
 
   async function callText(message) {
@@ -305,7 +539,7 @@
       body: JSON.stringify({ message })
     });
     if (!res.ok) throw new Error(`${res.status}`);
-    return (await res.json()).response;
+    return await res.json();
   }
 
   async function callImage(message, att) {
@@ -315,10 +549,34 @@
       body: JSON.stringify({ message: message || "", image_b64: att.b64, media_type: att.mediaType })
     });
     if (!res.ok) throw new Error(`${res.status}`);
-    return (await res.json()).response;
+    return await res.json();
   }
 
-  // ── Photo ───────────────────────────────────────────────────────────────
+  // ── Bulle éphémère ────────────────────────────────────────────────────────
+  function showEphemeral(text, isError) {
+    const e = document.getElementById("ephemeral");
+    e.textContent = text;
+    e.classList.remove("hidden");
+    e.style.borderColor = isError ? "var(--red)" : "var(--border2)";
+    clearTimeout(ephemeralTimer);
+    ephemeralTimer = setTimeout(hideEphemeral, 8000);
+  }
+  function hideEphemeral() {
+    document.getElementById("ephemeral").classList.add("hidden");
+    clearTimeout(ephemeralTimer);
+  }
+
+  // ── Toast ─────────────────────────────────────────────────────────────────
+  function showToast(msg) {
+    document.getElementById("toast")?.remove();
+    clearTimeout(toastTimer);
+    const t = el("div", "", msg);
+    t.id = "toast";
+    document.getElementById("app").appendChild(t);
+    toastTimer = setTimeout(() => t.remove(), 1800);
+  }
+
+  // ── Photo ─────────────────────────────────────────────────────────────────
   function handleFileChange(e) {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -327,8 +585,8 @@
       const result = reader.result;
       attachment = { b64: result.split(",")[1], mediaType: file.type, preview: result };
       document.getElementById("preview-img").src = result;
-      document.getElementById("preview-bar").style.display = "flex";
-      document.getElementById("msg-input").placeholder = "Ajoute un message…";
+      document.getElementById("preview-bar").classList.remove("hidden");
+      document.getElementById("msg-input").placeholder = "Ajoute un mot…";
       updateSendBtn();
     };
     reader.readAsDataURL(file);
@@ -337,120 +595,186 @@
 
   function removeAttachment() {
     attachment = null;
-    document.getElementById("preview-bar").style.display = "none";
+    document.getElementById("preview-bar").classList.add("hidden");
     document.getElementById("preview-img").src = "";
-    document.getElementById("msg-input").placeholder = "Écris un message…";
+    document.getElementById("msg-input").placeholder = "Écris un mot…";
     updateSendBtn();
   }
 
-  // ── Micro ───────────────────────────────────────────────────────────────
-  function toggleMic() {
+  // ── Mic (Web Speech API) ──────────────────────────────────────────────────
+  function toggleMic() { _toggleMic("mic-btn", "msg-input", updateSendBtn); }
+  function toggleChatMic() { _toggleMic("chat-mic-btn", "chat-input", updateChatSendBtn); }
+  function _toggleMic(btnId, inputId, updateBtn) {
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (!SR) { showToast("Micro non supporté ici (requis : HTTPS)"); return; }
-
+    if (!SR) { showToast("Micro non supporté ici (HTTPS requis)"); return; }
     if (recognition) {
       recognition.stop(); recognition = null;
-      document.getElementById("mic-btn").classList.remove("recording");
+      document.getElementById(btnId).classList.remove("recording");
       return;
     }
-
     const r = new SR();
     r.lang = "fr-FR"; r.continuous = false; r.interimResults = false;
     recognition = r;
-
-    document.getElementById("mic-btn").classList.add("recording");
+    document.getElementById(btnId).classList.add("recording");
     r.onresult = e => {
       const t = e.results[0][0].transcript;
-      const input = document.getElementById("msg-input");
+      const input = document.getElementById(inputId);
       input.value = input.value ? `${input.value} ${t}` : t;
-      autoResize(input); updateSendBtn();
+      autoResize(input); updateBtn();
     };
     r.onerror = () => { showToast("Erreur micro"); };
-    r.onend  = () => { recognition = null; document.getElementById("mic-btn").classList.remove("recording"); };
+    r.onend = () => { recognition = null; document.getElementById(btnId).classList.remove("recording"); };
     r.start();
   }
 
-  // ── Notifications ────────────────────────────────────────────────────────
+  // ── Notifications panel ───────────────────────────────────────────────────
   async function openNotifs() {
-    const overlay = document.createElement("div");
-    overlay.id = "notif-overlay";
-    overlay.onclick = (e) => { if (e.target === overlay) overlay.remove(); };
+    document.getElementById("notif-overlay").classList.remove("hidden");
+    const list = document.getElementById("notif-list");
+    list.innerHTML = '<div class="panel-empty">Chargement…</div>';
+    try {
+      const res = await fetch(`${API_BASE}/notifications`, { headers: { "X-API-Key": API_KEY } });
+      const data = await res.json();
+      const items = data.notifications ?? [];
+      if (items.length === 0) {
+        list.innerHTML = '<div class="panel-empty">Aucune notification en attente</div>';
+      } else {
+        list.innerHTML = "";
+        items.forEach(n => {
+          const item = el("div", "notif-item");
+          item.appendChild(el("div", "notif-text", n.text));
+          item.appendChild(el("div", "notif-time", formatDateTime(new Date(n.created_at))));
+          list.appendChild(item);
+        });
+      }
+      // Le GET a déjà marqué les notifs comme lues côté backend → maj du badge.
+      renderBellBadge(0);
+      if (dashboardData) dashboardData.unread_notifications = 0;
+    } catch (e) {
+      list.innerHTML = '<div class="panel-empty">Impossible de charger</div>';
+    }
+  }
+  function closeNotifs() {
+    document.getElementById("notif-overlay").classList.add("hidden");
+    // On rafraîchit le dashboard pour récupérer un éventuel nouveau briefing.
+    loadDashboard();
+  }
 
-    const panel = document.createElement("div");
-    panel.id = "notif-panel";
-    panel.innerHTML = `
-      <div class="notif-header">
-        <span class="notif-title">🔔 Notifications</span>
-        <button class="close-btn" onclick="document.getElementById('notif-overlay').remove()">✕</button>
-      </div>
-      <div id="notif-list"><div class="notif-empty">Chargement…</div></div>
-    `;
-    overlay.appendChild(panel);
-    document.getElementById("app").appendChild(overlay);
+  // ── Mode chat (overlay) ───────────────────────────────────────────────────
+  function openChat() {
+    document.getElementById("chat-view").classList.remove("hidden");
+    renderChatFeed();
+    setTimeout(() => document.getElementById("chat-input").focus(), 50);
+  }
+  function closeChat() {
+    document.getElementById("chat-view").classList.add("hidden");
+  }
+  function renderChatFeed() {
+    const feed = document.getElementById("chat-feed");
+    feed.innerHTML = "";
+    if (chatHistory.length === 0) {
+      const row = el("div", "row bot");
+      row.appendChild(el("div", "avatar-sm", "🤝"));
+      const bubble = el("div", "bubble bot");
+      bubble.appendChild(el("span", "bubble-text", "On peut discuter ici sans que ça pollue ton dashboard. Vas-y."));
+      row.appendChild(bubble);
+      feed.appendChild(row);
+      return;
+    }
+    chatHistory.forEach(m => feed.appendChild(makeChatRow(m.role, m.text)));
+    feed.scrollTop = feed.scrollHeight;
+  }
+  function makeChatRow(role, text) {
+    const row = el("div", `row ${role === "user" ? "user" : "bot"}`);
+    if (role !== "user") row.appendChild(el("div", "avatar-sm", "🤝"));
+    const bubble = el("div", `bubble ${role === "user" ? "user" : "bot"}`);
+    bubble.appendChild(el("span", "bubble-text", text));
+    row.appendChild(bubble);
+    return row;
+  }
+  async function chatSend() {
+    const input = document.getElementById("chat-input");
+    const text = input.value.trim();
+    if (!text || loading) return;
+    setLoading(true, "chat");
+    chatHistory.push({ role: "user", text });
+    renderChatFeed();
+    input.value = ""; autoResize(input); updateChatSendBtn();
+    // Indicateur "en train d'écrire"
+    const feed = document.getElementById("chat-feed");
+    const typing = el("div", "row bot typing-row");
+    typing.id = "chat-typing";
+    typing.appendChild(el("div", "avatar-sm", "🤝"));
+    const tb = el("div", "bubble bot typing");
+    tb.innerHTML = '<span class="dot"></span><span class="dot"></span><span class="dot"></span>';
+    typing.appendChild(tb); feed.appendChild(typing); feed.scrollTop = feed.scrollHeight;
 
     try {
-      const res = await fetch(`${API_BASE}/notifications`, {
-        headers: { "X-API-Key": API_KEY }
-      });
-      const data = await res.json();
-      const list = document.getElementById("notif-list");
-      const items = data.notifications ?? [];
-
-      if (items.length === 0) {
-        list.innerHTML = `<div class="notif-empty">Aucune notification en attente</div>`;
-      } else {
-        list.innerHTML = items.map(n => `
-          <div class="notif-item">
-            <span class="notif-text">${escHtml(n.text)}</span>
-            <span class="notif-time">${escHtml(n.created_at)}</span>
-          </div>
-        `).join("");
-        // Reset badge
-        unreadCount = 0;
-        const badge = document.querySelector(".badge");
-        if (badge) badge.remove();
-      }
-    } catch {
-      document.getElementById("notif-list").innerHTML =
-        `<div class="notif-empty">Impossible de charger les notifications</div>`;
+      const body = await callText(text);
+      chatHistory.push({ role: "assistant", text: body.response });
+      // On rafraîchit le dashboard en arrière-plan si l'action a modifié quelque chose.
+      if (body.refresh_cards && body.refresh_cards.length > 0) loadDashboard();
+    } catch (e) {
+      chatHistory.push({ role: "assistant", text: "⚠️ Impossible de joindre Copain." });
+    } finally {
+      setLoading(false, "chat");
+      document.getElementById("chat-typing")?.remove();
+      renderChatFeed();
     }
   }
 
-  // ── Helpers ──────────────────────────────────────────────────────────────
-  function showToast(msg) {
-    document.getElementById("toast")?.remove();
-    clearTimeout(toastTimer);
-    const t = document.createElement("div");
-    t.id = "toast"; t.textContent = msg;
-    document.getElementById("app").appendChild(t);
-    toastTimer = setTimeout(() => t.remove(), 2000);
+  // ── UI helpers ────────────────────────────────────────────────────────────
+  function el(tag, cls, text) {
+    const n = document.createElement(tag);
+    if (cls) n.className = cls;
+    if (text !== undefined) n.textContent = text;
+    return n;
   }
-
-  function setLoading(val) {
+  function makeHead(icon, label) {
+    const head = el("div", "card-head");
+    head.appendChild(el("div", "card-icon", icon));
+    head.appendChild(el("div", "card-label", label));
+    return head;
+  }
+  function setLoading(val, scope) {
     loading = val;
-    document.getElementById("send-btn").disabled = val || !canSend();
-    document.querySelectorAll(".chip").forEach(c => c.disabled = val);
+    if (scope === "chat") {
+      document.getElementById("chat-send-btn").disabled = val || !canChatSend();
+    } else {
+      document.getElementById("send-btn").disabled = val || !canSend();
+    }
   }
-
   function canSend() {
     return (document.getElementById("msg-input").value.trim() || !!attachment) && !loading;
   }
-
-  function updateSendBtn() {
-    document.getElementById("send-btn").disabled = !canSend();
+  function canChatSend() {
+    return document.getElementById("chat-input").value.trim() && !loading;
   }
-
-  function handleKey(e) {
-    if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); }
-  }
-
+  function updateSendBtn() { document.getElementById("send-btn").disabled = !canSend(); }
+  function updateChatSendBtn() { document.getElementById("chat-send-btn").disabled = !canChatSend(); }
+  function handleKey(e) { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); } }
+  function handleChatKey(e) { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); chatSend(); } }
   function autoResize(el) {
     el.style.height = "auto";
     el.style.height = Math.min(el.scrollHeight, 110) + "px";
   }
 
-  function escHtml(str) {
-    return String(str).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+  // ── Date helpers ──────────────────────────────────────────────────────────
+  function sameDay(a, b) {
+    return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+  }
+  function formatHM(d) {
+    return d.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
+  }
+  function formatRelativeDay(d) {
+    const today = new Date();
+    const tomorrow = new Date(today);
+    tomorrow.setDate(today.getDate() + 1);
+    if (sameDay(d, tomorrow)) return "Demain";
+    return d.toLocaleDateString("fr-FR", { weekday: "short", day: "numeric", month: "short" });
+  }
+  function formatDateTime(d) {
+    return d.toLocaleString("fr-FR", { weekday: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
   }
 </script>
 </body>
