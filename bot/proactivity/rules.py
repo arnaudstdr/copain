@@ -15,7 +15,7 @@ from typing import Literal
 from bot.briefing.weather import HourlyPrecipitation
 from bot.calendar.models import CalendarEvent
 
-NotificationKind = Literal["rain", "event"]
+NotificationKind = Literal["rain", "event", "location_return"]
 
 
 @dataclass(frozen=True, slots=True)
@@ -72,5 +72,12 @@ def evaluate_upcoming_event(
         hhmm = event.start.strftime("%H:%M")
         minutes = round(delta_min)
         text = f'📅 RDV "{event.title}" à {hhmm} (dans {minutes} min)'
-        return Notification(kind="event", text=text, event_uid=event.uid, title="📅 Rappel RDV", priority=1, sound="magic")
+        return Notification(
+            kind="event",
+            text=text,
+            event_uid=event.uid,
+            title="📅 Rappel RDV",
+            priority=1,
+            sound="magic",
+        )
     return None

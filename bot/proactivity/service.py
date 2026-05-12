@@ -15,7 +15,7 @@ from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
 from datetime import datetime, time, timedelta
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal
 from zoneinfo import ZoneInfo
 
 from sqlalchemy import select
@@ -201,4 +201,94 @@ class ProactivityService:
         # SQLite ne préserve pas la tz : on réattache UTC pour comparer à `now`.
         return last if last.tzinfo is not None else last.replace(tzinfo=ZoneInfo("UTC"))  # type: ignore[no-any-return, unused-ignore]
 
+    # --- Trigger event-driven (appelé par /event/location) ----------------
 
+    async def on_location_event(
+        self,
+        event_type: Literal["arrived", "left"],
+        place: str,
+    ) -> None:
+        """Trigger event-driven appelé depuis l'endpoint /event/location.
+
+        Réutilise les 5 garde-fous (flag, window, budget, dedup/cooldown,
+        priority). Pour la V1 : une seule règle — briefing retour quand
+        l'utilisateur quitte le bureau le soir.
+        """
+        try:
+            await self._on_location_event_inner(event_type, place)
+        except Exception as exc:
+            log.exception("proactivity_on_location_failed", error=str(exc))
+
+    async def _on_location_event_inner(
+        self,
+        event_type: str,
+        place: str,
+    ) -> None:
+        s = self._settings
+        if not s.proactivity_enabled:
+            return
+
+        now = datetime.now(self._tz)
+        if not (s.proactivity_window_start_hour <= now.hour < s.proactivity_window_end_hour):
+            log.debug("proactivity_location_skipped", reason="out_of_window", hour=now.hour)
+            return
+
+        sent_today = await self._count_sent_today(now)
+        if sent_today >= s.proactivity_daily_budget:
+            log.debug(
+                "proactivity_location_skipped",
+                reason="budget_reached",
+                sent_today=sent_today,
+            )
+            return
+
+        notif = await self._evaluate_location(event_type, place, now)
+        if notif is None:
+            return
+        await self._dispatch(notif)
+
+    async def _evaluate_location(
+        self,
+        event_type: str,
+        place: str,
+        now: datetime,
+    ) -> Notification | None:
+        """Règle V1 : briefing retour au départ du bureau le soir.
+
+        - Trigger : `left` + `work` + heure locale ≥ 17h
+        - Cooldown 4h pour éviter le spam d'aller-retours.
+        - Contenu : météo de la maison (chez où on va).
+        """
+        if not (event_type == "left" and place == "work" and now.hour >= 17):
+            return None
+
+        cooldown = timedelta(hours=4)
+        last = await self._last_sent_at(kind="location_return")
+        if last is not None and (now - last) < cooldown:
+            log.debug("proactivity_location_cooldown", last=last.isoformat())
+            return None
+
+        weather_line = await self._safe_home_weather_line()
+        text = f"Tu rentres ? {weather_line}" if weather_line else "Tu rentres ?"
+        return Notification(
+            kind="location_return",
+            text=text,
+            title="🏠 Briefing retour",
+            priority=0,
+            sound="pushover",
+        )
+
+    async def _safe_home_weather_line(self) -> str | None:
+        """Une ligne lisible de météo home, ou None si Open-Meteo down."""
+        try:
+            summary = await self._weather.get_today(
+                lat=self._settings.home_lat,
+                lon=self._settings.home_lon,
+                city=self._settings.home_city,
+            )
+        except WeatherError as exc:
+            log.warning("location_return_weather_failed", error=str(exc))
+            return None
+        return (
+            f"{summary.description.capitalize()}, " f"{summary.temp_current:.0f}°C à {summary.city}"
+        )

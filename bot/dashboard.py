@@ -102,12 +102,24 @@ async def build_dashboard(deps: BotDeps, notifications: NotificationStore) -> Da
 
 
 async def _safe_weather(deps: BotDeps) -> WeatherSummary | None:
+    """Récupère la météo du jour, contextualisée à la localisation courante.
+
+    Si l'utilisateur est au bureau (place="work"), on utilise les coords
+    WORK_*. Sinon (présence inconnue ou maison), on retombe sur HOME_*.
+    Les autres labels personnalisés tombent aussi sur HOME — on ne fait
+    pas de géocoding inverse à la volée pour rester rapide et offline.
+    """
+    presence = await deps.location_events.get_current_location()
+    if presence is not None and presence.place == "work":
+        lat = deps.settings.work_lat
+        lon = deps.settings.work_lon
+        city = deps.settings.work_city
+    else:
+        lat = deps.settings.home_lat
+        lon = deps.settings.home_lon
+        city = deps.settings.home_city
     try:
-        return await deps.weather.get_today(
-            lat=deps.settings.home_lat,
-            lon=deps.settings.home_lon,
-            city=deps.settings.home_city,
-        )
+        return await deps.weather.get_today(lat=lat, lon=lon, city=city)
     except WeatherError as exc:
         log.warning("dashboard_weather_skipped", error=str(exc))
         return None

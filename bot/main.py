@@ -178,6 +178,7 @@ async def _build_state(
         weather=weather,
         profile=profile,
         location_events=location_events,
+        proactivity=proactivity,
         history=deque(maxlen=MAX_HISTORY),
     )
 

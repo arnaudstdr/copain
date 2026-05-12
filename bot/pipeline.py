@@ -32,6 +32,7 @@ if TYPE_CHECKING:
     from bot.briefing.service import BriefingService
     from bot.briefing.weather import DailyWeather, OpenMeteoClient
     from bot.calendar.client import ICloudCalendarClient
+    from bot.calendar.models import CalendarEvent
     from bot.config import Settings
     from bot.fuel.client import FuelClient
     from bot.fuel.geocoding import NominatimClient
@@ -39,6 +40,7 @@ if TYPE_CHECKING:
     from bot.llm.client import LLMClient
     from bot.locations.store import LocationEventStore
     from bot.memory.manager import MemoryManager
+    from bot.proactivity.service import ProactivityService
     from bot.profile import UserProfile
     from bot.rss.fetcher import FeedItem, RssFetcher
     from bot.rss.manager import FeedManager
@@ -98,6 +100,7 @@ class BotDeps:
     weather: OpenMeteoClient
     profile: UserProfile
     location_events: LocationEventStore
+    proactivity: ProactivityService
     history: deque[str]
 
 
@@ -308,6 +311,17 @@ async def _handle_event(meta: Meta, deps: BotDeps, intro: str) -> str:
             start=start.isoformat(),
             end=end.isoformat(),
         )
+
+        # Détection de chevauchement avant création (warn-only : on crée
+        # quand même si conflit pour respecter l'intention utilisateur).
+        # Une erreur sur ce check ne doit pas bloquer la création — on
+        # poursuit silencieusement avec un log.
+        overlap: list[CalendarEvent] = []
+        try:
+            overlap = await deps.calendar.list_all_between(start, end)
+        except ICloudCalendarError:
+            log.warning("overlap_check_failed", title=title)
+
         try:
             event = await deps.calendar.create_event(
                 title=title,
@@ -324,6 +338,13 @@ async def _handle_event(meta: Meta, deps: BotDeps, intro: str) -> str:
             f"📅 Ajouté au calendrier : {event.title} — "
             f"{event.start.strftime('%A %d %B à %H:%M')} ({event.calendar_name})"
         )
+        if overlap:
+            others = ", ".join(
+                f"{e.title} ({e.start.strftime('%H:%M')}-{e.end.strftime('%H:%M')})"
+                for e in overlap
+            )
+            log.info("event_overlap_detected", title=title, count=len(overlap))
+            confirm += f"\n⚠️ Chevauche : {others}"
         return confirm if intro.strip() in ("", FALLBACK_TEXT) else f"{intro}\n{confirm}"
 
     if action == "list":

@@ -114,6 +114,9 @@ def deps() -> BotDeps:
     location_events = MagicMock()
     location_events.get_current_location = AsyncMock(return_value=None)
 
+    proactivity = MagicMock()
+    proactivity.on_location_event = AsyncMock()
+
     return BotDeps(
         settings=settings,
         llm=llm,
@@ -130,6 +133,7 @@ def deps() -> BotDeps:
         weather=weather,
         profile=UserProfile(raw_yaml="", is_loaded=False),
         location_events=location_events,
+        proactivity=proactivity,
         history=deque(maxlen=6),
     )
 
@@ -231,6 +235,70 @@ async def test_process_event_create_calls_calendar(deps: BotDeps) -> None:
 
     fake_event.start = datetime(2026, 4, 22, 15, 0, tzinfo=UTC)
     deps.calendar.is_connected = True
+    deps.calendar.create_event = AsyncMock(return_value=fake_event)
+    deps.calendar.list_all_between = AsyncMock(return_value=[])
+    deps.llm.call = AsyncMock(
+        return_value=_meta_block(
+            intent="event",
+            event_action="create",
+            event_title="RDV dentiste",
+            event_start="mardi 15h",
+        )
+    )
+    text, _ = await process_message("mets un RDV dentiste mardi 15h", deps=deps)
+    deps.calendar.create_event.assert_awaited_once()
+    assert "RDV dentiste" in text
+    assert "Chevauche" not in text
+
+
+async def test_process_event_create_flags_overlap(deps: BotDeps) -> None:
+    """Si list_all_between renvoie un évent existant, la confirmation contient un warning."""
+    from datetime import UTC, datetime
+
+    fake_event = MagicMock()
+    fake_event.title = "RDV dentiste"
+    fake_event.calendar_name = "Personnel"
+    fake_event.start = datetime(2026, 4, 22, 15, 0, tzinfo=UTC)
+
+    existing = MagicMock()
+    existing.title = "Réunion équipe"
+    existing.start = datetime(2026, 4, 22, 14, 30, tzinfo=UTC)
+    existing.end = datetime(2026, 4, 22, 15, 30, tzinfo=UTC)
+
+    deps.calendar.is_connected = True
+    deps.calendar.list_all_between = AsyncMock(return_value=[existing])
+    deps.calendar.create_event = AsyncMock(return_value=fake_event)
+    deps.llm.call = AsyncMock(
+        return_value=_meta_block(
+            intent="event",
+            event_action="create",
+            event_title="RDV dentiste",
+            event_start="mardi 15h",
+        )
+    )
+    text, _ = await process_message("mets un RDV dentiste mardi 15h", deps=deps)
+    # L'évent est quand même créé (warn-only).
+    deps.calendar.create_event.assert_awaited_once()
+    # Et la réponse contient le warning.
+    assert "Chevauche" in text
+    assert "Réunion équipe" in text
+
+
+async def test_process_event_create_continues_if_overlap_check_fails(
+    deps: BotDeps,
+) -> None:
+    """Une erreur sur list_all_between ne doit pas bloquer la création."""
+    from datetime import UTC, datetime
+
+    from bot.calendar.client import ICloudCalendarError
+
+    fake_event = MagicMock()
+    fake_event.title = "RDV dentiste"
+    fake_event.calendar_name = "Personnel"
+    fake_event.start = datetime(2026, 4, 22, 15, 0, tzinfo=UTC)
+
+    deps.calendar.is_connected = True
+    deps.calendar.list_all_between = AsyncMock(side_effect=ICloudCalendarError("flaky"))
     deps.calendar.create_event = AsyncMock(return_value=fake_event)
     deps.llm.call = AsyncMock(
         return_value=_meta_block(

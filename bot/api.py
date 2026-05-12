@@ -412,6 +412,11 @@ def create_app(state: AppState) -> FastAPI:
         dans `location_events` et la position courante est dérivée
         par le store ; elle sera ensuite injectée dans le system prompt
         à chaque appel `/ask` ou `/ask/image`.
+
+        Déclenche aussi `ProactivityService.on_location_event` qui peut
+        pousser une notif (ex: briefing retour au départ du bureau le
+        soir). L'appel est fail-soft : un crash de la proactivité ne
+        doit pas empêcher l'enregistrement de l'event.
         """
         occurred_at = _parse_iso_or_now(payload.at)
         await deps.location_events.record_event(
@@ -428,6 +433,11 @@ def create_app(state: AppState) -> FastAPI:
             place=payload.place,
             current=current.place if current else None,
         )
+
+        # Trigger proactivité event-driven (fail-soft, déjà wrappé d'un
+        # try/except large par on_location_event lui-même).
+        await deps.proactivity.on_location_event(payload.event, payload.place)
+
         return LocationEventResponse(
             recorded=True,
             current_place=current.place if current else None,

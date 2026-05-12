@@ -261,3 +261,147 @@ async def test_disconnected_calendar_skips_events_but_allows_rain(engine: AsyncE
 
     send.assert_awaited_once()
     assert "Parapluie" in send.call_args.args[0]
+
+
+# ---------- on_location_event ----------
+
+
+def _weather_summary(mock_weather: MagicMock, city: str = "Sélestat") -> MagicMock:
+    """Configure le mock météo pour retourner un WeatherSummary plausible."""
+    from bot.briefing.weather import WeatherSummary
+
+    mock_weather.get_today = AsyncMock(
+        return_value=WeatherSummary(
+            city=city,
+            temp_current=16.0,
+            temp_min=10.0,
+            temp_max=20.0,
+            precipitation_mm=0.0,
+            wind_kmh=12.0,
+            description="ciel dégagé",
+        )
+    )
+    return mock_weather
+
+
+async def test_on_location_event_disabled_does_nothing(engine: AsyncEngine) -> None:
+    service, send = await _build_service(engine, _settings(enabled=False))
+    await service.on_location_event("left", "work")
+    send.assert_not_called()
+
+
+async def test_on_location_event_outside_window_does_nothing(engine: AsyncEngine) -> None:
+    service, send = await _build_service(engine, _settings(window=(0, 0)))
+    await service.on_location_event("left", "work")
+    send.assert_not_called()
+
+
+async def test_on_location_event_wrong_event_type_does_nothing(engine: AsyncEngine) -> None:
+    """`arrived/work` ne déclenche pas de briefing retour."""
+    weather = _weather_summary(MagicMock())
+    service, send = await _build_service(engine, _settings(), weather=weather)
+    await service.on_location_event("arrived", "work")
+    send.assert_not_called()
+
+
+async def test_on_location_event_wrong_place_does_nothing(engine: AsyncEngine) -> None:
+    """`left/home` ne déclenche pas de briefing retour."""
+    service, send = await _build_service(engine, _settings())
+    await service.on_location_event("left", "home")
+    send.assert_not_called()
+
+
+async def test_on_location_event_budget_reached_skips(engine: AsyncEngine) -> None:
+    """Si le budget journalier est atteint, on n'envoie pas de briefing retour."""
+    # Pré-remplir 3 NotificationLog dans la même journée locale.
+    sm = async_sessionmaker(engine, expire_on_commit=False)
+    async with sm() as session:
+        for _ in range(3):
+            session.add(NotificationLog(kind="rain"))
+        await session.commit()
+
+    weather = _weather_summary(MagicMock())
+    service, send = await _build_service(engine, _settings(budget=3), weather=weather)
+    await service.on_location_event("left", "work")
+    send.assert_not_called()
+
+
+async def test_on_location_event_left_work_triggers_briefing(engine: AsyncEngine) -> None:
+    """Le path nominal : `left/work` après 17h → notif envoyée.
+
+    On contourne la dépendance à `datetime.now()` en patchant la méthode
+    privée `_evaluate_location` qui inclut la vérification d'heure. Le but
+    de ce test est de vérifier que la chaîne complète (garde-fous OK →
+    eval → dispatch) marche.
+    """
+    from unittest.mock import patch
+
+    from bot.proactivity.rules import Notification
+
+    weather = _weather_summary(MagicMock())
+    service, send = await _build_service(engine, _settings(), weather=weather)
+    notif = Notification(
+        kind="location_return",
+        text="Tu rentres ? Ciel dégagé, 16°C à Sélestat",
+        title="🏠 Briefing retour",
+        priority=0,
+        sound="pushover",
+    )
+
+    with patch.object(service, "_evaluate_location", new=AsyncMock(return_value=notif)):
+        await service.on_location_event("left", "work")
+
+    send.assert_awaited_once()
+    assert "rentres" in send.call_args.args[0].lower()
+    # Le log doit avoir une entrée location_return.
+    assert await _count_logs(engine) == 1
+
+
+async def test_evaluate_location_cooldown_blocks_second_call(engine: AsyncEngine) -> None:
+    """Une 2e émission de briefing dans la fenêtre de 4h doit être bloquée."""
+    # `now` fictif à 18h aujourd'hui local. Le log doit être "récent" par
+    # rapport à ce now, pas par rapport à l'heure système.
+    now = datetime.now(TZ).replace(hour=18, minute=0, second=0, microsecond=0)
+    one_hour_ago_utc = (now - timedelta(hours=1)).astimezone(UTC).replace(tzinfo=None)
+
+    sm = async_sessionmaker(engine, expire_on_commit=False)
+    async with sm() as session:
+        session.add(NotificationLog(kind="location_return", sent_at=one_hour_ago_utc))
+        await session.commit()
+
+    weather = _weather_summary(MagicMock())
+    service, _send = await _build_service(engine, _settings(), weather=weather)
+
+    notif = await service._evaluate_location("left", "work", now)
+    assert notif is None  # cooldown actif (1h < 4h)
+
+
+async def test_evaluate_location_cooldown_lifts_after_4h(engine: AsyncEngine) -> None:
+    """Un log de plus de 4h ne bloque plus le briefing."""
+    now = datetime.now(TZ).replace(hour=18, minute=0, second=0, microsecond=0)
+    five_hours_ago_utc = (now - timedelta(hours=5)).astimezone(UTC).replace(tzinfo=None)
+
+    sm = async_sessionmaker(engine, expire_on_commit=False)
+    async with sm() as session:
+        session.add(NotificationLog(kind="location_return", sent_at=five_hours_ago_utc))
+        await session.commit()
+
+    weather = _weather_summary(MagicMock())
+    service, _send = await _build_service(engine, _settings(), weather=weather)
+
+    notif = await service._evaluate_location("left", "work", now)
+    assert notif is not None  # cooldown expiré
+    assert notif.kind == "location_return"
+
+
+async def test_evaluate_location_returns_none_for_wrong_path(engine: AsyncEngine) -> None:
+    weather = _weather_summary(MagicMock())
+    service, _send = await _build_service(engine, _settings(), weather=weather)
+    now = datetime.now(TZ).replace(hour=18)
+    # Mauvais event_type
+    assert await service._evaluate_location("arrived", "work", now) is None
+    # Mauvais place
+    assert await service._evaluate_location("left", "home", now) is None
+    # Trop tôt
+    morning = datetime.now(TZ).replace(hour=10)
+    assert await service._evaluate_location("left", "work", morning) is None

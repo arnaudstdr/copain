@@ -32,6 +32,12 @@ def deps() -> BotDeps:
     settings.home_lat = 48.26
     settings.home_lon = 7.45
     settings.home_city = "Sélestat"
+    settings.work_lat = 48.46
+    settings.work_lon = 7.48
+    settings.work_city = "Obernai"
+
+    location_events = MagicMock()
+    location_events.get_current_location = AsyncMock(return_value=None)
 
     return BotDeps(
         settings=settings,
@@ -48,7 +54,8 @@ def deps() -> BotDeps:
         geocoder=MagicMock(),
         weather=MagicMock(),
         profile=UserProfile(raw_yaml="", is_loaded=False),
-        location_events=MagicMock(),
+        location_events=location_events,
+        proactivity=MagicMock(),
         history=deque(maxlen=6),
     )
 
@@ -198,6 +205,90 @@ async def test_build_dashboard_calendar_empty_returns_none_event(
     snap = await build_dashboard(deps, notifications_stub)
 
     assert snap.next_event is None
+
+
+async def test_build_dashboard_weather_uses_home_when_no_location(
+    deps: BotDeps, notifications_stub: MagicMock
+) -> None:
+    """Sans localisation connue, on utilise les coordonnées HOME_*."""
+    weather = WeatherSummary(
+        city="Sélestat",
+        temp_current=16.0,
+        temp_min=10.0,
+        temp_max=20.0,
+        precipitation_mm=0.0,
+        wind_kmh=12.0,
+        description="ciel dégagé",
+    )
+    deps.weather.get_today = AsyncMock(return_value=weather)
+    deps.calendar.is_connected = False
+    deps.tasks.list_pending = AsyncMock(return_value=[])
+    # get_current_location renvoie None par défaut (fixture)
+
+    await build_dashboard(deps, notifications_stub)
+
+    deps.weather.get_today.assert_awaited_once()
+    kwargs = deps.weather.get_today.await_args.kwargs
+    assert kwargs["lat"] == 48.26
+    assert kwargs["lon"] == 7.45
+    assert kwargs["city"] == "Sélestat"
+
+
+async def test_build_dashboard_weather_uses_work_when_at_work(
+    deps: BotDeps, notifications_stub: MagicMock
+) -> None:
+    """Quand l'utilisateur est au bureau, on bascule sur les coords WORK_*."""
+    from bot.locations.presence import LocationPresence
+
+    weather = WeatherSummary(
+        city="Obernai",
+        temp_current=14.0,
+        temp_min=8.0,
+        temp_max=18.0,
+        precipitation_mm=0.0,
+        wind_kmh=8.0,
+        description="couvert",
+    )
+    deps.weather.get_today = AsyncMock(return_value=weather)
+    deps.calendar.is_connected = False
+    deps.tasks.list_pending = AsyncMock(return_value=[])
+    presence = LocationPresence(
+        place="work",
+        arrived_at=datetime.now(TZ),
+        lat=None,
+        lon=None,
+    )
+    deps.location_events.get_current_location = AsyncMock(return_value=presence)
+
+    await build_dashboard(deps, notifications_stub)
+
+    kwargs = deps.weather.get_today.await_args.kwargs
+    assert kwargs["lat"] == 48.46
+    assert kwargs["lon"] == 7.48
+    assert kwargs["city"] == "Obernai"
+
+
+async def test_build_dashboard_weather_uses_home_when_at_other_place(
+    deps: BotDeps, notifications_stub: MagicMock
+) -> None:
+    """Un place inconnu (ni home ni work) retombe sur HOME_* (pas de géocoding)."""
+    from bot.locations.presence import LocationPresence
+
+    deps.weather.get_today = AsyncMock(side_effect=WeatherError("down"))
+    deps.calendar.is_connected = False
+    deps.tasks.list_pending = AsyncMock(return_value=[])
+    presence = LocationPresence(
+        place="sport",
+        arrived_at=datetime.now(TZ),
+        lat=None,
+        lon=None,
+    )
+    deps.location_events.get_current_location = AsyncMock(return_value=presence)
+
+    await build_dashboard(deps, notifications_stub)
+
+    kwargs = deps.weather.get_today.await_args.kwargs
+    assert kwargs["city"] == "Sélestat"
 
 
 async def test_build_dashboard_uses_today_start_for_briefing_lookup(

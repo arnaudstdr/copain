@@ -84,6 +84,9 @@ def _build_deps() -> BotDeps:
     location_events = MagicMock()
     location_events.get_current_location = AsyncMock(return_value=None)
 
+    proactivity = MagicMock()
+    proactivity.on_location_event = AsyncMock()
+
     return BotDeps(
         settings=settings,
         llm=llm,
@@ -100,6 +103,7 @@ def _build_deps() -> BotDeps:
         weather=MagicMock(),
         profile=UserProfile(raw_yaml="", is_loaded=False),
         location_events=location_events,
+        proactivity=proactivity,
         history=deque(maxlen=6),
     )
 
@@ -453,6 +457,17 @@ async def test_location_event_accepts_coords_and_at_timestamp(
     assert presence.place == "work"
     assert presence.lat == pytest.approx(48.46)
     assert presence.lon == pytest.approx(7.48)
+
+
+async def test_location_event_triggers_proactivity(client: AsyncClient, state: AppState) -> None:
+    """Chaque event de localisation doit déclencher proactivity.on_location_event."""
+    response = await client.post(
+        "/event/location",
+        headers={"X-API-Key": API_KEY},
+        json={"event": "left", "place": "work"},
+    )
+    assert response.status_code == 200
+    state.deps.proactivity.on_location_event.assert_awaited_once_with("left", "work")
 
 
 async def test_dashboard_populates_weather_when_available(
