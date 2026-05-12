@@ -10,7 +10,9 @@ META_PATTERN = re.compile(r"<meta>\s*(\{.*?\})\s*</meta>", re.DOTALL)
 
 # Source unique de vérité : le frozenset est dérivé du Literal via get_args().
 # Ajouter un nouvel intent/action ne requiert de modifier qu'un seul endroit.
-Intent = Literal["answer", "task", "search", "memory", "feed", "event", "fuel", "weather"]
+Intent = Literal[
+    "answer", "task", "search", "memory", "feed", "event", "fuel", "weather", "briefing"
+]
 VALID_INTENTS: frozenset[str] = frozenset(get_args(Intent))
 
 FeedAction = Literal["add", "list", "remove", "summarize"]
@@ -202,7 +204,7 @@ def _opt_float(value: Any, field: str) -> float | None:
         return None
     if isinstance(value, bool):
         raise MetaParseError(f"{field} doit être un nombre ou null")
-    if isinstance(value, (int, float)):
+    if isinstance(value, int | float):
         return float(value)
     if isinstance(value, str):
         try:

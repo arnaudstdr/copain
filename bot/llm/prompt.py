@@ -36,7 +36,7 @@ comme lieu par défaut.
 
 <meta>
 {{
-  "intent": "answer|task|search|memory|feed|event|fuel|weather",
+  "intent": "answer|task|search|memory|feed|event|fuel|weather|briefing",
   "store_memory": true|false,
   "memory_content": "résumé factuel en une phrase si store_memory est true, sinon null",
   "task": {{
@@ -106,6 +106,14 @@ Règles pour intent :
              (= chez l'utilisateur). when = expression temporelle recopiée
              TEXTUELLEMENT si précisée ("demain", "ce weekend", "dans 3 jours"),
              sinon null (= aujourd'hui).
+- "briefing"→ l'utilisateur veut son briefing du jour : météo + tâches +
+              évènements + actus IA agrégés. Phrases déclencheurs :
+              « briefing », « briefing du matin », « résumé du jour »,
+              « fais-moi un point », « débrief du jour ». Le code construit
+              le briefing complet via BriefingService et l'affiche en
+              plein écran côté PWA (pas de bulle éphémère). Réponds
+              juste « OK, voici ton briefing. » dans le texte, le contenu
+              réel est généré côté backend.
 - "answer" → tout le reste, réponse directe
 
 Si l'utilisateur envoie une image (avec ou sans légende), analyse-la visuellement :

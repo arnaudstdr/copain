@@ -171,6 +171,18 @@ async def process_message(
     elif meta["intent"] == "weather":
         text = await _handle_weather(meta, deps, intro=text)
 
+    elif meta["intent"] == "briefing":
+        # On reconstruit le briefing à la demande (météo + tâches + évents
+        # + actus IA) et on remplace le texte LLM par le briefing complet.
+        # Côté PWA, l'intent "briefing" déclenche l'ouverture de la vue
+        # plein écran (markdown rendu, liens cliquables) au lieu d'une
+        # bulle éphémère qui disparaîtrait avant d'être lue.
+        try:
+            text = await deps.briefing.build()
+        except Exception as exc:
+            log.warning("briefing_on_demand_failed", error=str(exc))
+            text = "Désolé, impossible de construire le briefing pour le moment."
+
     history_user = user_text if user_text else "(image envoyée)"
     if images:
         history_user = f"[photo] {history_user}"

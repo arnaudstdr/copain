@@ -652,6 +652,15 @@
   function handleAskResponse(body, userText) {
     const intent = body.intent || "answer";
     const refresh = body.refresh_cards || [];
+
+    // Cas spécial briefing : le pipeline renvoie le briefing complet
+    // dans body.response. On ouvre la vue plein écran (markdown rendu,
+    // liens cliquables) au lieu d'une bulle éphémère qui disparaîtrait.
+    if (intent === "briefing") {
+      openBriefing({ text: body.response, created_at: new Date().toISOString() });
+      return;
+    }
+
     // Mode action : toast court + rafraîchissement des cards concernées
     if (refresh.length > 0) {
       showToast(actionToast(intent));
