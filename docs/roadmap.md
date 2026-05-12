@@ -59,64 +59,69 @@ Trois approches possibles, par ordre de simplicité :
    - Plus de dépendance externe. Pertinent si on a déjà l'un de ces
      services par ailleurs (Nextcloud sur le Pi par exemple).
 
-### Apple Mail (IMAP)
+### Suivi des dépenses / budget
 
-Le compte iCloud Mail est accessible en IMAP avec l'App-Specific
-Password déjà utilisé pour CalDAV. Pistes :
+Remplacer le fichier `.numbers` actuel par un module dédié dans copain.
+Aligné avec le pattern "stockage local + UI dans la PWA" déjà rodé pour
+les tâches.
 
-- **Résumé matin** des mails reçus dans la nuit, intégré au briefing
-  quotidien (avec filtre sur les expéditeurs importants).
-- **Détection d'urgences** : pousser une notif si un mail vient d'un
-  contact prioritaire défini dans le profil.
-- **Tri par sujet** : extraire automatiquement les RDV, factures,
-  livraisons et créer les events / tâches associés.
+**Brique LLM** :
 
-Effort : moyen. Lib `imaplib` ou `aioimaplib` (async). Attention à la
-volumétrie et au filtrage (un compte mail courant fait facilement
-10-100 mails/jour, il faut un système de filtre solide pour ne pas
-noyer le briefing).
+- Nouvel intent `expense` dans le bloc `<meta>` JSON. Bloc dédié :
 
-### Apple Santé
+  ```json
+  "expense": {
+    "amount": float | null,           // ex: 42.0
+    "currency": "EUR" | str | null,   // défaut EUR
+    "category": "courses|transport|loisirs|...",
+    "label": str | null,              // ex: "Lidl Sélestat"
+    "paid_str": str | null            // expression FR ("hier", "ce midi", défaut now)
+  }
+  ```
 
-Pas d'API serveur. Seule voie : un Shortcut iOS qui exporte
-quotidiennement les métriques (sommeil, pas, fréquence cardiaque) et
-POST sur un endpoint du bot. Données utilisables pour :
+- Phrases capturées : "j'ai dépensé 42 chez Lidl", "essence 65€ ce
+  matin", "ciné 18€ hier".
+- Catégories définies dans le profil YAML (`expenses.categories: [...]`)
+  pour rester souples. Le LLM pioche dans cette liste, si rien ne
+  matche → catégorie "autre".
 
-- **Ajustement du briefing matin** ("tu as mal dormi, journée plus
-  douce").
-- **Card santé** sur le dashboard.
-- **Mémoire factuelle** ("Arnaud a couru 5 km hier").
+**Brique stockage** :
 
-Effort : moyen. Demande un Shortcut récurrent côté iPhone +
-endpoint + table SQLite + UI dashboard.
+- Nouvelle table SQLite `expenses` (id, amount, currency, category,
+  label, paid_at, created_at).
+- `ExpenseManager` async (pattern `TaskManager`) avec `create`,
+  `list_between(start, end)`, `delete`, `sum_by_category(start, end)`.
 
-### HomeKit
+**Brique HTTP** :
 
-Le bot ne peut pas parler directement à HomeKit (API locale uniquement,
-nécessite un Hub Apple sur le LAN). Mais :
+- `POST /expenses` (manuel, sans LLM), `GET /expenses?from=...&to=...`,
+  `GET /expenses/stats?month=YYYY-MM`, `DELETE /expenses/{id}`.
 
-- **Shortcut iOS HTTP** : un Shortcut qui s'exécute sur le Hub Home
-  (HomePod / Apple TV) peut être déclenché par geofence ou tap, et
-  appeler des scènes HomeKit puis poster un état au bot.
-- **Cas d'usage** : "arrive à la maison → allume scène 'soirée' + POST
-  /event/location → bot enregistre + déclenche briefing retour".
+**Brique PWA** :
 
-Effort : faible côté backend, moyen côté iOS (chaque scène = un
-Shortcut). Surtout intéressant si tu utilises déjà HomeKit sérieusement.
+- Card **"Dépenses du mois"** sur le dashboard : total, top catégorie,
+  delta vs mois précédent.
+- Overlay détaillé : liste filtrable (par catégorie / période), barres
+  empilées par catégorie, bouton "+" pour saisie manuelle, swipe pour
+  supprimer.
 
-### Photos
+**Bonus** :
 
-Beaucoup plus exotique. Pistes :
+- **Budget par catégorie** dans le profil YAML, alerte proactive si
+  dépassement à 80% / 100% du budget mensuel.
+- **OCR de reçus** : photo via `/ask/image` → le LLM extrait montant /
+  date / marchand et propose la création (intent `expense` avec champs
+  pré-remplis, l'utilisateur confirme par "oui").
+- **Import initial depuis le .numbers** : script one-shot qui parse le
+  fichier (via export CSV depuis Numbers) et bulk-insert dans la DB.
+  Pas un endpoint, juste `python -m bot.expenses.import_csv <file>`.
+- **Export mensuel** : `GET /expenses/export.csv?month=YYYY-MM` pour
+  garder une copie hors-bot si besoin.
 
-- **Tag automatique** : l'utilisateur envoie une photo via `/ask/image`,
-  le LLM la classe (reçu, plante, document, voiture, lieu…) et la pousse
-  dans un album iCloud Photos via Shortcut + ajout d'une entrée mémoire
-  RAG ("le 12 mai 2026, photo d'un reçu Lidl à 42€").
-- **OCR de reçus** : extraire le montant et la date depuis une photo de
-  reçu, créer une entrée comptable.
-
-Effort : élevé. À considérer seulement si tu veux vraiment industrialiser
-la prise de notes visuelles.
+Effort total : moyen. C'est du CRUD + intent LLM + UI, pas de
+complexité technique. Le plus délicat sera de bien calibrer le prompt
+pour la catégorisation et de gérer les corrections (genre "non, c'est
+plutôt 'transport' que 'autre'") sans demander une UI d'édition lourde.
 
 ### Proactivité contextuelle enrichie
 
