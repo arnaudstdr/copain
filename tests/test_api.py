@@ -27,6 +27,31 @@ from bot.profile import UserProfile
 
 API_KEY = "test-secret"
 
+# Meta minimal valide utilisé par les tests qui patchent process_message
+# pour vérifier les arguments passés (voice_mode, etc.) sans réellement
+# faire tourner le pipeline. Intent=answer + tous les sous-objets vides
+# pour ne déclencher aucun refresh côté API.
+_NEUTRAL_META: dict[str, object] = {
+    "intent": "answer",
+    "store_memory": False,
+    "memory_content": None,
+    "task": {"content": None, "due_str": None},
+    "feed": {"action": None, "name": None, "url": None},
+    "event": {
+        "action": None,
+        "title": None,
+        "start_str": None,
+        "end_str": None,
+        "location": None,
+        "description": None,
+        "range_str": None,
+        "calendar_name": None,
+    },
+    "fuel": {"fuel_type": None, "radius_km": None, "location": None},
+    "weather": {"location": None, "when": None},
+    "search_query": None,
+}
+
 
 def _build_deps() -> BotDeps:
     settings = MagicMock()
@@ -163,6 +188,45 @@ async def test_ask_task_intent_lists_cards_to_refresh(client: AsyncClient, state
     assert body["intent"] == "task"
     assert "today_tasks" in body["refresh_cards"]
     assert "unread_notifications" in body["refresh_cards"]
+
+
+async def test_ask_without_x_source_uses_default_mode(client: AsyncClient, state: AppState) -> None:
+    """Sans header X-Source, le pipeline reçoit voice_mode=False par défaut."""
+    from unittest.mock import patch
+
+    with patch("bot.api.process_message", new=AsyncMock(return_value=("ok", _NEUTRAL_META))) as pm:
+        await client.post("/ask", headers={"X-API-Key": API_KEY}, json={"message": "salut"})
+    assert pm.await_args.kwargs.get("voice_mode") is False
+
+
+async def test_ask_with_x_source_siri_activates_voice_mode(
+    client: AsyncClient, state: AppState
+) -> None:
+    """Header X-Source: siri → process_message reçoit voice_mode=True."""
+    from unittest.mock import patch
+
+    with patch("bot.api.process_message", new=AsyncMock(return_value=("ok", _NEUTRAL_META))) as pm:
+        await client.post(
+            "/ask",
+            headers={"X-API-Key": API_KEY, "X-Source": "siri"},
+            json={"message": "salut"},
+        )
+    assert pm.await_args.kwargs.get("voice_mode") is True
+
+
+async def test_ask_with_other_x_source_does_not_activate_voice(
+    client: AsyncClient, state: AppState
+) -> None:
+    """Une valeur X-Source inconnue (ex: watch) ne déclenche pas voice_mode."""
+    from unittest.mock import patch
+
+    with patch("bot.api.process_message", new=AsyncMock(return_value=("ok", _NEUTRAL_META))) as pm:
+        await client.post(
+            "/ask",
+            headers={"X-API-Key": API_KEY, "X-Source": "watch"},
+            json={"message": "salut"},
+        )
+    assert pm.await_args.kwargs.get("voice_mode") is False
 
 
 async def test_ask_llm_timeout_returns_friendly_message(

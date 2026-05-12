@@ -6,6 +6,20 @@ from collections.abc import Sequence
 
 from bot.profile import UserProfile
 
+# Préambule injecté en tête du system prompt quand l'utilisateur passe par
+# la voix (Apple Shortcut "Dis à Copain" → Siri TTS). Le LLM doit produire
+# une réponse beaucoup plus courte et neutre que via la PWA, car elle sera
+# lue à voix haute. Le bloc <meta> reste obligatoire — il est dépouillé du
+# texte côté pipeline avant d'être renvoyé au client.
+VOICE_MODE_PREAMBLE = """\
+ATTENTION — TU RÉPONDS PAR LA VOIX (Siri TTS) :
+- Maximum 2 phrases courtes
+- Pas d'emoji, pas de markdown, pas de listes
+- Langage parlé naturel, pas formel
+- Inclure quand même le bloc <meta> à la fin (la couche front l'enlève)
+
+"""
+
 SYSTEM_PROMPT_TEMPLATE = """\
 Tu es l'assistant personnel d'Arnaud. Tu communiques en français, de façon
 naturelle, concise et directe. Pas de formules de politesse inutiles.
@@ -190,11 +204,17 @@ def build_system_prompt(
     current_datetime: str,
     home_city: str,
     user_profile: UserProfile,
+    voice_mode: bool = False,
 ) -> str:
     """Formate le template avec les blocs mémoire, historique, profil, datetime et ville.
 
     Le bloc `--- Profil utilisateur ---` n'est inséré que si `user_profile.is_loaded`.
     Sinon on omet la section pour ne pas polluer le prompt avec une ligne vide.
+
+    Quand `voice_mode=True`, un préambule TTS-friendly est concaténé en tête
+    du prompt : le LLM produit alors des réponses très courtes adaptées à
+    une lecture vocale par Siri (déclenchée par le raccourci iOS "Dis à
+    Copain").
     """
     if user_profile.is_loaded:
         profile_section = (
@@ -203,10 +223,11 @@ def build_system_prompt(
         )
     else:
         profile_section = ""
-    return SYSTEM_PROMPT_TEMPLATE.format(
+    body = SYSTEM_PROMPT_TEMPLATE.format(
         current_datetime=current_datetime,
         home_city=home_city,
         profile_section=profile_section,
         memory_context=_format_block(memory_context, "élément pertinent"),
         recent_history=_format_block(recent_history, "échange récent"),
     )
+    return VOICE_MODE_PREAMBLE + body if voice_mode else body

@@ -94,3 +94,38 @@ def test_build_system_prompt_injects_profile_when_loaded() -> None:
     # Le bloc profil doit être positionné avant le bloc mémoire pour que le
     # LLM lise les faits stables avant les souvenirs émergents.
     assert prompt.index("Profil utilisateur") < prompt.index("Contexte mémoire")
+
+
+# --- voice_mode --------------------------------------------------------------
+
+
+def test_build_system_prompt_voice_mode_off_by_default() -> None:
+    from bot.llm.prompt import build_system_prompt
+    from bot.profile import UserProfile
+
+    prompt = build_system_prompt(
+        memory_context=[],
+        recent_history=[],
+        current_datetime="lundi à 10:00",
+        home_city="Sélestat",
+        user_profile=UserProfile(raw_yaml="", is_loaded=False),
+    )
+    assert "TU RÉPONDS PAR LA VOIX" not in prompt
+
+
+def test_build_system_prompt_voice_mode_inserts_tts_preamble() -> None:
+    from bot.llm.prompt import build_system_prompt
+    from bot.profile import UserProfile
+
+    prompt = build_system_prompt(
+        memory_context=[],
+        recent_history=[],
+        current_datetime="lundi à 10:00",
+        home_city="Sélestat",
+        user_profile=UserProfile(raw_yaml="", is_loaded=False),
+        voice_mode=True,
+    )
+    assert "TU RÉPONDS PAR LA VOIX" in prompt
+    assert "Maximum 2 phrases" in prompt
+    # Préambule en tête, avant la présentation habituelle de l'assistant.
+    assert prompt.index("TU RÉPONDS PAR LA VOIX") < prompt.index("Tu es l'assistant")

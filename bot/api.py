@@ -253,10 +253,15 @@ def create_app(state: AppState) -> FastAPI:
         response_model=AskResponse,
         dependencies=[Depends(verify_api_key)],
     )
-    async def ask(payload: AskRequest, deps: BotDeps = Depends(get_deps)) -> AskResponse:
-        log.info("ask_received", preview=payload.message[:80])
+    async def ask(
+        payload: AskRequest,
+        deps: BotDeps = Depends(get_deps),
+        x_source: str | None = Header(default=None, alias="X-Source"),
+    ) -> AskResponse:
+        voice_mode = x_source == "siri"
+        log.info("ask_received", preview=payload.message[:80], voice_mode=voice_mode)
         try:
-            reply, meta = await process_message(payload.message, deps)
+            reply, meta = await process_message(payload.message, deps, voice_mode=voice_mode)
         except LLMTimeoutError:
             log.warning("llm_timeout")
             return AskResponse(
@@ -291,6 +296,7 @@ def create_app(state: AppState) -> FastAPI:
     async def ask_image(
         payload: AskImageRequest,
         deps: BotDeps = Depends(get_deps),
+        x_source: str | None = Header(default=None, alias="X-Source"),
     ) -> AskResponse:
         try:
             image_bytes = base64.b64decode(payload.image_b64, validate=True)
@@ -301,14 +307,18 @@ def create_app(state: AppState) -> FastAPI:
                 detail="image_b64 must be valid base64",
             ) from exc
 
+        voice_mode = x_source == "siri"
         log.info(
             "ask_image_received",
             preview=payload.message[:80],
             size=len(image_bytes),
             media_type=payload.media_type,
+            voice_mode=voice_mode,
         )
         try:
-            reply, meta = await process_message(payload.message, deps, images=[image_bytes])
+            reply, meta = await process_message(
+                payload.message, deps, images=[image_bytes], voice_mode=voice_mode
+            )
         except LLMTimeoutError:
             log.warning("llm_timeout", kind="image")
             return AskResponse(

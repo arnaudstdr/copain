@@ -139,6 +139,19 @@ async def test_process_answer_intent_returns_text(deps: BotDeps) -> None:
     deps.scheduler.add_reminder.assert_not_called()
 
 
+async def test_process_voice_mode_propagates_to_prompt(deps: BotDeps) -> None:
+    """voice_mode=True doit produire un system prompt contenant le préambule TTS."""
+    await process_message("salut", deps=deps, voice_mode=True)
+    system_prompt = deps.llm.call.await_args.kwargs["system"]
+    assert "TU RÉPONDS PAR LA VOIX" in system_prompt
+
+
+async def test_process_default_mode_no_voice_preamble(deps: BotDeps) -> None:
+    await process_message("salut", deps=deps)
+    system_prompt = deps.llm.call.await_args.kwargs["system"]
+    assert "TU RÉPONDS PAR LA VOIX" not in system_prompt
+
+
 async def test_process_stores_memory_when_flagged(deps: BotDeps) -> None:
     deps.llm.call = AsyncMock(
         return_value=_meta_block(

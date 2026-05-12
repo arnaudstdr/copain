@@ -103,6 +103,7 @@ async def process_message(
     user_text: str,
     deps: BotDeps,
     images: list[bytes] | None = None,
+    voice_mode: bool = False,
 ) -> tuple[str, Meta]:
     """Point d'entrée unique appelé par la couche transport (`bot/api.py`).
 
@@ -110,6 +111,10 @@ async def process_message(
     extrait du LLM, afin que l'API puisse signaler au front quelles cards
     rafraîchir. Si le bloc <meta> est absent / invalide, on renvoie
     `(FALLBACK_TEXT, _FALLBACK_META)` (intent="answer", aucun refresh).
+
+    Quand `voice_mode=True` (raccourci Siri via header X-Source: siri),
+    le system prompt reçoit un préambule TTS-friendly pour produire des
+    réponses très courtes et lisibles à voix haute.
 
     Les rappels créés en chemin par `_apply_side_effects` écrivent dans
     `pending_notifications` via `ReminderScheduler.add_reminder`.
@@ -125,6 +130,7 @@ async def process_message(
         current_datetime=now_str,
         home_city=deps.settings.home_city,
         user_profile=deps.profile,
+        voice_mode=voice_mode,
     )
 
     user_content = (
