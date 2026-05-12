@@ -22,7 +22,8 @@ import pathlib
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from datetime import UTC, datetime
+from typing import TYPE_CHECKING, Literal
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Request, status
 from fastapi.middleware.cors import CORSMiddleware
@@ -115,6 +116,26 @@ class DashboardResponse(BaseModel):
     today_tasks: list[TaskCard]
     unread_notifications: int
     briefing: BriefingCard | None
+
+
+# --- Location schemas -------------------------------------------------------
+
+
+class LocationEventRequest(BaseModel):
+    event: Literal["arrived", "left"]
+    place: str = Field(min_length=1, max_length=50)
+    lat: float | None = None
+    lon: float | None = None
+    at: str | None = Field(
+        default=None,
+        description="Timestamp ISO 8601 du moment réel de la transition côté iPhone. "
+        "Défaut : now() côté serveur.",
+    )
+
+
+class LocationEventResponse(BaseModel):
+    recorded: bool
+    current_place: str | None
 
 
 # Mapping meta.intent → cards à rafraîchir côté front. Les intents purement
@@ -375,7 +396,65 @@ def create_app(state: AppState) -> FastAPI:
         snapshot = await build_dashboard(deps, notifications)
         return _snapshot_to_response(snapshot)
 
+    @app.post(
+        "/event/location",
+        response_model=LocationEventResponse,
+        dependencies=[Depends(verify_api_key)],
+    )
+    async def record_location_event(
+        payload: LocationEventRequest,
+        deps: BotDeps = Depends(get_deps),
+    ) -> LocationEventResponse:
+        """Enregistre une transition de localisation envoyée par iOS.
+
+        L'app Shortcuts iOS POST sur cet endpoint à chaque arrivée /
+        départ d'une géofence (maison, bureau). L'event est persisté
+        dans `location_events` et la position courante est dérivée
+        par le store ; elle sera ensuite injectée dans le system prompt
+        à chaque appel `/ask` ou `/ask/image`.
+        """
+        occurred_at = _parse_iso_or_now(payload.at)
+        await deps.location_events.record_event(
+            event_type=payload.event,
+            place=payload.place,
+            lat=payload.lat,
+            lon=payload.lon,
+            occurred_at=occurred_at,
+        )
+        current = await deps.location_events.get_current_location()
+        log.info(
+            "location_event_received",
+            event_type=payload.event,
+            place=payload.place,
+            current=current.place if current else None,
+        )
+        return LocationEventResponse(
+            recorded=True,
+            current_place=current.place if current else None,
+        )
+
     return app
+
+
+def _parse_iso_or_now(raw: str | None) -> datetime:
+    """Parse un timestamp ISO 8601 ou retourne now(UTC) si absent / invalide.
+
+    En cas de format invalide on logge un warning mais on accepte l'event
+    (avec un timestamp serveur) plutôt que de renvoyer 400 — la perte d'un
+    event de localisation à cause d'un format d'horodatage est inutilement
+    coûteuse côté UX. La validation stricte côté Pydantic se limite aux
+    autres champs.
+    """
+    if raw is None:
+        return datetime.now(UTC)
+    try:
+        parsed = datetime.fromisoformat(raw)
+    except ValueError:
+        log.warning("location_at_invalid_iso", raw=raw)
+        return datetime.now(UTC)
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=UTC)
+    return parsed
 
 
 def _snapshot_to_response(snap: DashboardSnapshot) -> DashboardResponse:

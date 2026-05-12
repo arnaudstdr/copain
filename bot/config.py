@@ -49,6 +49,10 @@ class Settings:
     home_lon: float
     home_city: str
 
+    work_lat: float
+    work_lon: float
+    work_city: str
+
     icloud_username: str
     icloud_app_password: str
     icloud_calendar_name: str
@@ -181,6 +185,9 @@ def load_settings() -> Settings:
         home_lat=_env_float("HOME_LAT", 48.26),
         home_lon=_env_float("HOME_LON", 7.45),
         home_city=os.getenv("HOME_CITY", "Sélestat"),
+        work_lat=_env_float("WORK_LAT", 48.46),
+        work_lon=_env_float("WORK_LON", 7.48),
+        work_city=os.getenv("WORK_CITY", "Obernai"),
         icloud_username=_required("ICLOUD_USERNAME"),
         icloud_app_password=_required("ICLOUD_APP_PASSWORD"),
         icloud_calendar_name=os.getenv("ICLOUD_CALENDAR_NAME", "Personnel"),

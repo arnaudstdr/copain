@@ -111,6 +111,9 @@ def deps() -> BotDeps:
     weather = MagicMock()
     weather.get_forecast = AsyncMock(return_value=[])
 
+    location_events = MagicMock()
+    location_events.get_current_location = AsyncMock(return_value=None)
+
     return BotDeps(
         settings=settings,
         llm=llm,
@@ -126,6 +129,7 @@ def deps() -> BotDeps:
         geocoder=geocoder,
         weather=weather,
         profile=UserProfile(raw_yaml="", is_loaded=False),
+        location_events=location_events,
         history=deque(maxlen=6),
     )
 
@@ -137,6 +141,12 @@ async def test_process_answer_intent_returns_text(deps: BotDeps) -> None:
     deps.memory.store.assert_not_called()
     deps.tasks.create.assert_not_called()
     deps.scheduler.add_reminder.assert_not_called()
+
+
+async def test_process_fetches_current_location_for_each_call(deps: BotDeps) -> None:
+    """Le pipeline doit consulter le LocationEventStore pour injecter la position."""
+    await process_message("salut", deps=deps)
+    deps.location_events.get_current_location.assert_awaited()
 
 
 async def test_process_voice_mode_propagates_to_prompt(deps: BotDeps) -> None:

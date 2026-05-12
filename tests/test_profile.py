@@ -129,3 +129,73 @@ def test_build_system_prompt_voice_mode_inserts_tts_preamble() -> None:
     assert "Maximum 2 phrases" in prompt
     # Préambule en tête, avant la présentation habituelle de l'assistant.
     assert prompt.index("TU RÉPONDS PAR LA VOIX") < prompt.index("Tu es l'assistant")
+
+
+# --- current_location ------------------------------------------------------
+
+
+def test_build_system_prompt_omits_location_when_none() -> None:
+    from bot.llm.prompt import build_system_prompt
+    from bot.profile import UserProfile
+
+    prompt = build_system_prompt(
+        memory_context=[],
+        recent_history=[],
+        current_datetime="lundi à 10:00",
+        home_city="Sélestat",
+        user_profile=UserProfile(raw_yaml="", is_loaded=False),
+        current_location=None,
+    )
+    assert "Localisation actuelle" not in prompt
+
+
+def test_build_system_prompt_injects_current_location() -> None:
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+
+    from bot.llm.prompt import build_system_prompt
+    from bot.locations.presence import LocationPresence
+    from bot.profile import UserProfile
+
+    tz = ZoneInfo("Europe/Paris")
+    arrived = datetime(2026, 5, 12, 9, 15, tzinfo=tz)
+    presence = LocationPresence(place="work", arrived_at=arrived, lat=None, lon=None)
+    prompt = build_system_prompt(
+        memory_context=[],
+        recent_history=[],
+        current_datetime="mardi à 10:00",
+        home_city="Sélestat",
+        user_profile=UserProfile(raw_yaml="", is_loaded=False),
+        current_location=presence,
+        timezone="Europe/Paris",
+    )
+    assert "Localisation actuelle" in prompt
+    assert "au bureau" in prompt  # mapping "work" → "au bureau"
+    assert "09:15" in prompt
+    # Le bloc localisation doit être avant le contexte mémoire.
+    assert prompt.index("Localisation actuelle") < prompt.index("Contexte mémoire")
+
+
+def test_build_system_prompt_unknown_place_falls_back_to_raw_label() -> None:
+    from datetime import UTC, datetime
+
+    from bot.llm.prompt import build_system_prompt
+    from bot.locations.presence import LocationPresence
+    from bot.profile import UserProfile
+
+    presence = LocationPresence(
+        place="schiltigheim",
+        arrived_at=datetime(2026, 5, 12, 14, 0, tzinfo=UTC),
+        lat=None,
+        lon=None,
+    )
+    prompt = build_system_prompt(
+        memory_context=[],
+        recent_history=[],
+        current_datetime="mardi à 14:00",
+        home_city="Sélestat",
+        user_profile=UserProfile(raw_yaml="", is_loaded=False),
+        current_location=presence,
+    )
+    # Pas de mapping connu → on injecte le label brut préfixé.
+    assert "schiltigheim" in prompt

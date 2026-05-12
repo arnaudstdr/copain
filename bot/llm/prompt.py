@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
+from zoneinfo import ZoneInfo
 
+from bot.locations.presence import LocationPresence
 from bot.profile import UserProfile
 
 # Préambule injecté en tête du system prompt quand l'utilisateur passe par
@@ -184,7 +186,7 @@ Réponse attendue :
 Je récupère les prévisions.
 <meta>{{"intent":"weather","store_memory":false,"memory_content":null,"task":{{"content":null,"due_str":null}},"feed":{{"action":null,"name":null,"url":null}},"event":{{"action":null,"title":null,"start_str":null,"end_str":null,"location":null,"description":null,"range_str":null,"calendar_name":null}},"fuel":{{"fuel_type":null,"radius_km":null,"location":null}},"weather":{{"location":"Strasbourg","when":"ce weekend"}},"search_query":null}}</meta>
 
-{profile_section}--- Contexte mémoire (notes et conversations passées pertinentes) ---
+{profile_section}{location_section}--- Contexte mémoire (notes et conversations passées pertinentes) ---
 {memory_context}
 
 --- Historique récent de la conversation ---
@@ -198,6 +200,35 @@ def _format_block(items: Sequence[str], empty_label: str) -> str:
     return "\n".join(f"- {item}" for item in items)
 
 
+# Mapping label technique côté iOS → label affiché au LLM. Quand un
+# `place` arrive avec un label non répertorié, on le laisse tel quel.
+_PLACE_LABELS_FR: dict[str, str] = {
+    "home": "à la maison",
+    "work": "au bureau",
+}
+
+
+def _format_place_label(place: str) -> str:
+    """Convertit un identifiant de lieu en label français lisible."""
+    return _PLACE_LABELS_FR.get(place, f"à : {place}")
+
+
+def _format_location_section(presence: LocationPresence, timezone: str) -> str:
+    """Construit le bloc "Localisation actuelle" injecté dans le system prompt."""
+    tz = ZoneInfo(timezone)
+    arrived_local = (
+        presence.arrived_at.astimezone(tz)
+        if presence.arrived_at.tzinfo is not None
+        else presence.arrived_at.replace(tzinfo=tz)
+    )
+    label = _format_place_label(presence.place)
+    arrived_hm = arrived_local.strftime("%H:%M")
+    return (
+        "--- Localisation actuelle ---\n"
+        f"L'utilisateur est actuellement {label} (arrivé à {arrived_hm}).\n\n"
+    )
+
+
 def build_system_prompt(
     memory_context: Sequence[str],
     recent_history: Sequence[str],
@@ -205,6 +236,8 @@ def build_system_prompt(
     home_city: str,
     user_profile: UserProfile,
     voice_mode: bool = False,
+    current_location: LocationPresence | None = None,
+    timezone: str = "Europe/Paris",
 ) -> str:
     """Formate le template avec les blocs mémoire, historique, profil, datetime et ville.
 
@@ -215,6 +248,11 @@ def build_system_prompt(
     du prompt : le LLM produit alors des réponses très courtes adaptées à
     une lecture vocale par Siri (déclenchée par le raccourci iOS "Dis à
     Copain").
+
+    Quand `current_location` est fourni, un bloc "Localisation actuelle"
+    est inséré entre le profil et le contexte mémoire pour informer le
+    LLM d'où se trouve l'utilisateur (alimenté par les automations iOS
+    sur l'endpoint `POST /event/location`).
     """
     if user_profile.is_loaded:
         profile_section = (
@@ -223,10 +261,15 @@ def build_system_prompt(
         )
     else:
         profile_section = ""
+    if current_location is not None:
+        location_section = _format_location_section(current_location, timezone)
+    else:
+        location_section = ""
     body = SYSTEM_PROMPT_TEMPLATE.format(
         current_datetime=current_datetime,
         home_city=home_city,
         profile_section=profile_section,
+        location_section=location_section,
         memory_context=_format_block(memory_context, "élément pertinent"),
         recent_history=_format_block(recent_history, "échange récent"),
     )

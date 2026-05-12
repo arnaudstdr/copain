@@ -37,6 +37,7 @@ if TYPE_CHECKING:
     from bot.fuel.geocoding import NominatimClient
     from bot.fuel.models import FuelStation
     from bot.llm.client import LLMClient
+    from bot.locations.store import LocationEventStore
     from bot.memory.manager import MemoryManager
     from bot.profile import UserProfile
     from bot.rss.fetcher import FeedItem, RssFetcher
@@ -96,6 +97,7 @@ class BotDeps:
     geocoder: NominatimClient
     weather: OpenMeteoClient
     profile: UserProfile
+    location_events: LocationEventStore
     history: deque[str]
 
 
@@ -124,6 +126,7 @@ async def process_message(
     )
     tz = ZoneInfo(deps.settings.timezone)
     now_str = datetime.now(tz).strftime("%A %d %B %Y à %H:%M")
+    current_location = await deps.location_events.get_current_location()
     system_prompt = build_system_prompt(
         memory_context=memory_context,
         recent_history=list(deps.history),
@@ -131,6 +134,8 @@ async def process_message(
         home_city=deps.settings.home_city,
         user_profile=deps.profile,
         voice_mode=voice_mode,
+        current_location=current_location,
+        timezone=deps.settings.timezone,
     )
 
     user_content = (

@@ -48,6 +48,7 @@ def deps() -> BotDeps:
         geocoder=MagicMock(),
         weather=MagicMock(),
         profile=UserProfile(raw_yaml="", is_loaded=False),
+        location_events=MagicMock(),
         history=deque(maxlen=6),
     )
 

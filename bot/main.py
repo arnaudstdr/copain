@@ -27,6 +27,7 @@ from bot.db import create_shared_engine, enable_wal_mode
 from bot.fuel.client import FuelClient
 from bot.fuel.geocoding import NominatimClient
 from bot.llm.client import LLMClient
+from bot.locations.store import LocationEventStore
 from bot.logging_conf import configure_logging, get_logger
 from bot.memory.embeddings import Embedder
 from bot.memory.manager import MemoryManager
@@ -128,6 +129,7 @@ async def _build_state(
     )
 
     profile = load_profile(settings.profile_path)
+    location_events = LocationEventStore(engine)
 
     deps = BotDeps(
         settings=settings,
@@ -144,6 +146,7 @@ async def _build_state(
         geocoder=geocoder,
         weather=weather,
         profile=profile,
+        location_events=location_events,
         history=deque(maxlen=MAX_HISTORY),
     )
 
@@ -152,6 +155,7 @@ async def _build_state(
     await tasks.init_schema()
     await rss.init_schema()
     await notifications.init_schema()
+    await location_events.init_schema()
     await _seed_default_feeds(rss)
     try:
         await calendar.connect()

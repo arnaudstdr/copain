@@ -21,6 +21,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 
 from bot.api import AppState, create_app
 from bot.db import create_shared_engine
+from bot.locations.store import LocationEventStore
 from bot.notifications.store import NotificationStore
 from bot.pipeline import BotDeps
 from bot.profile import UserProfile
@@ -80,6 +81,9 @@ def _build_deps() -> BotDeps:
         )
     )
 
+    location_events = MagicMock()
+    location_events.get_current_location = AsyncMock(return_value=None)
+
     return BotDeps(
         settings=settings,
         llm=llm,
@@ -95,6 +99,7 @@ def _build_deps() -> BotDeps:
         geocoder=MagicMock(),
         weather=MagicMock(),
         profile=UserProfile(raw_yaml="", is_loaded=False),
+        location_events=location_events,
         history=deque(maxlen=6),
     )
 
@@ -110,7 +115,15 @@ async def engine(tmp_data_dir: Path) -> AsyncIterator[AsyncEngine]:
 async def state(engine: AsyncEngine) -> AppState:
     notifications = NotificationStore(engine)
     await notifications.init_schema()
+    location_events = LocationEventStore(engine)
+    await location_events.init_schema()
     deps = _build_deps()
+    # Remplace le mock par défaut par un vrai store lié à la DB de test,
+    # nécessaire pour les tests de l'endpoint /event/location qui doivent
+    # réellement persister. Les autres tests qui ne touchent pas à la
+    # localisation continuent de fonctionner (table vide → get_current
+    # renvoie None, identique au mock).
+    deps.location_events = location_events
     return AppState(settings=deps.settings, deps=deps, notifications=notifications)
 
 
@@ -380,6 +393,66 @@ async def test_dashboard_tolerates_weather_and_calendar_down(
     assert body["today_tasks"] == []
     assert body["unread_notifications"] == 0
     assert body["briefing"] is None
+
+
+# --- /event/location -------------------------------------------------------
+
+
+async def test_location_event_requires_api_key(client: AsyncClient) -> None:
+    response = await client.post("/event/location", json={"event": "arrived", "place": "home"})
+    assert response.status_code == 403
+
+
+async def test_location_event_rejects_invalid_event_value(client: AsyncClient) -> None:
+    response = await client.post(
+        "/event/location",
+        headers={"X-API-Key": API_KEY},
+        json={"event": "foo", "place": "home"},
+    )
+    assert response.status_code == 422
+
+
+async def test_location_event_records_and_returns_current_place(
+    client: AsyncClient, state: AppState
+) -> None:
+    response = await client.post(
+        "/event/location",
+        headers={"X-API-Key": API_KEY},
+        json={"event": "arrived", "place": "home"},
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body == {"recorded": True, "current_place": "home"}
+
+    # Vérifie qu'un second event "left" remet current_place à None.
+    response_left = await client.post(
+        "/event/location",
+        headers={"X-API-Key": API_KEY},
+        json={"event": "left", "place": "home"},
+    )
+    assert response_left.json() == {"recorded": True, "current_place": None}
+
+
+async def test_location_event_accepts_coords_and_at_timestamp(
+    client: AsyncClient, state: AppState
+) -> None:
+    response = await client.post(
+        "/event/location",
+        headers={"X-API-Key": API_KEY},
+        json={
+            "event": "arrived",
+            "place": "work",
+            "lat": 48.46,
+            "lon": 7.48,
+            "at": "2026-05-12T08:30:00+02:00",
+        },
+    )
+    assert response.status_code == 200
+    presence = await state.deps.location_events.get_current_location()
+    assert presence is not None
+    assert presence.place == "work"
+    assert presence.lat == pytest.approx(48.46)
+    assert presence.lon == pytest.approx(7.48)
 
 
 async def test_dashboard_populates_weather_when_available(
