@@ -539,6 +539,126 @@ async def test_delete_task_requires_api_key(client: AsyncClient) -> None:
     assert response.status_code == 403
 
 
+# --- /weather/forecast et /events ----------------------------------------
+
+
+async def test_weather_forecast_requires_api_key(client: AsyncClient) -> None:
+    response = await client.get("/weather/forecast")
+    assert response.status_code == 403
+
+
+async def test_weather_forecast_returns_hourly_and_daily(
+    client: AsyncClient, state: AppState
+) -> None:
+    from datetime import UTC, date, datetime
+
+    from bot.briefing.weather import DailyWeather, HourlyForecast
+
+    state.deps.weather.get_hourly_forecast = AsyncMock(
+        return_value=[
+            HourlyForecast(
+                time=datetime(2026, 5, 12, 15, 0, tzinfo=UTC),
+                temp_c=16.0,
+                precipitation_mm=0.0,
+                precipitation_probability_pct=10,
+                description="ciel dégagé",
+            )
+        ]
+    )
+    state.deps.weather.get_forecast = AsyncMock(
+        return_value=[
+            DailyWeather(
+                city="Sélestat",
+                date=date(2026, 5, 12),
+                temp_min=10.0,
+                temp_max=20.0,
+                precipitation_mm=0.0,
+                wind_kmh_max=12.0,
+                description="ciel dégagé",
+                temp_current=16.0,
+            )
+        ]
+    )
+
+    response = await client.get("/weather/forecast", headers={"X-API-Key": API_KEY})
+    assert response.status_code == 200
+    body = response.json()
+    assert body["city"] == "Sélestat"
+    assert len(body["hourly"]) == 1
+    assert body["hourly"][0]["temp_c"] == 16.0
+    assert len(body["daily"]) == 1
+    assert body["daily"][0]["temp_min"] == 10.0
+
+
+async def test_weather_forecast_uses_work_when_at_work(
+    client: AsyncClient, state: AppState
+) -> None:
+    """current_location.place=work → coords WORK_* utilisées."""
+    from datetime import UTC, datetime
+
+    from bot.locations.presence import LocationPresence
+
+    presence = LocationPresence(
+        place="work",
+        arrived_at=datetime.now(UTC),
+        lat=None,
+        lon=None,
+    )
+    state.deps.location_events.get_current_location = AsyncMock(return_value=presence)
+    state.deps.settings.work_lat = 48.46
+    state.deps.settings.work_lon = 7.48
+    state.deps.settings.work_city = "Obernai"
+    state.deps.weather.get_hourly_forecast = AsyncMock(return_value=[])
+    state.deps.weather.get_forecast = AsyncMock(return_value=[])
+
+    response = await client.get("/weather/forecast", headers={"X-API-Key": API_KEY})
+    assert response.status_code == 200
+    assert response.json()["city"] == "Obernai"
+    hourly_kwargs = state.deps.weather.get_hourly_forecast.await_args.kwargs
+    assert hourly_kwargs["lat"] == 48.46
+    assert hourly_kwargs["lon"] == 7.48
+
+
+async def test_events_requires_api_key(client: AsyncClient) -> None:
+    response = await client.get("/events")
+    assert response.status_code == 403
+
+
+async def test_events_returns_upcoming_list(client: AsyncClient, state: AppState) -> None:
+    from datetime import UTC, datetime, timedelta
+
+    from bot.calendar.models import CalendarEvent
+
+    now = datetime.now(UTC)
+    ev = CalendarEvent(
+        uid="evt-1",
+        title="Réunion équipe",
+        start=now + timedelta(hours=2),
+        end=now + timedelta(hours=3),
+        location="Bureau",
+        description=None,
+        calendar_name="Pro",
+    )
+    state.deps.calendar.is_connected = True
+    state.deps.calendar.list_all_upcoming = AsyncMock(return_value=[ev])
+
+    response = await client.get("/events", headers={"X-API-Key": API_KEY})
+    assert response.status_code == 200
+    body = response.json()
+    assert len(body["events"]) == 1
+    assert body["events"][0]["title"] == "Réunion équipe"
+    assert body["events"][0]["location"] == "Bureau"
+
+
+async def test_events_empty_when_calendar_disconnected(
+    client: AsyncClient, state: AppState
+) -> None:
+    state.deps.calendar.is_connected = False
+    response = await client.get("/events", headers={"X-API-Key": API_KEY})
+    assert response.status_code == 200
+    assert response.json()["events"] == []
+
+
 async def test_dashboard_populates_weather_when_available(
     client: AsyncClient, state: AppState
 ) -> None:

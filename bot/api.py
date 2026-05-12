@@ -149,6 +149,47 @@ class TaskMutationResponse(BaseModel):
     ok: bool
 
 
+# --- Weather / Events detail schemas ---------------------------------------
+
+
+class HourlyForecastItem(BaseModel):
+    time: str  # ISO
+    temp_c: float
+    precipitation_mm: float
+    precipitation_probability_pct: int
+    description: str
+
+
+class DailyForecastItem(BaseModel):
+    date: str  # ISO date
+    temp_min: float
+    temp_max: float
+    temp_current: float | None
+    precipitation_mm: float
+    wind_kmh_max: float
+    description: str
+
+
+class WeatherForecastResponse(BaseModel):
+    city: str
+    hourly: list[HourlyForecastItem]  # 24h glissantes à partir de now
+    daily: list[DailyForecastItem]  # 7 prochains jours
+
+
+class CalendarEventItem(BaseModel):
+    uid: str
+    title: str
+    start: str  # ISO
+    end: str
+    location: str | None
+    description: str | None
+    calendar_name: str
+
+
+class EventsListResponse(BaseModel):
+    events: list[CalendarEventItem]
+
+
 # Mapping meta.intent → cards à rafraîchir côté front. Les intents purement
 # informatifs (answer, search, weather, fuel, memory, feed) n'altèrent aucune
 # card du dashboard ; l'UI affiche juste la réponse texte (bulle éphémère).
@@ -510,6 +551,99 @@ def create_app(state: AppState) -> FastAPI:
             )
         log.info("task_deleted", task_id=task_id)
         return TaskMutationResponse(ok=True)
+
+    @app.get(
+        "/weather/forecast",
+        response_model=WeatherForecastResponse,
+        dependencies=[Depends(verify_api_key)],
+    )
+    async def weather_forecast(
+        deps: BotDeps = Depends(get_deps),
+        days: int = 7,
+        hours: int = 24,
+    ) -> WeatherForecastResponse:
+        """Prévisions météo détaillées (horaire 24h + quotidien 7 jours).
+
+        Le lieu est choisi via la même règle que la card dashboard : si
+        l'utilisateur est au bureau (`current_location.place == "work"`),
+        on utilise `WORK_*`, sinon `HOME_*`. Pas d'appel LLM — donnée
+        brute Open-Meteo.
+        """
+        presence = await deps.location_events.get_current_location()
+        if presence is not None and presence.place == "work":
+            lat, lon, city = (
+                deps.settings.work_lat,
+                deps.settings.work_lon,
+                deps.settings.work_city,
+            )
+        else:
+            lat, lon, city = (
+                deps.settings.home_lat,
+                deps.settings.home_lon,
+                deps.settings.home_city,
+            )
+
+        hourly_raw = await deps.weather.get_hourly_forecast(
+            lat=lat, lon=lon, hours_ahead=max(1, min(hours, 48))
+        )
+        daily_raw = await deps.weather.get_forecast(
+            lat=lat, lon=lon, city=city, days=max(1, min(days, 16))
+        )
+
+        hourly = [
+            HourlyForecastItem(
+                time=h.time.isoformat(),
+                temp_c=h.temp_c,
+                precipitation_mm=h.precipitation_mm,
+                precipitation_probability_pct=h.precipitation_probability_pct,
+                description=h.description,
+            )
+            for h in hourly_raw
+        ]
+        daily = [
+            DailyForecastItem(
+                date=d.date.isoformat(),
+                temp_min=d.temp_min,
+                temp_max=d.temp_max,
+                temp_current=d.temp_current,
+                precipitation_mm=d.precipitation_mm,
+                wind_kmh_max=d.wind_kmh_max,
+                description=d.description,
+            )
+            for d in daily_raw
+        ]
+        return WeatherForecastResponse(city=city, hourly=hourly, daily=daily)
+
+    @app.get(
+        "/events",
+        response_model=EventsListResponse,
+        dependencies=[Depends(verify_api_key)],
+    )
+    async def list_events(
+        deps: BotDeps = Depends(get_deps),
+        days: int = 7,
+    ) -> EventsListResponse:
+        """Liste des évènements iCloud à venir (tous calendriers agrégés).
+
+        Pas d'appel LLM — donnée brute CalDAV. Le front groupe par jour
+        pour l'affichage de l'overlay.
+        """
+        if not deps.calendar.is_connected:
+            return EventsListResponse(events=[])
+        events_raw = await deps.calendar.list_all_upcoming(days=max(1, min(days, 60)))
+        items = [
+            CalendarEventItem(
+                uid=e.uid,
+                title=e.title,
+                start=e.start.isoformat(),
+                end=e.end.isoformat(),
+                location=e.location,
+                description=e.description,
+                calendar_name=e.calendar_name,
+            )
+            for e in events_raw
+        ]
+        return EventsListResponse(events=items)
 
     return app
 

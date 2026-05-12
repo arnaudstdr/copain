@@ -72,6 +72,22 @@ class HourlyPrecipitation:
 
 
 @dataclass(frozen=True, slots=True)
+class HourlyForecast:
+    """Météo prévue à une heure donnée (température + précip + condition).
+
+    Utilisé par l'overlay météo de la PWA pour afficher l'évolution
+    horaire des 24 prochaines heures. Plus riche que `HourlyPrecipitation`
+    qui se limite aux mm de pluie pour les alertes proactives.
+    """
+
+    time: datetime  # timezone-aware
+    temp_c: float
+    precipitation_mm: float
+    precipitation_probability_pct: int
+    description: str
+
+
+@dataclass(frozen=True, slots=True)
 class DailyWeather:
     """Météo quotidienne pour un jour donné (local à la timezone Open-Meteo).
 
@@ -253,6 +269,68 @@ class OpenMeteoClient:
                     probability_pct=int(proba) if proba is not None else 0,
                 )
             )
+            if len(out) >= hours_ahead:
+                break
+        return out
+
+    async def get_hourly_forecast(
+        self,
+        lat: float,
+        lon: float,
+        hours_ahead: int = 24,
+    ) -> list[HourlyForecast]:
+        """Retourne la météo horaire (temp, condition, précip) pour les N
+        prochaines heures.
+
+        Comme `get_hourly_precipitation`, on saute le bucket de l'heure
+        courante (déjà entamée) et on prend les heures suivantes. Pour
+        couvrir 24h glissantes à partir de maintenant on demande
+        `forecast_days=2` côté Open-Meteo (jour J + J+1).
+        """
+        params: dict[str, Any] = {
+            "latitude": lat,
+            "longitude": lon,
+            "hourly": ("temperature_2m,precipitation,precipitation_probability,weather_code"),
+            "timezone": self._timezone,
+            "forecast_days": 2,
+        }
+        data = await get_json_with_retry(
+            self._client,
+            BASE_URL,
+            context="weather:get_hourly_forecast",
+            error_cls=WeatherError,
+            params=params,
+        )
+
+        hourly = data.get("hourly") or {}
+        times = hourly.get("time") or []
+        temps = hourly.get("temperature_2m") or []
+        precs = hourly.get("precipitation") or []
+        probas = hourly.get("precipitation_probability") or []
+        codes = hourly.get("weather_code") or []
+
+        tz = ZoneInfo(self._timezone)
+        now_hour = datetime.now(tz).replace(minute=0, second=0, microsecond=0)
+        out: list[HourlyForecast] = []
+        for iso, temp, mm, proba, code in zip(times, temps, precs, probas, codes, strict=False):
+            try:
+                t = datetime.fromisoformat(iso).replace(tzinfo=tz)
+            except (TypeError, ValueError):
+                continue
+            if t <= now_hour:
+                continue
+            try:
+                out.append(
+                    HourlyForecast(
+                        time=t,
+                        temp_c=float(temp) if temp is not None else 0.0,
+                        precipitation_mm=float(mm) if mm is not None else 0.0,
+                        precipitation_probability_pct=int(proba) if proba is not None else 0,
+                        description=WEATHER_CODES.get(int(code), "indéterminé"),
+                    )
+                )
+            except (TypeError, ValueError) as exc:
+                raise WeatherError(f"Payload Open-Meteo malformé : {exc}") from exc
             if len(out) >= hours_ahead:
                 break
         return out
