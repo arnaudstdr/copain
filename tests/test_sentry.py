@@ -54,6 +54,8 @@ def _settings(sentry_dsn: str | None, traces: float = 0.0) -> Settings:
         sentry_environment=None,
         sentry_release=None,
         sentry_traces_sample_rate=traces,
+        pushover_token="",
+        pushover_user="",
         env="dev",
     )
 
