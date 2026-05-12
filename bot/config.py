@@ -57,10 +57,6 @@ class Settings:
     icloud_app_password: str
     icloud_calendar_name: str
 
-    icloud_reminders_enabled: bool
-    icloud_reminders_list_name: str
-    icloud_reminders_sync_minutes: int
-
     proactivity_enabled: bool
     proactivity_window_start_hour: int
     proactivity_window_end_hour: int
@@ -195,9 +191,6 @@ def load_settings() -> Settings:
         icloud_username=_required("ICLOUD_USERNAME"),
         icloud_app_password=_required("ICLOUD_APP_PASSWORD"),
         icloud_calendar_name=os.getenv("ICLOUD_CALENDAR_NAME", "Personnel"),
-        icloud_reminders_enabled=_env_bool("ICLOUD_REMINDERS_ENABLED", True),
-        icloud_reminders_list_name=os.getenv("ICLOUD_REMINDERS_LIST_NAME", "Copain"),
-        icloud_reminders_sync_minutes=_env_int("ICLOUD_REMINDERS_SYNC_MINUTES", 5),
         proactivity_enabled=_env_bool("PROACTIVITY_ENABLED", False),
         proactivity_window_start_hour=_env_int("PROACTIVITY_WINDOW_START_HOUR", 8),
         proactivity_window_end_hour=_env_int("PROACTIVITY_WINDOW_END_HOUR", 21),

@@ -50,12 +50,6 @@ Tailscale tunnel. Partly self-hosted (local services on a Raspberry Pi 5
   injectée dans le system prompt pour que le LLM sache où se trouve
   l'utilisateur. La card météo du dashboard est aussi contextualisée
   (bureau → Obernai, sinon → Sélestat).
-- **Mirror Apple Rappels (VTODO)**: chaque tâche créée par le bot est
-  miroitée en VTODO dans une liste iCloud dédiée `Copain`. Visible sur
-  iPhone/Watch/Mac/CarPlay. VTODO sans VALARM → pas de notif iOS native
-  (la notif vient toujours d'APScheduler/Pushover). Un job de sync
-  périodique (défaut 5 min) marque les tâches cochées côté iPhone comme
-  `completed` côté DB. DB = source de vérité, mirror one-way best-effort.
 - **Proactivité event-driven**: en plus du tick cron (pluie + RDV -1h),
   l'endpoint `POST /event/location` déclenche
   `ProactivityService.on_location_event` qui peut pousser un "briefing

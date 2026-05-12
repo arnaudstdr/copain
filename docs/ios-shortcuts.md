@@ -129,32 +129,6 @@ doit refléter la dernière transition.
 
 ---
 
-## Apple Rappels (liste "Copain")
-
-Une fois `ICLOUD_REMINDERS_ENABLED=true` activé côté serveur, le bot crée
-au premier démarrage (ou réutilise si déjà présente) une liste iCloud
-appelée **`Copain`** dans Apple Rappels. Toutes les tâches que tu crées
-via le bot ("rappelle-moi de…", "ajoute la tâche X") y apparaissent
-automatiquement, avec leur date due si tu en as donné une.
-
-Caractéristiques :
-
-- **Pas de notification iOS native** sur ces VTODO (volontairement, pour
-  éviter le doublon avec les push Pushover déjà envoyés par
-  APScheduler). Les Rappels servent de **vitrine visuelle cochable**,
-  pas de canal de notification.
-- **Cocher côté iPhone** marque la tâche comme `completed` côté serveur
-  dans un délai de `ICLOUD_REMINDERS_SYNC_MINUTES` (défaut 5 min). Le
-  rappel APScheduler associé est aussi annulé automatiquement.
-- **Visible partout** : iPhone, Apple Watch, Mac, CarPlay, partage
-  familial si tu actives le partage côté iCloud.
-
-Tu peux librement déplacer, modifier ou supprimer des tâches côté
-iPhone — mais la **DB SQLite reste source de vérité**. Si tu supprimes
-une tâche côté iPhone sans la cocher, elle restera active côté serveur
-(et le push de rappel partira). Si tu veux la retirer proprement, coche
-plutôt.
-
 ## Note de sécurité
 
 Les Shortcuts envoient ton `X-API-Key` en clair sur le tailnet. Ce n'est
