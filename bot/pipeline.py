@@ -52,6 +52,30 @@ FALLBACK_TEXT = (
     "J'ai eu un souci pour interpréter la réponse, mais je suis là. Redis-moi ça autrement ?"
 )
 
+# Meta neutre renvoyé quand le bloc <meta> est absent / invalide. Intent
+# "answer" + tous les sous-objets vides : aucun side effect n'est déclenché
+# et le client (API) considère qu'aucune card ne doit être rafraîchie.
+_FALLBACK_META: Meta = {
+    "intent": "answer",
+    "store_memory": False,
+    "memory_content": None,
+    "task": {"content": None, "due_str": None},
+    "feed": {"action": None, "name": None, "url": None},
+    "event": {
+        "action": None,
+        "title": None,
+        "start_str": None,
+        "end_str": None,
+        "location": None,
+        "description": None,
+        "range_str": None,
+        "calendar_name": None,
+    },
+    "fuel": {"fuel_type": None, "radius_km": None, "location": None},
+    "weather": {"location": None, "when": None},
+    "search_query": None,
+}
+
 
 @dataclass
 class BotDeps:
@@ -77,12 +101,16 @@ async def process_message(
     user_text: str,
     deps: BotDeps,
     images: list[bytes] | None = None,
-) -> str:
+) -> tuple[str, Meta]:
     """Point d'entrée unique appelé par la couche transport (`bot/api.py`).
 
-    Retourne la réponse complète (pas de streaming). Les rappels créés en
-    chemin par `_apply_side_effects` écrivent dans `pending_notifications`
-    via `ReminderScheduler.add_reminder`.
+    Retourne la réponse complète (pas de streaming) **et** le bloc `Meta`
+    extrait du LLM, afin que l'API puisse signaler au front quelles cards
+    rafraîchir. Si le bloc <meta> est absent / invalide, on renvoie
+    `(FALLBACK_TEXT, _FALLBACK_META)` (intent="answer", aucun refresh).
+
+    Les rappels créés en chemin par `_apply_side_effects` écrivent dans
+    `pending_notifications` via `ReminderScheduler.add_reminder`.
     """
     memory_context = await deps.memory.retrieve_context(
         user_text or "(image envoyée sans légende)", top_k=5
@@ -105,7 +133,7 @@ async def process_message(
         text, meta = extract_meta(raw)
     except MetaParseError as exc:
         log.warning("meta_parse_failed", error=str(exc), raw_preview=raw[:200])
-        return FALLBACK_TEXT
+        return FALLBACK_TEXT, _FALLBACK_META
 
     await _apply_side_effects(user_text, meta, deps)
 
@@ -132,7 +160,7 @@ async def process_message(
     deps.history.append(f"user: {history_user}")
     deps.history.append(f"assistant: {text}")
 
-    return text
+    return text, meta
 
 
 async def _apply_side_effects(

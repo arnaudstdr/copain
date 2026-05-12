@@ -3,11 +3,11 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
-from datetime import datetime
 from typing import TYPE_CHECKING
 from zoneinfo import ZoneInfo
 
 from bot.briefing.weather import OpenMeteoClient, WeatherError, WeatherSummary
+from bot.dashboard import BRIEFING_TEXT_PREFIX, today_tasks
 from bot.llm.client import LLMError
 from bot.logging_conf import get_logger
 
@@ -55,7 +55,7 @@ class BriefingService:
         self._notifications = notifications
 
     async def build(self) -> str:
-        parts: list[str] = ["☀️ Bonjour ! Voici ton briefing du jour."]
+        parts: list[str] = [BRIEFING_TEXT_PREFIX]
 
         try:
             weather = await self._weather.get_today(
@@ -104,16 +104,7 @@ class BriefingService:
 
     async def _today_tasks(self) -> list[Task]:
         pending = await self._tasks.list_pending()
-        tz = ZoneInfo(self._settings.timezone)
-        today = datetime.now(tz).date()
-        todays: list[Task] = []
-        for t in pending:
-            if t.due_at is None:
-                continue
-            due = t.due_at if t.due_at.tzinfo else t.due_at.replace(tzinfo=tz)
-            if due.astimezone(tz).date() == today:
-                todays.append(t)
-        return todays
+        return today_tasks(pending, ZoneInfo(self._settings.timezone))
 
     async def _rss_block(self) -> str:
         feeds = await self._rss.list(enabled_only=True)

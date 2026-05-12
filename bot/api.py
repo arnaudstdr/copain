@@ -30,7 +30,9 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
+from bot.dashboard import DashboardSnapshot, build_dashboard
 from bot.llm.client import LLMError, LLMTimeoutError
+from bot.llm.parser import Meta
 from bot.logging_conf import get_logger
 from bot.pipeline import BotDeps, process_message
 from bot.sentry_setup import capture_exception
@@ -61,6 +63,8 @@ class AskImageRequest(BaseModel):
 
 class AskResponse(BaseModel):
     response: str
+    intent: str = "answer"
+    refresh_cards: list[str] = Field(default_factory=list)
 
 
 class NotificationItem(BaseModel):
@@ -71,6 +75,69 @@ class NotificationItem(BaseModel):
 
 class NotificationsResponse(BaseModel):
     notifications: list[NotificationItem]
+
+
+# --- Dashboard schemas ------------------------------------------------------
+
+
+class WeatherCard(BaseModel):
+    city: str
+    temp_current: float
+    temp_min: float
+    temp_max: float
+    description: str
+    precipitation_mm: float
+    wind_kmh: float
+
+
+class NextEventCard(BaseModel):
+    title: str
+    start: str
+    end: str
+    location: str | None
+    calendar_name: str
+
+
+class TaskCard(BaseModel):
+    id: int
+    content: str
+    due_at: str | None
+
+
+class BriefingCard(BaseModel):
+    text: str
+    created_at: str
+
+
+class DashboardResponse(BaseModel):
+    weather: WeatherCard | None
+    next_event: NextEventCard | None
+    today_tasks: list[TaskCard]
+    unread_notifications: int
+    briefing: BriefingCard | None
+
+
+# Mapping meta.intent → cards à rafraîchir côté front. Les intents purement
+# informatifs (answer, search, weather, fuel, memory, feed) n'altèrent aucune
+# card du dashboard ; l'UI affiche juste la réponse texte (bulle éphémère).
+_REFRESH_BY_INTENT: dict[str, list[str]] = {
+    "task": ["today_tasks", "unread_notifications"],
+    "event": ["next_event"],
+}
+
+
+def _refresh_cards_for(meta: Meta) -> list[str]:
+    """Retourne la liste des noms de cards à recharger après une action.
+
+    - `intent=task` → la card tâches change ; si la due_str produit un rappel,
+      la card notifications peut aussi changer (on rafraîchit les deux).
+    - `intent=event` avec `action=create` → la card prochain évent change.
+      `action=list` n'altère rien (lecture pure).
+    - Autres intents → aucune card concernée, retour vide.
+    """
+    if meta["intent"] == "event":
+        return ["next_event"] if meta["event"]["action"] == "create" else []
+    return list(_REFRESH_BY_INTENT.get(meta["intent"], []))
 
 
 # --- Container des dépendances vivantes attaché à app.state ------------------
@@ -165,9 +232,15 @@ def create_app(state: AppState) -> FastAPI:
     _TOUCH_ICON = STATIC_DIR / "icon-1024.png"
 
     @app.get("/apple-touch-icon.png", response_class=FileResponse, include_in_schema=False)
-    @app.get("/apple-touch-icon-precomposed.png", response_class=FileResponse, include_in_schema=False)
+    @app.get(
+        "/apple-touch-icon-precomposed.png", response_class=FileResponse, include_in_schema=False
+    )
     @app.get("/apple-touch-icon-120x120.png", response_class=FileResponse, include_in_schema=False)
-    @app.get("/apple-touch-icon-120x120-precomposed.png", response_class=FileResponse, include_in_schema=False)
+    @app.get(
+        "/apple-touch-icon-120x120-precomposed.png",
+        response_class=FileResponse,
+        include_in_schema=False,
+    )
     async def apple_touch_icon() -> FileResponse:
         return FileResponse(_TOUCH_ICON, media_type="image/png")
 
@@ -183,7 +256,7 @@ def create_app(state: AppState) -> FastAPI:
     async def ask(payload: AskRequest, deps: BotDeps = Depends(get_deps)) -> AskResponse:
         log.info("ask_received", preview=payload.message[:80])
         try:
-            reply = await process_message(payload.message, deps)
+            reply, meta = await process_message(payload.message, deps)
         except LLMTimeoutError:
             log.warning("llm_timeout")
             return AskResponse(
@@ -206,7 +279,9 @@ def create_app(state: AppState) -> FastAPI:
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail="Internal error",
             ) from exc
-        return AskResponse(response=reply)
+        return AskResponse(
+            response=reply, intent=meta["intent"], refresh_cards=_refresh_cards_for(meta)
+        )
 
     @app.post(
         "/ask/image",
@@ -233,7 +308,7 @@ def create_app(state: AppState) -> FastAPI:
             media_type=payload.media_type,
         )
         try:
-            reply = await process_message(payload.message, deps, images=[image_bytes])
+            reply, meta = await process_message(payload.message, deps, images=[image_bytes])
         except LLMTimeoutError:
             log.warning("llm_timeout", kind="image")
             return AskResponse(
@@ -256,7 +331,9 @@ def create_app(state: AppState) -> FastAPI:
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail="Internal error",
             ) from exc
-        return AskResponse(response=reply)
+        return AskResponse(
+            response=reply, intent=meta["intent"], refresh_cards=_refresh_cards_for(meta)
+        )
 
     @app.get(
         "/notifications",
@@ -276,4 +353,66 @@ def create_app(state: AppState) -> FastAPI:
         log.info("notifications_polled", returned=len(items))
         return NotificationsResponse(notifications=items)
 
+    @app.get(
+        "/dashboard",
+        response_model=DashboardResponse,
+        dependencies=[Depends(verify_api_key)],
+    )
+    async def get_dashboard(
+        deps: BotDeps = Depends(get_deps),
+        notifications: NotificationStore = Depends(get_notifications),
+    ) -> DashboardResponse:
+        snapshot = await build_dashboard(deps, notifications)
+        return _snapshot_to_response(snapshot)
+
     return app
+
+
+def _snapshot_to_response(snap: DashboardSnapshot) -> DashboardResponse:
+    weather = (
+        WeatherCard(
+            city=snap.weather.city,
+            temp_current=snap.weather.temp_current,
+            temp_min=snap.weather.temp_min,
+            temp_max=snap.weather.temp_max,
+            description=snap.weather.description,
+            precipitation_mm=snap.weather.precipitation_mm,
+            wind_kmh=snap.weather.wind_kmh,
+        )
+        if snap.weather is not None
+        else None
+    )
+    next_event = (
+        NextEventCard(
+            title=snap.next_event.title,
+            start=snap.next_event.start.isoformat(),
+            end=snap.next_event.end.isoformat(),
+            location=snap.next_event.location,
+            calendar_name=snap.next_event.calendar_name,
+        )
+        if snap.next_event is not None
+        else None
+    )
+    tasks = [
+        TaskCard(
+            id=t.id,
+            content=t.content,
+            due_at=t.due_at.isoformat() if t.due_at is not None else None,
+        )
+        for t in snap.today_tasks
+    ]
+    briefing = (
+        BriefingCard(
+            text=snap.latest_briefing.text,
+            created_at=snap.latest_briefing.created_at.isoformat(),
+        )
+        if snap.latest_briefing is not None
+        else None
+    )
+    return DashboardResponse(
+        weather=weather,
+        next_event=next_event,
+        today_tasks=tasks,
+        unread_notifications=snap.unread_notifications,
+        briefing=briefing,
+    )

@@ -129,8 +129,9 @@ def deps() -> BotDeps:
 
 
 async def test_process_answer_intent_returns_text(deps: BotDeps) -> None:
-    text = await process_message("salut", deps=deps)
+    text, meta = await process_message("salut", deps=deps)
     assert text == "Réponse texte."
+    assert meta["intent"] == "answer"
     deps.memory.store.assert_not_called()
     deps.tasks.create.assert_not_called()
     deps.scheduler.add_reminder.assert_not_called()
@@ -184,7 +185,7 @@ async def test_process_search_intent_relaunches_llm_with_results(
         return_value=_meta_block(intent="search", search_query="météo Paris demain")
     )
     deps.search.search = AsyncMock(return_value=[{"title": "T", "url": "u", "snippet": "s"}])
-    text = await process_message("il fera quel temps demain ?", deps=deps)
+    text, _ = await process_message("il fera quel temps demain ?", deps=deps)
     deps.search.search.assert_awaited_once_with("météo Paris demain")
     deps.llm.call_with_search.assert_awaited_once()
     assert text == "Résumé de la recherche"
@@ -193,7 +194,7 @@ async def test_process_search_intent_relaunches_llm_with_results(
 async def test_process_feed_list_returns_formatted_list(deps: BotDeps) -> None:
     deps.llm.call = AsyncMock(return_value=_meta_block(intent="feed", feed_action="list"))
     deps.rss.list = AsyncMock(return_value=[])
-    text = await process_message("mes flux ?", deps=deps)
+    text, _ = await process_message("mes flux ?", deps=deps)
     assert "Aucun flux enregistré" in text
 
 
@@ -214,17 +215,20 @@ async def test_process_event_create_calls_calendar(deps: BotDeps) -> None:
             event_start="mardi 15h",
         )
     )
-    text = await process_message("mets un RDV dentiste mardi 15h", deps=deps)
+    text, _ = await process_message("mets un RDV dentiste mardi 15h", deps=deps)
     deps.calendar.create_event.assert_awaited_once()
     assert "RDV dentiste" in text
 
 
 async def test_process_meta_parse_failure_returns_fallback(deps: BotDeps) -> None:
     deps.llm.call = AsyncMock(return_value="Pas de bloc meta ici.")
-    text = await process_message("blabla", deps=deps)
+    text, meta = await process_message("blabla", deps=deps)
     from bot.pipeline import FALLBACK_TEXT
 
     assert text == FALLBACK_TEXT
+    # Le meta de fallback est "answer" pour ne déclencher aucun side effect
+    # côté pipeline ni refresh côté API.
+    assert meta["intent"] == "answer"
 
 
 async def test_process_updates_history_with_user_and_assistant(deps: BotDeps) -> None:
@@ -284,7 +288,7 @@ async def test_process_fuel_intent_home_falls_back_to_home_coords(
     deps.fuel.find_cheapest = AsyncMock(return_value=[station])
     deps.llm.call = AsyncMock(return_value=_meta_block(intent="fuel", fuel_type="gazole"))
 
-    text = await process_message("gazole pas cher ?", deps=deps)
+    text, _ = await process_message("gazole pas cher ?", deps=deps)
 
     deps.geocoder.geocode_fr.assert_not_called()
     deps.fuel.find_cheapest.assert_awaited_once()
@@ -314,7 +318,7 @@ async def test_process_fuel_intent_with_location_calls_geocoder(
         )
     )
 
-    text = await process_message("SP98 à Colmar dans 5 km", deps=deps)
+    text, _ = await process_message("SP98 à Colmar dans 5 km", deps=deps)
 
     deps.geocoder.geocode_fr.assert_awaited_once_with("Colmar")
     call_kwargs = deps.fuel.find_cheapest.await_args.kwargs
@@ -327,7 +331,7 @@ async def test_process_fuel_unknown_fuel_type_returns_hint(
     deps: BotDeps,
 ) -> None:
     deps.llm.call = AsyncMock(return_value=_meta_block(intent="fuel", fuel_type="charbon"))
-    text = await process_message("charbon pas cher", deps=deps)
+    text, _ = await process_message("charbon pas cher", deps=deps)
     assert "Je ne reconnais pas" in text
     deps.fuel.find_cheapest.assert_not_called()
 
@@ -350,7 +354,7 @@ async def test_process_fuel_location_not_found_returns_message(
     deps.llm.call = AsyncMock(
         return_value=_meta_block(intent="fuel", fuel_type="gazole", fuel_location="Atlantide")
     )
-    text = await process_message("gazole à Atlantide", deps=deps)
+    text, _ = await process_message("gazole à Atlantide", deps=deps)
     assert "Atlantide" in text
     deps.fuel.find_cheapest.assert_not_called()
 
@@ -374,7 +378,7 @@ async def test_process_weather_intent_home_default(deps: BotDeps) -> None:
     deps.weather.get_forecast = AsyncMock(return_value=[day])
     deps.llm.call = AsyncMock(return_value=_meta_block(intent="weather"))
 
-    text = await process_message("quel temps fait-il ?", deps=deps)
+    text, _ = await process_message("quel temps fait-il ?", deps=deps)
 
     deps.geocoder.geocode_fr.assert_not_called()
     deps.weather.get_forecast.assert_awaited_once()
@@ -417,7 +421,7 @@ async def test_process_weather_intent_with_location_calls_geocoder(
         return_value=_meta_block(intent="weather", weather_location="Strasbourg")
     )
 
-    text = await process_message("météo à Strasbourg ?", deps=deps)
+    text, _ = await process_message("météo à Strasbourg ?", deps=deps)
 
     deps.geocoder.geocode_fr.assert_awaited_once_with("Strasbourg")
     call_kwargs = deps.weather.get_forecast.await_args.kwargs
@@ -461,7 +465,7 @@ async def test_process_weather_demain_requests_two_days_returns_single(
     deps.weather.get_forecast = AsyncMock(return_value=forecast)
     deps.llm.call = AsyncMock(return_value=_meta_block(intent="weather", weather_when="demain"))
 
-    text = await process_message("quel temps demain ?", deps=deps)
+    text, _ = await process_message("quel temps demain ?", deps=deps)
 
     call_kwargs = deps.weather.get_forecast.await_args.kwargs
     assert call_kwargs["days"] == 2
@@ -476,6 +480,6 @@ async def test_process_weather_location_not_found(deps: BotDeps) -> None:
     deps.llm.call = AsyncMock(
         return_value=_meta_block(intent="weather", weather_location="Atlantide")
     )
-    text = await process_message("météo à Atlantide", deps=deps)
+    text, _ = await process_message("météo à Atlantide", deps=deps)
     assert "Atlantide" in text
     deps.weather.get_forecast.assert_not_called()

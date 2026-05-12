@@ -128,7 +128,39 @@ async def test_ask_returns_response_text(client: AsyncClient) -> None:
     )
     assert response.status_code == 200
     body = response.json()
-    assert body == {"response": "Bonjour Arnaud."}
+    assert body["response"] == "Bonjour Arnaud."
+    assert body["intent"] == "answer"
+    assert body["refresh_cards"] == []
+
+
+async def test_ask_task_intent_lists_cards_to_refresh(client: AsyncClient, state: AppState) -> None:
+    """Une action `task` doit indiquer au front que les cards tâches et notifs ont bougé."""
+    fake_task = MagicMock()
+    fake_task.id = 7
+    fake_task.content = "acheter du pain"
+    state.deps.tasks.create = AsyncMock(return_value=fake_task)
+    state.deps.llm.call = AsyncMock(
+        return_value=(
+            "Noté.\n"
+            '<meta>{"intent":"task","store_memory":false,"memory_content":null,'
+            '"task":{"content":"acheter du pain","due_str":null},'
+            '"feed":{"action":null,"name":null,"url":null},'
+            '"event":{"action":null,"title":null,"start_str":null,"end_str":null,'
+            '"location":null,"description":null,"range_str":null,"calendar_name":null},'
+            '"fuel":{"fuel_type":null,"radius_km":null,"location":null},'
+            '"weather":{"location":null,"when":null},"search_query":null}</meta>'
+        )
+    )
+    response = await client.post(
+        "/ask",
+        headers={"X-API-Key": API_KEY},
+        json={"message": "ajoute acheter du pain"},
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["intent"] == "task"
+    assert "today_tasks" in body["refresh_cards"]
+    assert "unread_notifications" in body["refresh_cards"]
 
 
 async def test_ask_llm_timeout_returns_friendly_message(
@@ -231,3 +263,86 @@ async def test_get_config(client: AsyncClient) -> None:
     response = await client.get("/config")
     assert response.status_code == 200
     assert "api_key" in response.json()
+
+
+# --- /dashboard -------------------------------------------------------------
+
+
+async def test_dashboard_without_api_key_returns_403(client: AsyncClient) -> None:
+    response = await client.get("/dashboard")
+    assert response.status_code == 403
+
+
+async def test_dashboard_does_not_consume_unread_notifications(
+    client: AsyncClient, state: AppState
+) -> None:
+    """`GET /dashboard` doit pouvoir être appelé à volonté sans purger la file."""
+    from bot.briefing.weather import WeatherError
+
+    state.deps.tasks.list_pending = AsyncMock(return_value=[])
+    state.deps.weather.get_today = AsyncMock(side_effect=WeatherError("down"))
+    state.deps.calendar.is_connected = False
+
+    await state.notifications.add("Une notif")
+    await state.notifications.add("Une autre")
+
+    dashboard_resp = await client.get("/dashboard", headers={"X-API-Key": API_KEY})
+    assert dashboard_resp.status_code == 200
+    assert dashboard_resp.json()["unread_notifications"] == 2
+
+    # Après un GET /dashboard, /notifications doit toujours pouvoir consommer les 2 notifs.
+    notifs_resp = await client.get("/notifications", headers={"X-API-Key": API_KEY})
+    assert notifs_resp.status_code == 200
+    assert len(notifs_resp.json()["notifications"]) == 2
+
+
+async def test_dashboard_tolerates_weather_and_calendar_down(
+    client: AsyncClient, state: AppState
+) -> None:
+    """Météo + calendar down → cards null, autres sections renvoyées."""
+    from bot.briefing.weather import WeatherError
+
+    state.deps.weather.get_today = AsyncMock(side_effect=WeatherError("api down"))
+    state.deps.calendar.is_connected = False
+    state.deps.tasks.list_pending = AsyncMock(return_value=[])
+
+    response = await client.get("/dashboard", headers={"X-API-Key": API_KEY})
+    assert response.status_code == 200
+    body = response.json()
+    assert body["weather"] is None
+    assert body["next_event"] is None
+    assert body["today_tasks"] == []
+    assert body["unread_notifications"] == 0
+    assert body["briefing"] is None
+
+
+async def test_dashboard_populates_weather_when_available(
+    client: AsyncClient, state: AppState
+) -> None:
+    from bot.briefing.weather import WeatherSummary
+
+    state.deps.weather.get_today = AsyncMock(
+        return_value=WeatherSummary(
+            city="Sélestat",
+            temp_current=16.0,
+            temp_min=10.0,
+            temp_max=20.0,
+            precipitation_mm=0.0,
+            wind_kmh=12.0,
+            description="ciel dégagé",
+        )
+    )
+    state.deps.calendar.is_connected = False
+    state.deps.tasks.list_pending = AsyncMock(return_value=[])
+
+    response = await client.get("/dashboard", headers={"X-API-Key": API_KEY})
+    body = response.json()
+    assert body["weather"] == {
+        "city": "Sélestat",
+        "temp_current": 16.0,
+        "temp_min": 10.0,
+        "temp_max": 20.0,
+        "description": "ciel dégagé",
+        "precipitation_mm": 0.0,
+        "wind_kmh": 12.0,
+    }

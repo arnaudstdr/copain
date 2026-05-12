@@ -30,6 +30,11 @@ Tailscale tunnel. Partly self-hosted (local services on a Raspberry Pi 5
 - **Opt-in proactivity** (`PROACTIVITY_ENABLED=true`): rain alerts + event
   reminders with five safeguards (feature flag, time window, daily budget,
   dedup, cooldown). Disabled by default.
+- **Dashboard PWA**: l'iPhone tape `/` et reçoit une PWA orientée "tableau
+  de bord" (cards météo / prochain évent / tâches / notifs / briefing
+  accordéon + raccourcis carburant et RSS). `GET /dashboard` agrège l'état
+  en un seul appel. Mode chat optionnel via icône 💬 pour les conversations
+  longues.
 
 Everything flows through the same pipeline: an LLM decides the intent via a
 `<meta>` JSON block, the code executes the side effects, then a text reply
@@ -51,11 +56,12 @@ FastAPI app (bot/api.py, served by uvicorn)
         ├── verify_api_key dep (X-API-Key vs settings.api_key, 403 if invalid)
         │
         ├── Endpoints
-        │     ├── GET  /             → FileResponse(index.html) → Safari iOS (PWA)
+        │     ├── GET  /             → FileResponse(index.html) → Safari iOS (PWA dashboard)
         │     ├── GET  /config       → { api_key }  (pas d'auth, réseau Tailscale privé)
-        │     ├── POST /ask           → pipeline.process_message(message)
-        │     ├── POST /ask/image     → pipeline.process_message(message, [bytes])
-        │     └── GET  /notifications → NotificationStore.get_unread() + mark_read()
+        │     ├── POST /ask           → pipeline.process_message(message) → { response, intent, refresh_cards }
+        │     ├── POST /ask/image     → idem avec image (multimodal) → { response, intent, refresh_cards }
+        │     ├── GET  /notifications → NotificationStore.get_unread() + mark_read()
+        │     └── GET  /dashboard     → build_dashboard(): météo + next évent + tâches du jour + count notifs + briefing
         │
         ├── Pipeline (bot/pipeline.py, transport-agnostic)
         │     └── process_message(text, images?) → str
@@ -150,11 +156,12 @@ FastAPI app (bot/api.py, served by uvicorn)
 All endpoints require the `X-API-Key` header matching `settings.api_key`.
 Missing or invalid → 403 with a warning logged (source IP included).
 
-| Method | Path             | Body                                                            | Response                                                                  |
-| ------ | ---------------- | --------------------------------------------------------------- | ------------------------------------------------------------------------- |
-| POST   | `/ask`           | `{ "message": str }`                                            | `{ "response": str }`                                                     |
-| POST   | `/ask/image`     | `{ "message": str, "image_b64": str, "media_type": str }`       | `{ "response": str }`                                                     |
-| GET    | `/notifications` | —                                                               | `{ "notifications": [ { "id": int, "text": str, "created_at": str } ] }`  |
+| Method | Path             | Body                                                            | Response                                                                                                |
+| ------ | ---------------- | --------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| POST   | `/ask`           | `{ "message": str }`                                            | `{ "response": str, "intent": str, "refresh_cards": [str] }`                                            |
+| POST   | `/ask/image`     | `{ "message": str, "image_b64": str, "media_type": str }`       | `{ "response": str, "intent": str, "refresh_cards": [str] }`                                            |
+| GET    | `/notifications` | —                                                               | `{ "notifications": [ { "id": int, "text": str, "created_at": str } ] }`                                |
+| GET    | `/dashboard`     | —                                                               | `{ "weather": …, "next_event": …, "today_tasks": […], "unread_notifications": int, "briefing": … }`     |
 
 Quick smoke test:
 

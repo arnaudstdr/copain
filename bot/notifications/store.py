@@ -11,7 +11,7 @@ from collections.abc import Sequence
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import select, update
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
 
 from bot.logging_conf import get_logger
@@ -80,3 +80,43 @@ class NotificationStore:
             await session.execute(stmt)
             await session.commit()
         log.info("notifications_marked_read", count=len(ids))
+
+    async def count_unread(self) -> int:
+        """Compte les notifications non lues sans muter la file.
+
+        Utilisé par `GET /dashboard` qui doit pouvoir être appelé à volonté.
+        Contrairement à `get_unread()` suivi de `mark_read()`, aucun
+        `read_at` n'est posé.
+        """
+        async with self._sessionmaker() as session:
+            stmt = (
+                select(func.count())
+                .select_from(PendingNotification)
+                .where(PendingNotification.read_at.is_(None))
+            )
+            result = await session.execute(stmt)
+            return int(result.scalar_one())
+
+    async def latest_with_text_prefix(
+        self,
+        prefix: str,
+        since: datetime,
+    ) -> PendingNotification | None:
+        """Retourne la notification la plus récente dont le texte commence par `prefix`.
+
+        Filtré sur `created_at >= since` pour ne pas remonter d'historique.
+        Sert au dashboard à exposer le dernier briefing du jour (le modèle
+        `PendingNotification` n'a pas de colonne `title` ou `category` ;
+        on filtre sur le préfixe du texte, ce qui est suffisant pour les
+        catégories de notif aux préfixes stables comme le briefing matinal).
+        """
+        async with self._sessionmaker() as session:
+            stmt = (
+                select(PendingNotification)
+                .where(PendingNotification.text.startswith(prefix))
+                .where(PendingNotification.created_at >= since)
+                .order_by(PendingNotification.created_at.desc())
+                .limit(1)
+            )
+            result = await session.execute(stmt)
+            return result.scalar_one_or_none()  # type: ignore[no-any-return, unused-ignore]

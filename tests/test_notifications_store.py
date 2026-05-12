@@ -70,3 +70,59 @@ async def test_unread_excludes_already_read(store: NotificationStore) -> None:
     ids = [n.id for n in await store.get_unread()]
     await store.mark_read(ids)
     assert await store.get_unread() == []
+
+
+async def test_count_unread_does_not_mutate(store: NotificationStore) -> None:
+    """count_unread() ne marque pas comme lu (utilisé par le dashboard)."""
+    await store.add("X")
+    await store.add("Y")
+    assert await store.count_unread() == 2
+    assert await store.count_unread() == 2  # idempotent
+    assert len(await store.get_unread()) == 2  # toujours non lues
+
+
+async def test_count_unread_excludes_read(store: NotificationStore) -> None:
+    await store.add("A")
+    await store.add("B")
+    unread = await store.get_unread()
+    await store.mark_read([unread[0].id])
+    assert await store.count_unread() == 1
+
+
+async def test_latest_with_text_prefix_returns_most_recent(store: NotificationStore) -> None:
+    from datetime import UTC, datetime, timedelta
+
+    await store.add("☀️ Bonjour ! Voici ton briefing du jour. Ancien")
+    await store.add("Autre notif sans rapport")
+    await store.add("☀️ Bonjour ! Voici ton briefing du jour. Nouveau")
+
+    since = datetime.now(UTC) - timedelta(hours=1)
+    latest = await store.latest_with_text_prefix(
+        "☀️ Bonjour ! Voici ton briefing du jour.", since=since
+    )
+    assert latest is not None
+    assert latest.text.endswith("Nouveau")
+
+
+async def test_latest_with_text_prefix_filters_by_since(store: NotificationStore) -> None:
+    """Les rows antérieurs à `since` sont exclus."""
+    from datetime import UTC, datetime, timedelta
+
+    await store.add("☀️ Bonjour ! Voici ton briefing du jour. Vieux")
+    # `since` placé dans le futur → aucune row ne match.
+    since = datetime.now(UTC) + timedelta(hours=1)
+    latest = await store.latest_with_text_prefix(
+        "☀️ Bonjour ! Voici ton briefing du jour.", since=since
+    )
+    assert latest is None
+
+
+async def test_latest_with_text_prefix_returns_none_when_no_match(
+    store: NotificationStore,
+) -> None:
+    from datetime import UTC, datetime, timedelta
+
+    await store.add("Rien à voir")
+    since = datetime.now(UTC) - timedelta(hours=1)
+    latest = await store.latest_with_text_prefix("☀️", since=since)
+    assert latest is None
