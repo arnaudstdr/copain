@@ -124,6 +124,31 @@
     .notif-time { font-size: 11px; color: var(--text3); align-self: flex-end; }
     .panel-empty { padding: 28px 20px; color: var(--text3); font-size: 13px; text-align: center; }
 
+    /* ── Weather overlay ── */
+    .weather-section-title { font-size: 11.5px; color: var(--text3); text-transform: uppercase; letter-spacing: 0.5px; font-weight: 500; margin: 8px 4px 4px; }
+    .weather-hourly-strip { display: flex; gap: 8px; overflow-x: auto; padding: 4px 4px 8px; scrollbar-width: none; flex-shrink: 0; }
+    .weather-hourly-strip::-webkit-scrollbar { display: none; }
+    .weather-hour { flex-shrink: 0; background: var(--bg3); border: 1px solid var(--border2); border-radius: 12px; padding: 10px 12px; min-width: 72px; display: flex; flex-direction: column; align-items: center; gap: 3px; }
+    .weather-hour-time { font-size: 11px; color: var(--text3); }
+    .weather-hour-icon { font-size: 18px; }
+    .weather-hour-temp { font-size: 14px; font-weight: 600; }
+    .weather-hour-precip { font-size: 10px; color: var(--blue); }
+    .weather-day { display: flex; align-items: center; gap: 12px; background: var(--bg3); border: 1px solid var(--border2); border-radius: 12px; padding: 11px 13px; flex-shrink: 0; }
+    .weather-day-label { width: 64px; font-size: 13px; font-weight: 500; flex-shrink: 0; text-transform: capitalize; }
+    .weather-day-icon { font-size: 18px; flex-shrink: 0; }
+    .weather-day-desc { flex: 1; font-size: 12.5px; color: var(--text2); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .weather-day-temps { font-size: 13px; font-weight: 500; white-space: nowrap; }
+    .weather-day-precip { font-size: 11px; color: var(--blue); margin-left: 8px; white-space: nowrap; }
+
+    /* ── Events overlay ── */
+    .events-day-group { display: flex; flex-direction: column; gap: 6px; flex-shrink: 0; }
+    .events-day-label { font-size: 11.5px; color: var(--text3); text-transform: uppercase; letter-spacing: 0.5px; font-weight: 500; padding: 8px 4px 2px; }
+    .event-item { background: var(--bg3); border: 1px solid var(--border2); border-radius: 12px; padding: 10px 13px; display: flex; flex-direction: column; gap: 3px; flex-shrink: 0; }
+    .event-time { font-size: 12px; color: var(--text3); }
+    .event-title { font-size: 13.5px; font-weight: 500; }
+    .event-location { font-size: 11.5px; color: var(--text2); }
+    .event-calendar { font-size: 10.5px; color: var(--text3); font-style: italic; align-self: flex-end; }
+
     /* ── Tasks overlay ── */
     .task-row { position: relative; background: var(--bg3); border: 1px solid var(--border2); border-radius: 12px; overflow: hidden; touch-action: pan-y; flex-shrink: 0; }
     .task-row-inner { display: flex; align-items: center; gap: 11px; padding: 11px 13px; background: var(--bg3); position: relative; z-index: 2; transition: transform 0.2s ease; will-change: transform; }
@@ -257,6 +282,32 @@
     </div>
   </div>
 
+  <!-- Weather panel -->
+  <div id="weather-overlay" class="overlay hidden" onclick="if(event.target===this)closeWeather()">
+    <div class="panel">
+      <div class="panel-head">
+        <span class="panel-title" id="weather-title">🌤 Météo</span>
+        <button class="close-btn" onclick="closeWeather()">✕</button>
+      </div>
+      <div class="panel-list" id="weather-list">
+        <div class="panel-empty">Chargement…</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Events panel -->
+  <div id="events-overlay" class="overlay hidden" onclick="if(event.target===this)closeEvents()">
+    <div class="panel">
+      <div class="panel-head">
+        <span class="panel-title">📅 Évènements à venir</span>
+        <button class="close-btn" onclick="closeEvents()">✕</button>
+      </div>
+      <div class="panel-list" id="events-list">
+        <div class="panel-empty">Chargement…</div>
+      </div>
+    </div>
+  </div>
+
   <!-- Chat overlay (mode conversation) -->
   <div id="chat-view" class="hidden">
     <header>
@@ -384,7 +435,7 @@
       return card;
     }
     card.classList.add("tappable");
-    card.onclick = () => triggerAsk("Donne-moi la météo détaillée pour aujourd'hui");
+    card.onclick = openWeather;
     card.appendChild(makeHead("🌤", "Météo · " + w.city));
     const tempLine = `${Math.round(w.temp_current)}° · ${w.description}`;
     card.appendChild(el("div", "card-primary", tempLine));
@@ -400,10 +451,12 @@
       card.classList.add("empty");
       card.appendChild(makeHead("📅", "Prochain évènement"));
       card.appendChild(el("div", "card-primary", "Rien à venir"));
+      card.classList.add("tappable");
+      card.onclick = openEvents;
       return card;
     }
     card.classList.add("tappable");
-    card.onclick = () => triggerAsk("Quels sont mes prochains évènements ?");
+    card.onclick = openEvents;
     card.appendChild(makeHead("📅", "Prochain évènement · " + e.calendar_name));
     const start = new Date(e.start);
     const dayLabel = sameDay(start, new Date())
@@ -712,6 +765,146 @@
     document.getElementById("tasks-overlay").classList.add("hidden");
     // Rafraîchit la card du dashboard (count + première tâche peuvent avoir bougé).
     loadDashboard();
+  }
+
+  // ── Météo (overlay) ──────────────────────────────────────────────────────
+  async function openWeather() {
+    document.getElementById("weather-overlay").classList.remove("hidden");
+    const list = document.getElementById("weather-list");
+    list.innerHTML = '<div class="panel-empty">Chargement…</div>';
+    try {
+      const res = await fetch(`${API_BASE}/weather/forecast?days=7&hours=24`, {
+        headers: { "X-API-Key": API_KEY }
+      });
+      if (!res.ok) throw new Error(`${res.status}`);
+      const data = await res.json();
+      document.getElementById("weather-title").textContent = `🌤 Météo · ${data.city}`;
+      renderWeather(data);
+    } catch (e) {
+      list.innerHTML = '<div class="panel-empty">Impossible de charger</div>';
+    }
+  }
+
+  function closeWeather() {
+    document.getElementById("weather-overlay").classList.add("hidden");
+  }
+
+  function renderWeather(data) {
+    const list = document.getElementById("weather-list");
+    list.innerHTML = "";
+
+    // Section horaire (24h glissantes), strip horizontal.
+    if (data.hourly && data.hourly.length > 0) {
+      list.appendChild(el("div", "weather-section-title", "Heure par heure"));
+      const strip = el("div", "weather-hourly-strip");
+      data.hourly.forEach(h => strip.appendChild(makeHourCell(h)));
+      list.appendChild(strip);
+    }
+
+    // Section quotidienne (7 jours).
+    if (data.daily && data.daily.length > 0) {
+      list.appendChild(el("div", "weather-section-title", "Prochains jours"));
+      data.daily.forEach(d => list.appendChild(makeDayRow(d)));
+    }
+  }
+
+  function makeHourCell(h) {
+    const cell = el("div", "weather-hour");
+    const time = new Date(h.time);
+    cell.appendChild(el("div", "weather-hour-time", formatHM(time)));
+    cell.appendChild(el("div", "weather-hour-icon", weatherEmoji(h.description)));
+    cell.appendChild(el("div", "weather-hour-temp", `${Math.round(h.temp_c)}°`));
+    if (h.precipitation_probability_pct >= 30 || h.precipitation_mm > 0.1) {
+      const txt = h.precipitation_mm > 0.1
+        ? `${h.precipitation_mm.toFixed(1)} mm`
+        : `${h.precipitation_probability_pct}%`;
+      cell.appendChild(el("div", "weather-hour-precip", txt));
+    }
+    return cell;
+  }
+
+  function makeDayRow(d) {
+    const row = el("div", "weather-day");
+    const date = new Date(d.date);
+    row.appendChild(el("div", "weather-day-label", formatRelativeDay(date)));
+    row.appendChild(el("div", "weather-day-icon", weatherEmoji(d.description)));
+    row.appendChild(el("div", "weather-day-desc", d.description));
+    row.appendChild(el("div", "weather-day-temps", `${Math.round(d.temp_min)}° / ${Math.round(d.temp_max)}°`));
+    if (d.precipitation_mm > 0.1) {
+      row.appendChild(el("div", "weather-day-precip", `${d.precipitation_mm.toFixed(1)} mm`));
+    }
+    return row;
+  }
+
+  function weatherEmoji(description) {
+    const d = (description || "").toLowerCase();
+    if (d.includes("orage")) return "⛈️";
+    if (d.includes("neige") || d.includes("verglaç")) return "❄️";
+    if (d.includes("pluie") || d.includes("averse")) return "🌧";
+    if (d.includes("bruine")) return "🌦";
+    if (d.includes("brouillard")) return "🌫";
+    if (d.includes("couvert")) return "☁️";
+    if (d.includes("partiel")) return "⛅️";
+    if (d.includes("plutôt dégagé")) return "🌤";
+    return "☀️";
+  }
+
+  // ── Évènements (overlay) ─────────────────────────────────────────────────
+  async function openEvents() {
+    document.getElementById("events-overlay").classList.remove("hidden");
+    const list = document.getElementById("events-list");
+    list.innerHTML = '<div class="panel-empty">Chargement…</div>';
+    try {
+      const res = await fetch(`${API_BASE}/events?days=7`, {
+        headers: { "X-API-Key": API_KEY }
+      });
+      if (!res.ok) throw new Error(`${res.status}`);
+      const data = await res.json();
+      renderEvents(data.events || []);
+    } catch (e) {
+      list.innerHTML = '<div class="panel-empty">Impossible de charger</div>';
+    }
+  }
+
+  function closeEvents() {
+    document.getElementById("events-overlay").classList.add("hidden");
+  }
+
+  function renderEvents(events) {
+    const list = document.getElementById("events-list");
+    list.innerHTML = "";
+    if (events.length === 0) {
+      list.innerHTML = '<div class="panel-empty">Aucun évènement à venir</div>';
+      return;
+    }
+
+    // Regrouper par date locale (YYYY-MM-DD).
+    const groups = new Map();
+    events.forEach(e => {
+      const d = new Date(e.start);
+      const key = d.toISOString().slice(0, 10);  // sera regroupé par jour UTC ; acceptable
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key).push(e);
+    });
+
+    for (const [key, group] of groups) {
+      const sample = new Date(key + "T00:00:00");
+      const dayGroup = el("div", "events-day-group");
+      dayGroup.appendChild(el("div", "events-day-label", formatRelativeDay(sample)));
+      group.forEach(e => dayGroup.appendChild(makeEventItem(e)));
+      list.appendChild(dayGroup);
+    }
+  }
+
+  function makeEventItem(e) {
+    const item = el("div", "event-item");
+    const start = new Date(e.start);
+    const end = new Date(e.end);
+    item.appendChild(el("div", "event-time", `${formatHM(start)} – ${formatHM(end)}`));
+    item.appendChild(el("div", "event-title", e.title));
+    if (e.location) item.appendChild(el("div", "event-location", `📍 ${e.location}`));
+    item.appendChild(el("div", "event-calendar", e.calendar_name));
+    return item;
   }
 
   function renderTasks(tasks) {
