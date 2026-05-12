@@ -659,6 +659,94 @@ async def test_events_empty_when_calendar_disconnected(
     assert response.json()["events"] == []
 
 
+# --- /fuel/stations ------------------------------------------------------
+
+
+async def test_fuel_stations_requires_api_key(client: AsyncClient) -> None:
+    response = await client.get("/fuel/stations")
+    assert response.status_code == 403
+
+
+async def test_fuel_stations_returns_top5(client: AsyncClient, state: AppState) -> None:
+    from datetime import UTC, datetime
+
+    from bot.fuel.models import FuelStation
+
+    state.deps.settings.fuel_default_radius_km = 10.0
+    station = FuelStation(
+        id="A",
+        address="12 rue Y",
+        city="Sélestat",
+        postal_code="67600",
+        lat=48.26,
+        lon=7.45,
+        distance_km=2.3,
+        fuel_type="gazole",
+        price_eur=1.689,
+        updated_at=datetime(2026, 5, 12, 8, 0, tzinfo=UTC),
+    )
+    state.deps.fuel.find_cheapest = AsyncMock(return_value=[station])
+
+    response = await client.get("/fuel/stations", headers={"X-API-Key": API_KEY})
+    assert response.status_code == 200
+    body = response.json()
+    assert body["fuel_type"] == "gazole"
+    assert body["fuel_label"] == "Gazole"
+    assert body["city"] == "Sélestat"
+    assert len(body["stations"]) == 1
+    assert body["stations"][0]["price_eur"] == 1.689
+
+
+async def test_fuel_stations_uses_work_when_at_work(client: AsyncClient, state: AppState) -> None:
+    from datetime import UTC, datetime
+
+    from bot.locations.presence import LocationPresence
+
+    presence = LocationPresence(place="work", arrived_at=datetime.now(UTC), lat=None, lon=None)
+    state.deps.location_events.get_current_location = AsyncMock(return_value=presence)
+    state.deps.settings.work_lat = 48.46
+    state.deps.settings.work_lon = 7.48
+    state.deps.settings.work_city = "Obernai"
+    state.deps.settings.fuel_default_radius_km = 10.0
+    state.deps.fuel.find_cheapest = AsyncMock(return_value=[])
+
+    response = await client.get("/fuel/stations", headers={"X-API-Key": API_KEY})
+    assert response.status_code == 200
+    assert response.json()["city"] == "Obernai"
+    kwargs = state.deps.fuel.find_cheapest.await_args.kwargs
+    assert kwargs["center"].lat == 48.46
+
+
+async def test_fuel_stations_accepts_synonym(client: AsyncClient, state: AppState) -> None:
+    """`fuel_type=diesel` doit être normalisé en `gazole`."""
+    state.deps.settings.fuel_default_radius_km = 10.0
+    state.deps.fuel.find_cheapest = AsyncMock(return_value=[])
+
+    response = await client.get("/fuel/stations?fuel_type=diesel", headers={"X-API-Key": API_KEY})
+    assert response.status_code == 200
+    body = response.json()
+    assert body["fuel_type"] == "gazole"
+    kwargs = state.deps.fuel.find_cheapest.await_args.kwargs
+    assert kwargs["fuel_type"] == "gazole"
+
+
+async def test_fuel_stations_rejects_unknown_type(client: AsyncClient, state: AppState) -> None:
+    response = await client.get("/fuel/stations?fuel_type=charbon", headers={"X-API-Key": API_KEY})
+    assert response.status_code == 400
+
+
+async def test_fuel_stations_custom_radius_overrides_default(
+    client: AsyncClient, state: AppState
+) -> None:
+    state.deps.settings.fuel_default_radius_km = 10.0
+    state.deps.fuel.find_cheapest = AsyncMock(return_value=[])
+
+    response = await client.get("/fuel/stations?radius_km=5", headers={"X-API-Key": API_KEY})
+    assert response.status_code == 200
+    kwargs = state.deps.fuel.find_cheapest.await_args.kwargs
+    assert kwargs["radius_km"] == 5.0
+
+
 async def test_dashboard_populates_weather_when_available(
     client: AsyncClient, state: AppState
 ) -> None:

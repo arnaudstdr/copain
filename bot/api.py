@@ -190,6 +190,27 @@ class EventsListResponse(BaseModel):
     events: list[CalendarEventItem]
 
 
+# --- Fuel detail schemas ---------------------------------------------------
+
+
+class FuelStationItem(BaseModel):
+    id: str
+    address: str
+    city: str
+    postal_code: str
+    distance_km: float
+    price_eur: float
+    updated_at: str | None  # ISO
+
+
+class FuelStationsResponse(BaseModel):
+    fuel_type: str
+    fuel_label: str
+    city: str  # nom du centre de recherche (HOME ou WORK)
+    radius_km: float
+    stations: list[FuelStationItem]
+
+
 # Mapping meta.intent → cards à rafraîchir côté front. Les intents purement
 # informatifs (answer, search, weather, fuel, memory, feed) n'altèrent aucune
 # card du dashboard ; l'UI affiche juste la réponse texte (bulle éphémère).
@@ -644,6 +665,75 @@ def create_app(state: AppState) -> FastAPI:
             for e in events_raw
         ]
         return EventsListResponse(events=items)
+
+    @app.get(
+        "/fuel/stations",
+        response_model=FuelStationsResponse,
+        dependencies=[Depends(verify_api_key)],
+    )
+    async def fuel_stations(
+        deps: BotDeps = Depends(get_deps),
+        fuel_type: str = "gazole",
+        radius_km: float | None = None,
+    ) -> FuelStationsResponse:
+        """Top 5 stations les moins chères pour `fuel_type` autour du lieu courant.
+
+        Pas d'appel LLM — interrogation directe de `FuelClient` qui parle à
+        l'API data.economie.gouv.fr. Le centre de recherche suit la règle
+        contextuelle (WORK si on est au bureau, HOME sinon). `radius_km`
+        défaut = `FUEL_DEFAULT_RADIUS_KM`.
+        """
+        from bot.fuel.models import FUEL_LABELS, GeoPoint, normalize_fuel_type
+
+        normalized = normalize_fuel_type(fuel_type)
+        if normalized is None:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Type de carburant inconnu : {fuel_type!r}",
+            )
+
+        presence = await deps.location_events.get_current_location()
+        if presence is not None and presence.place == "work":
+            center = GeoPoint(lat=deps.settings.work_lat, lon=deps.settings.work_lon)
+            city = deps.settings.work_city
+        else:
+            center = GeoPoint(lat=deps.settings.home_lat, lon=deps.settings.home_lon)
+            city = deps.settings.home_city
+
+        radius = radius_km if radius_km is not None else deps.settings.fuel_default_radius_km
+        try:
+            stations = await deps.fuel.find_cheapest(
+                fuel_type=normalized,
+                center=center,
+                radius_km=radius,
+                limit=5,
+            )
+        except Exception as exc:
+            log.exception("fuel_stations_failed", error=str(exc))
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail="data.economie.gouv.fr indisponible",
+            ) from exc
+
+        items = [
+            FuelStationItem(
+                id=s.id,
+                address=s.address,
+                city=s.city,
+                postal_code=s.postal_code,
+                distance_km=s.distance_km,
+                price_eur=s.price_eur,
+                updated_at=s.updated_at.isoformat() if s.updated_at else None,
+            )
+            for s in stations
+        ]
+        return FuelStationsResponse(
+            fuel_type=normalized,
+            fuel_label=FUEL_LABELS[normalized],
+            city=city,
+            radius_km=radius,
+            stations=items,
+        )
 
     return app
 
