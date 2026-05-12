@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -100,5 +100,107 @@ async def test_complete_unknown_task_does_not_cancel_reminder(tmp_data_dir: Path
     try:
         assert await mgr.complete(999) is False
         scheduler.cancel_reminder.assert_not_called()
+    finally:
+        await engine.dispose()
+
+
+# --- mirror iCloud Rappels -------------------------------------------------
+
+
+def _mock_reminders_client() -> MagicMock:
+    """Client iCloud connecté, méthodes async mockées sans erreur."""
+    stub = MagicMock()
+    stub.is_connected = True
+    stub.push_todo = AsyncMock()
+    stub.complete_todo = AsyncMock()
+    stub.delete_todo = AsyncMock()
+    return stub
+
+
+async def test_create_pushes_to_icloud_when_mirror_active(tmp_data_dir: Path) -> None:
+    reminders = _mock_reminders_client()
+    engine = create_shared_engine(tmp_data_dir / "tasks.db")
+    mgr = TaskManager(engine, reminders_icloud=reminders)
+    await mgr.init_schema()
+    try:
+        task = await mgr.create("acheter du lait")
+        reminders.push_todo.assert_awaited_once_with(task.id, "acheter du lait", None)
+    finally:
+        await engine.dispose()
+
+
+async def test_complete_pushes_completion_to_icloud(tmp_data_dir: Path) -> None:
+    reminders = _mock_reminders_client()
+    engine = create_shared_engine(tmp_data_dir / "tasks.db")
+    mgr = TaskManager(engine, reminders_icloud=reminders)
+    await mgr.init_schema()
+    try:
+        task = await mgr.create("X")
+        await mgr.complete(task.id)
+        reminders.complete_todo.assert_awaited_once_with(task.id)
+    finally:
+        await engine.dispose()
+
+
+async def test_complete_is_idempotent_on_already_completed(tmp_data_dir: Path) -> None:
+    """Compléter une task déjà completed retourne False et n'appelle pas iCloud."""
+    reminders = _mock_reminders_client()
+    engine = create_shared_engine(tmp_data_dir / "tasks.db")
+    mgr = TaskManager(engine, reminders_icloud=reminders)
+    await mgr.init_schema()
+    try:
+        task = await mgr.create("X")
+        assert await mgr.complete(task.id) is True
+        reminders.complete_todo.reset_mock()
+        # 2e appel : déjà completed, on doit retourner False sans toucher iCloud
+        # (le job de sync s'appuie sur ce signal pour ne pas boucler).
+        assert await mgr.complete(task.id) is False
+        reminders.complete_todo.assert_not_called()
+    finally:
+        await engine.dispose()
+
+
+async def test_delete_pushes_deletion_to_icloud(tmp_data_dir: Path) -> None:
+    reminders = _mock_reminders_client()
+    engine = create_shared_engine(tmp_data_dir / "tasks.db")
+    mgr = TaskManager(engine, reminders_icloud=reminders)
+    await mgr.init_schema()
+    try:
+        task = await mgr.create("X")
+        await mgr.delete(task.id)
+        reminders.delete_todo.assert_awaited_once_with(task.id)
+    finally:
+        await engine.dispose()
+
+
+async def test_create_tolerates_icloud_error(tmp_data_dir: Path) -> None:
+    """Si le push iCloud échoue, la mutation DB doit quand même réussir."""
+    from bot.reminders_icloud.client import ICloudRemindersError
+
+    reminders = _mock_reminders_client()
+    reminders.push_todo = AsyncMock(side_effect=ICloudRemindersError("network"))
+    engine = create_shared_engine(tmp_data_dir / "tasks.db")
+    mgr = TaskManager(engine, reminders_icloud=reminders)
+    await mgr.init_schema()
+    try:
+        task = await mgr.create("survivor")
+        # La task est bien créée côté DB malgré l'erreur iCloud.
+        assert task.id is not None
+        pending = await mgr.list_pending()
+        assert any(t.id == task.id for t in pending)
+    finally:
+        await engine.dispose()
+
+
+async def test_mirror_skipped_when_client_not_connected(tmp_data_dir: Path) -> None:
+    """Si le client n'est pas connecté, on n'essaie même pas de pousser."""
+    reminders = _mock_reminders_client()
+    reminders.is_connected = False
+    engine = create_shared_engine(tmp_data_dir / "tasks.db")
+    mgr = TaskManager(engine, reminders_icloud=reminders)
+    await mgr.init_schema()
+    try:
+        await mgr.create("X")
+        reminders.push_todo.assert_not_called()
     finally:
         await engine.dispose()

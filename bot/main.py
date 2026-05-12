@@ -37,6 +37,8 @@ from bot.pipeline import MAX_HISTORY, BotDeps
 from bot.proactivity import models as _proactivity_models  # noqa: F401 — enregistre la table
 from bot.proactivity.service import ProactivityService
 from bot.profile import load_profile
+from bot.reminders_icloud.client import ICloudRemindersClient, ICloudRemindersError
+from bot.reminders_icloud.sync import sync_completed_tasks
 from bot.rss.fetcher import RssFetcher
 from bot.rss.manager import FeedAlreadyExists, FeedManager
 from bot.search.searxng import SearxngClient
@@ -52,6 +54,7 @@ DEFAULT_FEEDS: tuple[tuple[str, str, str], ...] = (
 
 BRIEFING_JOB_ID = "daily-briefing"
 PROACTIVITY_JOB_ID = "proactivity-tick"
+REMINDERS_SYNC_JOB_ID = "reminders-icloud-sync"
 
 
 async def _seed_default_feeds(rss: FeedManager) -> None:
@@ -63,6 +66,26 @@ async def _seed_default_feeds(rss: FeedManager) -> None:
         except FeedAlreadyExists:
             continue
     log.info("default_feeds_seeded", count=len(DEFAULT_FEEDS))
+
+
+async def _backfill_reminders(
+    tasks: TaskManager,
+    reminders: ICloudRemindersClient,
+) -> None:
+    """Au démarrage, pousse vers iCloud toutes les tasks non-completed existantes.
+
+    `push_todo` est idempotent (UID stable), donc cet appel peut être répété
+    à chaque démarrage sans risque de duplication.
+    """
+    pending = await tasks.list_pending()
+    pushed = 0
+    for t in pending:
+        try:
+            await reminders.push_todo(t.id, t.content, t.due_at)
+            pushed += 1
+        except ICloudRemindersError as exc:
+            log.warning("reminders_backfill_skipped", task_id=t.id, error=str(exc))
+    log.info("reminders_backfill_done", pushed=pushed, total=len(pending))
 
 
 async def _build_state(
@@ -79,7 +102,15 @@ async def _build_state(
         pushover_user=settings.pushover_user,
     )
     engine = create_shared_engine(settings.db_path)
-    tasks = TaskManager(engine, scheduler=scheduler)
+    reminders_icloud: ICloudRemindersClient | None = None
+    if settings.icloud_reminders_enabled:
+        reminders_icloud = ICloudRemindersClient(
+            username=settings.icloud_username,
+            app_password=settings.icloud_app_password,
+            list_name=settings.icloud_reminders_list_name,
+            timezone=settings.timezone,
+        )
+    tasks = TaskManager(engine, scheduler=scheduler, reminders_icloud=reminders_icloud)
     rss = FeedManager(engine)
     rss_fetcher = RssFetcher()
     pushover = PushoverClient(token=settings.pushover_token, user=settings.pushover_user)
@@ -162,6 +193,13 @@ async def _build_state(
     except ICloudCalendarError as exc:
         log.warning("calendar_connect_failed", error=str(exc))
 
+    if reminders_icloud is not None:
+        try:
+            await reminders_icloud.connect()
+            await _backfill_reminders(tasks, reminders_icloud)
+        except ICloudRemindersError as exc:
+            log.warning("reminders_connect_failed", error=str(exc))
+
     scheduler.start()
 
     async def _daily_briefing_job() -> None:
@@ -187,6 +225,22 @@ async def _build_state(
             interval_min=settings.proactivity_check_interval_min,
             window=f"{settings.proactivity_window_start_hour}-{settings.proactivity_window_end_hour}",
             budget=settings.proactivity_daily_budget,
+        )
+
+    if reminders_icloud is not None and reminders_icloud.is_connected:
+
+        async def _reminders_sync_job() -> None:
+            assert reminders_icloud is not None  # narrowing for mypy
+            await sync_completed_tasks(tasks, reminders_icloud)
+
+        scheduler.add_interval_job(
+            job_id=REMINDERS_SYNC_JOB_ID,
+            func=_reminders_sync_job,
+            minutes=settings.icloud_reminders_sync_minutes,
+        )
+        log.info(
+            "reminders_sync_job_scheduled",
+            interval_min=settings.icloud_reminders_sync_minutes,
         )
 
     state = AppState(settings=settings, deps=deps, notifications=notifications)
