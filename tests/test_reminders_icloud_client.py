@@ -61,9 +61,31 @@ def test_build_vtodo_escapes_special_chars() -> None:
 # --- connect --------------------------------------------------------------
 
 
-async def test_connect_resolves_existing_list(client: ICloudRemindersClient) -> None:
-    fake_list = MagicMock()
-    fake_list.name = "Copain"
+def _vtodo_cal(name: str) -> MagicMock:
+    """MagicMock d'une collection CalDAV qui supporte les VTODO."""
+    c = MagicMock()
+    c.name = name
+    c.get_supported_components.return_value = ["VTODO"]
+    return c
+
+
+def _vevent_cal(name: str) -> MagicMock:
+    """MagicMock d'une collection CalDAV qui n'accepte QUE les VEVENT.
+
+    Reproduit le piège iCloud : un calendrier nommé 'Rappels ⚠️' qui
+    ressemble à une liste Rappels mais qui est en fait un calendrier
+    VEVENT classique (`save_todo` retournerait 412 Precondition Failed).
+    """
+    c = MagicMock()
+    c.name = name
+    c.get_supported_components.return_value = ["VEVENT"]
+    return c
+
+
+async def test_connect_resolves_existing_vtodo_list(
+    client: ICloudRemindersClient,
+) -> None:
+    fake_list = _vtodo_cal("Copain")
     principal = MagicMock()
     principal.calendars.return_value = [fake_list]
     dav_client = MagicMock()
@@ -75,25 +97,57 @@ async def test_connect_resolves_existing_list(client: ICloudRemindersClient) -> 
     assert client.is_connected
 
 
-async def test_connect_creates_list_if_absent(client: ICloudRemindersClient) -> None:
-    other = MagicMock()
-    other.name = "Famille"
+async def test_connect_ignores_vevent_collections_with_matching_name(
+    client: ICloudRemindersClient,
+) -> None:
+    """Une collection VEVENT du même nom ne doit pas être retenue (412 sinon)."""
+    vevent_trap = _vevent_cal("Copain")  # piège : nom matche, mais refuse VTODO
+    real_list = _vtodo_cal("Copain Bot")
     principal = MagicMock()
-    principal.calendars.return_value = [other]
-    new_list = MagicMock()
-    new_list.name = "Copain"
-    principal.make_calendar.return_value = new_list
+    principal.calendars.return_value = [vevent_trap, real_list]
     dav_client = MagicMock()
     dav_client.principal.return_value = principal
 
+    # Pointe sur "Copain Bot" : doit trouver la vraie liste VTODO.
+    client._list_name = "Copain Bot"  # type: ignore[attr-defined]
     with patch("bot.reminders_icloud.client.caldav.DAVClient", return_value=dav_client):
         await client.connect()
 
     assert client.is_connected
-    principal.make_calendar.assert_called_once()
-    kwargs = principal.make_calendar.call_args.kwargs
-    assert kwargs["name"] == "Copain"
-    assert kwargs["supported_calendar_component_set"] == ["VTODO"]
+
+
+async def test_connect_raises_if_no_vtodo_collection(
+    client: ICloudRemindersClient,
+) -> None:
+    """Si l'utilisateur n'a aucune vraie liste Rappels iCloud → erreur claire."""
+    only_vevent = _vevent_cal("Famille")
+    principal = MagicMock()
+    principal.calendars.return_value = [only_vevent]
+    dav_client = MagicMock()
+    dav_client.principal.return_value = principal
+
+    with (
+        patch("bot.reminders_icloud.client.caldav.DAVClient", return_value=dav_client),
+        pytest.raises(ICloudRemindersError, match="Aucune collection CalDAV"),
+    ):
+        await client.connect()
+
+
+async def test_connect_raises_if_target_list_not_in_vtodo_collections(
+    client: ICloudRemindersClient,
+) -> None:
+    """Une liste VTODO existe mais pas avec le nom demandé → erreur explicite."""
+    other_list = _vtodo_cal("Autre liste")
+    principal = MagicMock()
+    principal.calendars.return_value = [other_list]
+    dav_client = MagicMock()
+    dav_client.principal.return_value = principal
+
+    with (
+        patch("bot.reminders_icloud.client.caldav.DAVClient", return_value=dav_client),
+        pytest.raises(ICloudRemindersError, match="introuvable"),
+    ):
+        await client.connect()
 
 
 async def test_connect_wraps_auth_error(client: ICloudRemindersClient) -> None:
@@ -108,8 +162,7 @@ async def test_connect_wraps_auth_error(client: ICloudRemindersClient) -> None:
 
 
 async def test_connect_is_idempotent(client: ICloudRemindersClient) -> None:
-    fake_list = MagicMock()
-    fake_list.name = "Copain"
+    fake_list = _vtodo_cal("Copain")
     principal = MagicMock()
     principal.calendars.return_value = [fake_list]
     dav_client = MagicMock()

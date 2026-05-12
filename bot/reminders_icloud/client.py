@@ -85,7 +85,40 @@ class ICloudRemindersClient:
         except Exception as exc:
             raise ICloudRemindersError(f"Connexion iCloud Rappels échouée : {exc}") from exc
 
-        match = _find_calendar(calendars, self._list_name)
+        # Filtrage par supported-calendar-component-set : iCloud expose dans
+        # `principal.calendars()` à la fois les calendriers VEVENT et les
+        # vraies listes Rappels VTODO. Pour ne pas tenter de pousser un VTODO
+        # dans un calendrier qui le refuse (412 Precondition Failed), on
+        # garde seulement les collections qui acceptent VTODO. La méthode
+        # `get_supported_components()` de caldav fait un PROPFIND CalDAV.
+        vtodo_capable: list[Any] = []
+        for cal in calendars:
+            cal_name = getattr(cal, "name", "?") or "?"
+            try:
+                components = cal.get_supported_components()
+            except Exception as exc:
+                log.warning(
+                    "reminders_components_check_failed",
+                    name=cal_name,
+                    error=str(exc),
+                )
+                continue
+            log.info(
+                "reminders_calendar_components",
+                name=cal_name,
+                supports=list(components),
+            )
+            if "VTODO" in components:
+                vtodo_capable.append(cal)
+
+        if not vtodo_capable:
+            raise ICloudRemindersError(
+                "Aucune collection CalDAV n'accepte les VTODO côté iCloud. "
+                "Crée une liste manuellement dans Rappels.app sur iPhone, "
+                "puis pointe `ICLOUD_REMINDERS_LIST_NAME` sur son nom."
+            )
+
+        match = _find_calendar(vtodo_capable, self._list_name)
         if match is not None:
             matched_name = getattr(match, "name", "?")
             if matched_name != self._list_name:
@@ -96,19 +129,11 @@ class ICloudRemindersClient:
                 )
             return match
 
-        # Liste absente — on la crée. iCloud accepte la création d'une
-        # liste de type VTODO via supported_calendar_component_set.
-        try:
-            created = principal.make_calendar(
-                name=self._list_name,
-                supported_calendar_component_set=["VTODO"],
-            )
-        except Exception as exc:
-            raise ICloudRemindersError(
-                f"Création de la liste '{self._list_name}' échouée : {exc}"
-            ) from exc
-        log.info("reminders_list_created", name=self._list_name)
-        return created
+        available = [getattr(c, "name", "?") for c in vtodo_capable]
+        raise ICloudRemindersError(
+            f"Liste Rappels '{self._list_name}' introuvable parmi les collections "
+            f"VTODO disponibles : {available}. Vérifie `ICLOUD_REMINDERS_LIST_NAME`."
+        )
 
     async def push_todo(
         self,
