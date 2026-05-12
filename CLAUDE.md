@@ -39,6 +39,16 @@ Tailscale tunnel. Partly self-hosted (local services on a Raspberry Pi 5
   décrivant l'utilisateur (identité, famille, travail, voiture, routines,
   préférences). Injecté tel quel dans le system prompt à chaque appel LLM,
   avant le contexte mémoire RAG.
+- **Voix Siri**: raccourci iOS "Dis à Copain" qui POST sur `/ask` avec un
+  header `X-Source: siri`. Le bot adapte alors son system prompt pour
+  produire des réponses TTS-friendly (1-2 phrases, pas de markdown ni
+  d'emoji). Voir `docs/ios-shortcuts.md`.
+- **Localisation iPhone**: les automations iOS POSTent sur
+  `POST /event/location` à chaque arrivée/départ d'une géofence (maison,
+  bureau, …). Les events sont persistés dans `location_events` et la
+  position courante est dérivée (logique "dernier event gagne"). Elle est
+  injectée dans le system prompt pour que le LLM sache où se trouve
+  l'utilisateur.
 
 Everything flows through the same pipeline: an LLM decides the intent via a
 `<meta>` JSON block, the code executes the side effects, then a text reply
@@ -63,9 +73,11 @@ FastAPI app (bot/api.py, served by uvicorn)
         │     ├── GET  /             → FileResponse(index.html) → Safari iOS (PWA dashboard)
         │     ├── GET  /config       → { api_key }  (pas d'auth, réseau Tailscale privé)
         │     ├── POST /ask           → pipeline.process_message(message) → { response, intent, refresh_cards }
+        │     │                          (header X-Source: siri active le voice_mode TTS)
         │     ├── POST /ask/image     → idem avec image (multimodal) → { response, intent, refresh_cards }
         │     ├── GET  /notifications → NotificationStore.get_unread() + mark_read()
-        │     └── GET  /dashboard     → build_dashboard(): météo + next évent + tâches du jour + count notifs + briefing
+        │     ├── GET  /dashboard     → build_dashboard(): météo + next évent + tâches du jour + count notifs + briefing
+        │     └── POST /event/location → LocationEventStore.record_event() → { recorded, current_place }
         │
         ├── Pipeline (bot/pipeline.py, transport-agnostic)
         │     └── process_message(text, images?) → str
@@ -160,12 +172,13 @@ FastAPI app (bot/api.py, served by uvicorn)
 All endpoints require the `X-API-Key` header matching `settings.api_key`.
 Missing or invalid → 403 with a warning logged (source IP included).
 
-| Method | Path             | Body                                                            | Response                                                                                                |
-| ------ | ---------------- | --------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
-| POST   | `/ask`           | `{ "message": str }`                                            | `{ "response": str, "intent": str, "refresh_cards": [str] }`                                            |
-| POST   | `/ask/image`     | `{ "message": str, "image_b64": str, "media_type": str }`       | `{ "response": str, "intent": str, "refresh_cards": [str] }`                                            |
-| GET    | `/notifications` | —                                                               | `{ "notifications": [ { "id": int, "text": str, "created_at": str } ] }`                                |
-| GET    | `/dashboard`     | —                                                               | `{ "weather": …, "next_event": …, "today_tasks": […], "unread_notifications": int, "briefing": … }`     |
+| Method | Path               | Body                                                              | Response                                                                                                |
+| ------ | ------------------ | ----------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| POST   | `/ask`             | `{ "message": str }` <br>(header `X-Source: siri` → mode vocal)   | `{ "response": str, "intent": str, "refresh_cards": [str] }`                                            |
+| POST   | `/ask/image`       | `{ "message": str, "image_b64": str, "media_type": str }`         | `{ "response": str, "intent": str, "refresh_cards": [str] }`                                            |
+| GET    | `/notifications`   | —                                                                 | `{ "notifications": [ { "id": int, "text": str, "created_at": str } ] }`                                |
+| GET    | `/dashboard`       | —                                                                 | `{ "weather": …, "next_event": …, "today_tasks": […], "unread_notifications": int, "briefing": … }`     |
+| POST   | `/event/location`  | `{ "event": "arrived"\|"left", "place": str, "lat"?, "lon"?, "at"? }` | `{ "recorded": bool, "current_place": str \| null }`                                                |
 
 Quick smoke test:
 
