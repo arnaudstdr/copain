@@ -1,9 +1,9 @@
-"""Briefing matinal : météo + tâches du jour + top 5 items RSS résumés."""
+"""Briefing matinal : météo + tâches + évènements + curation news IA."""
 
 from __future__ import annotations
 
 from collections.abc import Sequence
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 from zoneinfo import ZoneInfo
 
 from bot.briefing.weather import OpenMeteoClient, WeatherError, WeatherSummary
@@ -15,16 +15,13 @@ if TYPE_CHECKING:
     from bot.calendar.client import ICloudCalendarClient
     from bot.calendar.models import CalendarEvent
     from bot.config import Settings
-    from bot.llm.client import LLMClient
+    from bot.news.client import NewsCurator
     from bot.notifications.store import NotificationStore
-    from bot.rss.fetcher import FeedItem, RssFetcher
-    from bot.rss.manager import FeedManager
+    from bot.profile import UserProfile
     from bot.tasks.manager import TaskManager
     from bot.tasks.models import Task
 
 log = get_logger(__name__)
-
-TOP_RSS_ITEMS = 5
 
 
 class BriefingService:
@@ -39,18 +36,16 @@ class BriefingService:
         settings: Settings,
         weather: OpenMeteoClient,
         tasks: TaskManager,
-        rss: FeedManager,
-        rss_fetcher: RssFetcher,
-        llm: LLMClient,
+        news: NewsCurator,
+        profile: UserProfile,
         calendar: ICloudCalendarClient,
         notifications: NotificationStore | None = None,
     ) -> None:
         self._settings = settings
         self._weather = weather
         self._tasks = tasks
-        self._rss = rss
-        self._rss_fetcher = rss_fetcher
-        self._llm = llm
+        self._news = news
+        self._profile = profile
         self._calendar = calendar
         self._notifications = notifications
 
@@ -79,9 +74,9 @@ class BriefingService:
         today_events = await self._today_events()
         parts.append("\n" + _format_events(today_events))
 
-        rss_block = await self._rss_block()
-        if rss_block:
-            parts.append("\n" + rss_block)
+        news_block = await self._news_block()
+        if news_block:
+            parts.append("\n" + news_block)
 
         return "\n".join(parts)
 
@@ -106,45 +101,62 @@ class BriefingService:
         pending = await self._tasks.list_pending()
         return today_tasks(pending, ZoneInfo(self._settings.timezone))
 
-    async def _rss_block(self) -> str:
-        feeds = await self._rss.list(enabled_only=True)
-        if not feeds:
-            return ""
-        items = await self._rss_fetcher.fetch_many(feeds, per_feed=5)
-        top = items[:TOP_RSS_ITEMS]
-        if not top:
-            return ""
-        try:
-            summary = await self._summarize_items(top)
-        except LLMError as exc:
-            # Fallback silencieux : on garde le briefing utile même si le LLM
-            # plante (timeout, prompt too long, API cloud down, etc.). Mieux
-            # vaut une liste de titres bruts que pas de briefing du tout.
-            log.warning("briefing_rss_summary_failed", error=str(exc))
-            return (
-                "📰 *Actus du jour* (titres bruts, résumé LLM indisponible)\n"
-                + _format_raw_items(top)
-            )
-        return "📰 *Actus du jour*\n" + summary
+    async def _news_block(self) -> str:
+        """Lit `news_topics.daily_briefing` du profil + curation via NewsCurator.
 
-    async def _summarize_items(self, items: Sequence[FeedItem]) -> str:
-        bullets = "\n".join(
-            f"- [{it.feed_name}] {it.title} ({it.url})\n  {it.summary[:300]}" for it in items
-        )
-        system = (
-            "Tu es l'assistant d'Arnaud. Tu reçois une liste d'articles RSS récents. "
-            "Pour chacun, écris un résumé factuel de 1 à 2 phrases en français en citant "
-            "le flux source entre crochets et l'URL entre parenthèses. Sois concis. "
-            "N'inclus PAS de bloc <meta>."
-        )
-        user = f"Articles :\n{bullets}"
-        return await self._llm.chat(
-            messages=[
-                {"role": "system", "content": system},
-                {"role": "user", "content": user},
-            ],
-            cacheable=True,
-        )
+        Structure attendue dans `data/profile.yaml` :
+
+            news_topics:
+              daily_briefing:
+                - "LLM agents"
+                - "OpenAI OR Anthropic"
+              filters:
+                domains_blocklist: [reddit.com, twitter.com]
+
+        Si la section est absente ou vide → bloc news skip silencieusement.
+        """
+        topics, blocklist = _extract_news_config(self._profile.data)
+        if not topics:
+            log.info("briefing_news_skipped", reason="no_topics_in_profile")
+            return ""
+
+        try:
+            summary = await self._news.fetch_top_news(topics=topics, domains_blocklist=blocklist)
+        except LLMError as exc:
+            log.warning("briefing_news_summary_failed", error=str(exc))
+            return ""
+        except Exception as exc:
+            log.warning("briefing_news_failed", error=str(exc))
+            return ""
+
+        if not summary.strip():
+            return ""
+        return "🤖 *Actus IA des dernières 24h*\n" + summary
+
+
+def _extract_news_config(
+    profile_data: dict[str, Any],
+) -> tuple[list[str], list[str]]:
+    """Lit `news_topics.daily_briefing` et `news_topics.filters.domains_blocklist`.
+
+    Retourne `([], [])` si la section est mal formée — on préfère un
+    briefing sans news plutôt qu'un crash au démarrage 8h.
+    """
+    section = profile_data.get("news_topics") or {}
+    if not isinstance(section, dict):
+        return [], []
+    raw_topics = section.get("daily_briefing") or []
+    if not isinstance(raw_topics, list):
+        return [], []
+    topics = [str(t).strip() for t in raw_topics if str(t).strip()]
+    filters = section.get("filters") or {}
+    if not isinstance(filters, dict):
+        return topics, []
+    raw_block = filters.get("domains_blocklist") or []
+    if not isinstance(raw_block, list):
+        return topics, []
+    blocklist = [str(d).strip() for d in raw_block if str(d).strip()]
+    return topics, blocklist
 
 
 def _format_weather(w: WeatherSummary) -> str:
@@ -166,10 +178,6 @@ def _format_tasks(tasks: Sequence[Task]) -> str:
             suffix = f" — {t.due_at.strftime('%H:%M')}"
         lines.append(f"- {t.content}{suffix}")
     return "📋 *Tâches du jour*\n" + "\n".join(lines)
-
-
-def _format_raw_items(items: Sequence[FeedItem]) -> str:
-    return "\n".join(f"- [{it.feed_name}] {it.title} ({it.url})" for it in items)
 
 
 def _format_events(events: Sequence[CalendarEvent]) -> str:

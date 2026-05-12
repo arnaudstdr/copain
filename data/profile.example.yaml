@@ -43,3 +43,25 @@ preferences:
   tone: tutoiement
   response_length: court    # court | normal | détaillé
   emoji: rare               # rare | normal | sans
+
+# Curation de news ciblées pour le briefing matin (8h).
+# Chaque ligne sous `daily_briefing` est une requête SearXNG distincte,
+# filtrée sur les dernières 24h et la catégorie "news". Les résultats
+# sont agrégés, dédoublonnés, et le LLM sélectionne les 5 plus impactants.
+# Tu peux combiner plusieurs mots-clés avec OR pour élargir une requête.
+news_topics:
+  daily_briefing:
+    - "LLM agents"
+    - "OpenAI OR Anthropic OR Claude"
+    - "Mistral AI"
+    - "IA Europe régulation"
+    - "GenAI framework"
+  filters:
+    # Domaines à ignorer (forums, réseaux sociaux, sites de spam SEO).
+    # Le filtrage s'applique aux résultats SearXNG avant la curation LLM.
+    domains_blocklist:
+      - reddit.com
+      - twitter.com
+      - x.com
+      - facebook.com
+      - linkedin.com

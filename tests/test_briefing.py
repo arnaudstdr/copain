@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -11,8 +12,7 @@ import pytest
 from bot.briefing.service import BriefingService
 from bot.briefing.weather import WeatherError, WeatherSummary
 from bot.calendar.models import CalendarEvent
-from bot.llm.client import LLMError
-from bot.rss.fetcher import FeedItem
+from bot.profile import UserProfile
 from bot.tasks.manager import TaskManager
 
 
@@ -43,35 +43,34 @@ def mock_weather() -> MagicMock:
     return w
 
 
-@pytest.fixture
-def mock_rss() -> MagicMock:
-    m = MagicMock()
-    m.list = AsyncMock(return_value=[MagicMock(name="Feed1")])
-    return m
+def _profile_with_topics(topics: list[str], blocklist: list[str] | None = None) -> UserProfile:
+    data: dict[str, Any] = {
+        "news_topics": {
+            "daily_briefing": topics,
+            "filters": {"domains_blocklist": blocklist or []},
+        }
+    }
+    return UserProfile(raw_yaml="", is_loaded=True, data=data)
 
 
 @pytest.fixture
-def mock_rss_fetcher() -> MagicMock:
-    f = MagicMock()
-    f.fetch_many = AsyncMock(
-        return_value=[
-            FeedItem(
-                feed_name="The Verge",
-                title="Un gros titre",
-                url="https://example.com/1",
-                summary="Contenu intéressant sur la tech.",
-                published=datetime.now(UTC),
-            )
-        ]
+def profile_with_news_topics() -> UserProfile:
+    return _profile_with_topics(["LLM agents", "OpenAI"])
+
+
+@pytest.fixture
+def profile_without_news_topics() -> UserProfile:
+    return UserProfile(raw_yaml="", is_loaded=True, data={})
+
+
+@pytest.fixture
+def mock_news() -> MagicMock:
+    """NewsCurator qui retourne un résumé non-vide par défaut."""
+    n = MagicMock()
+    n.fetch_top_news = AsyncMock(
+        return_value="- **GPT-X annoncé** (OpenAI) — nouveau modèle multimodal.\n  https://example.com/1"
     )
-    return f
-
-
-@pytest.fixture
-def mock_llm() -> MagicMock:
-    llm = MagicMock()
-    llm.chat = AsyncMock(return_value="- [The Verge] Résumé (https://example.com/1)")
-    return llm
+    return n
 
 
 @pytest.fixture
@@ -134,9 +133,8 @@ async def real_tasks(tmp_data_dir: Path) -> TaskManager:
 async def test_build_contains_four_sections(
     fake_settings: MagicMock,
     mock_weather: MagicMock,
-    mock_rss: MagicMock,
-    mock_rss_fetcher: MagicMock,
-    mock_llm: MagicMock,
+    mock_news: MagicMock,
+    profile_with_news_topics: UserProfile,
     mock_calendar_empty: MagicMock,
     real_tasks: TaskManager,
 ) -> None:
@@ -144,24 +142,23 @@ async def test_build_contains_four_sections(
         settings=fake_settings,
         weather=mock_weather,
         tasks=real_tasks,
-        rss=mock_rss,
-        rss_fetcher=mock_rss_fetcher,
-        llm=mock_llm,
+        news=mock_news,
+        profile=profile_with_news_topics,
         calendar=mock_calendar_empty,
     )
     text = await service.build()
     assert "Sélestat" in text
     assert "Tâches du jour" in text
     assert "Évènements du jour" in text
-    assert "Actus du jour" in text
+    assert "Actus IA" in text
+    assert "GPT-X" in text
 
 
 async def test_build_with_today_task(
     fake_settings: MagicMock,
     mock_weather: MagicMock,
-    mock_rss: MagicMock,
-    mock_rss_fetcher: MagicMock,
-    mock_llm: MagicMock,
+    mock_news: MagicMock,
+    profile_with_news_topics: UserProfile,
     mock_calendar_empty: MagicMock,
     real_tasks: TaskManager,
 ) -> None:
@@ -172,9 +169,8 @@ async def test_build_with_today_task(
         settings=fake_settings,
         weather=mock_weather,
         tasks=real_tasks,
-        rss=mock_rss,
-        rss_fetcher=mock_rss_fetcher,
-        llm=mock_llm,
+        news=mock_news,
+        profile=profile_with_news_topics,
         calendar=mock_calendar_empty,
     )
     text = await service.build()
@@ -184,9 +180,8 @@ async def test_build_with_today_task(
 async def test_build_with_events(
     fake_settings: MagicMock,
     mock_weather: MagicMock,
-    mock_rss: MagicMock,
-    mock_rss_fetcher: MagicMock,
-    mock_llm: MagicMock,
+    mock_news: MagicMock,
+    profile_with_news_topics: UserProfile,
     mock_calendar_with_events: MagicMock,
     real_tasks: TaskManager,
 ) -> None:
@@ -194,9 +189,8 @@ async def test_build_with_events(
         settings=fake_settings,
         weather=mock_weather,
         tasks=real_tasks,
-        rss=mock_rss,
-        rss_fetcher=mock_rss_fetcher,
-        llm=mock_llm,
+        news=mock_news,
+        profile=profile_with_news_topics,
         calendar=mock_calendar_with_events,
     )
     text = await service.build()
@@ -208,9 +202,8 @@ async def test_build_with_events(
 async def test_build_calendar_disconnected_shows_empty_section(
     fake_settings: MagicMock,
     mock_weather: MagicMock,
-    mock_rss: MagicMock,
-    mock_rss_fetcher: MagicMock,
-    mock_llm: MagicMock,
+    mock_news: MagicMock,
+    profile_with_news_topics: UserProfile,
     mock_calendar_disconnected: MagicMock,
     real_tasks: TaskManager,
 ) -> None:
@@ -218,9 +211,8 @@ async def test_build_calendar_disconnected_shows_empty_section(
         settings=fake_settings,
         weather=mock_weather,
         tasks=real_tasks,
-        rss=mock_rss,
-        rss_fetcher=mock_rss_fetcher,
-        llm=mock_llm,
+        news=mock_news,
+        profile=profile_with_news_topics,
         calendar=mock_calendar_disconnected,
     )
     text = await service.build()
@@ -230,9 +222,8 @@ async def test_build_calendar_disconnected_shows_empty_section(
 
 async def test_build_weather_error_is_graceful(
     fake_settings: MagicMock,
-    mock_rss: MagicMock,
-    mock_rss_fetcher: MagicMock,
-    mock_llm: MagicMock,
+    mock_news: MagicMock,
+    profile_with_news_topics: UserProfile,
     mock_calendar_empty: MagicMock,
     real_tasks: TaskManager,
 ) -> None:
@@ -243,9 +234,8 @@ async def test_build_weather_error_is_graceful(
         settings=fake_settings,
         weather=weather,
         tasks=real_tasks,
-        rss=mock_rss,
-        rss_fetcher=mock_rss_fetcher,
-        llm=mock_llm,
+        news=mock_news,
+        profile=profile_with_news_topics,
         calendar=mock_calendar_empty,
     )
     text = await service.build()
@@ -253,55 +243,73 @@ async def test_build_weather_error_is_graceful(
     assert "Tâches du jour" in text
 
 
-async def test_build_falls_back_to_raw_titles_when_llm_fails(
+async def test_build_news_skipped_when_no_topics(
     fake_settings: MagicMock,
     mock_weather: MagicMock,
-    mock_rss: MagicMock,
-    mock_rss_fetcher: MagicMock,
+    mock_news: MagicMock,
+    profile_without_news_topics: UserProfile,
     mock_calendar_empty: MagicMock,
     real_tasks: TaskManager,
 ) -> None:
-    """Si le résumé LLM plante, le briefing doit quand même partir avec les titres bruts."""
-    llm = MagicMock()
-    llm.chat = AsyncMock(side_effect=LLMError("prompt too long"))
+    """Sans `news_topics` dans le profil → pas de section news, pas d'appel NewsCurator."""
+    service = BriefingService(
+        settings=fake_settings,
+        weather=mock_weather,
+        tasks=real_tasks,
+        news=mock_news,
+        profile=profile_without_news_topics,
+        calendar=mock_calendar_empty,
+    )
+    text = await service.build()
+    assert "Actus IA" not in text
+    mock_news.fetch_top_news.assert_not_called()
+
+
+async def test_build_news_failure_is_graceful(
+    fake_settings: MagicMock,
+    mock_weather: MagicMock,
+    profile_with_news_topics: UserProfile,
+    mock_calendar_empty: MagicMock,
+    real_tasks: TaskManager,
+) -> None:
+    """Si NewsCurator plante, le briefing s'envoie quand même sans la section news."""
+    news = MagicMock()
+    news.fetch_top_news = AsyncMock(side_effect=RuntimeError("SearXNG down"))
 
     service = BriefingService(
         settings=fake_settings,
         weather=mock_weather,
         tasks=real_tasks,
-        rss=mock_rss,
-        rss_fetcher=mock_rss_fetcher,
-        llm=llm,
+        news=news,
+        profile=profile_with_news_topics,
         calendar=mock_calendar_empty,
     )
     text = await service.build()
     assert "Sélestat" in text
-    assert "titres bruts" in text
-    assert "Un gros titre" in text
-    assert "https://example.com/1" in text
+    assert "Actus IA" not in text
 
 
-async def test_build_no_feeds_skips_rss(
+async def test_build_passes_topics_and_blocklist_to_curator(
     fake_settings: MagicMock,
     mock_weather: MagicMock,
-    mock_llm: MagicMock,
+    mock_news: MagicMock,
     mock_calendar_empty: MagicMock,
     real_tasks: TaskManager,
 ) -> None:
-    rss = MagicMock()
-    rss.list = AsyncMock(return_value=[])
-    fetcher = MagicMock()
-    fetcher.fetch_many = AsyncMock(return_value=[])
-
+    """La config du profil doit arriver intacte côté NewsCurator."""
+    profile = _profile_with_topics(
+        ["LLM agents", "OpenAI"], blocklist=["reddit.com", "twitter.com"]
+    )
     service = BriefingService(
         settings=fake_settings,
         weather=mock_weather,
         tasks=real_tasks,
-        rss=rss,
-        rss_fetcher=fetcher,
-        llm=mock_llm,
+        news=mock_news,
+        profile=profile,
         calendar=mock_calendar_empty,
     )
-    text = await service.build()
-    assert "Actus du jour" not in text
-    mock_llm.chat.assert_not_called()
+    await service.build()
+    mock_news.fetch_top_news.assert_awaited_once()
+    kwargs = mock_news.fetch_top_news.await_args.kwargs
+    assert kwargs["topics"] == ["LLM agents", "OpenAI"]
+    assert kwargs["domains_blocklist"] == ["reddit.com", "twitter.com"]

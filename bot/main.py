@@ -31,6 +31,7 @@ from bot.locations.store import LocationEventStore
 from bot.logging_conf import configure_logging, get_logger
 from bot.memory.embeddings import Embedder
 from bot.memory.manager import MemoryManager
+from bot.news.client import NewsCurator
 from bot.notifications.pushover import PushoverClient
 from bot.notifications.store import NotificationStore
 from bot.pipeline import MAX_HISTORY, BotDeps
@@ -117,18 +118,19 @@ async def _build_state(
         cache_max_size=settings.cache_searxng_max_size,
     )
 
+    profile = load_profile(settings.profile_path)
+    news = NewsCurator(searxng=search, llm=llm)
+
     briefing = BriefingService(
         settings=settings,
         weather=weather,
         tasks=tasks,
-        rss=rss,
-        rss_fetcher=rss_fetcher,
-        llm=llm,
+        news=news,
+        profile=profile,
         calendar=calendar,
         notifications=notifications,
     )
 
-    profile = load_profile(settings.profile_path)
     location_events = LocationEventStore(engine)
 
     deps = BotDeps(

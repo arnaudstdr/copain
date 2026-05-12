@@ -14,8 +14,9 @@ niveau (pour attraper les erreurs de syntaxe avant le premier appel LLM).
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
 
 import yaml
 
@@ -32,6 +33,9 @@ class ProfileError(RuntimeError):
 class UserProfile:
     raw_yaml: str
     is_loaded: bool
+    # Le YAML parsé en dict, pour accéder à des champs structurés sans
+    # re-parser à la volée. Reste vide quand `is_loaded` est False.
+    data: dict[str, Any] = field(default_factory=dict)
 
 
 def load_profile(path: Path) -> UserProfile:
@@ -69,4 +73,4 @@ def load_profile(path: Path) -> UserProfile:
         )
 
     log.info("profile_loaded", path=str(path), top_keys=sorted(parsed.keys()))
-    return UserProfile(raw_yaml=text.strip(), is_loaded=True)
+    return UserProfile(raw_yaml=text.strip(), is_loaded=True, data=parsed)
