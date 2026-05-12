@@ -470,6 +470,75 @@ async def test_location_event_triggers_proactivity(client: AsyncClient, state: A
     state.deps.proactivity.on_location_event.assert_awaited_once_with("left", "work")
 
 
+# --- /tasks (list / complete / delete) -------------------------------------
+
+
+async def test_tasks_list_requires_api_key(client: AsyncClient) -> None:
+    response = await client.get("/tasks")
+    assert response.status_code == 403
+
+
+async def test_tasks_list_returns_pending_tasks(client: AsyncClient, state: AppState) -> None:
+    from datetime import UTC, datetime
+
+    fake_t1 = MagicMock()
+    fake_t1.id = 1
+    fake_t1.content = "acheter du pain"
+    fake_t1.due_at = None
+    fake_t2 = MagicMock()
+    fake_t2.id = 2
+    fake_t2.content = "appeler dentiste"
+    fake_t2.due_at = datetime(2026, 5, 13, 14, 0, tzinfo=UTC)
+
+    state.deps.tasks.list_pending = AsyncMock(return_value=[fake_t2, fake_t1])
+
+    response = await client.get("/tasks", headers={"X-API-Key": API_KEY})
+    assert response.status_code == 200
+    body = response.json()
+    assert len(body["tasks"]) == 2
+    assert body["tasks"][0]["id"] == 2
+    assert body["tasks"][0]["content"] == "appeler dentiste"
+    assert body["tasks"][0]["due_at"] is not None
+    assert body["tasks"][1]["due_at"] is None
+
+
+async def test_complete_task_marks_as_done(client: AsyncClient, state: AppState) -> None:
+    state.deps.tasks.complete = AsyncMock(return_value=True)
+    response = await client.post("/tasks/42/complete", headers={"X-API-Key": API_KEY})
+    assert response.status_code == 200
+    assert response.json() == {"ok": True}
+    state.deps.tasks.complete.assert_awaited_once_with(42)
+
+
+async def test_complete_unknown_task_returns_404(client: AsyncClient, state: AppState) -> None:
+    state.deps.tasks.complete = AsyncMock(return_value=False)
+    response = await client.post("/tasks/999/complete", headers={"X-API-Key": API_KEY})
+    assert response.status_code == 404
+
+
+async def test_delete_task_removes_it(client: AsyncClient, state: AppState) -> None:
+    state.deps.tasks.delete = AsyncMock(return_value=True)
+    response = await client.delete("/tasks/42", headers={"X-API-Key": API_KEY})
+    assert response.status_code == 200
+    state.deps.tasks.delete.assert_awaited_once_with(42)
+
+
+async def test_delete_unknown_task_returns_404(client: AsyncClient, state: AppState) -> None:
+    state.deps.tasks.delete = AsyncMock(return_value=False)
+    response = await client.delete("/tasks/999", headers={"X-API-Key": API_KEY})
+    assert response.status_code == 404
+
+
+async def test_complete_task_requires_api_key(client: AsyncClient) -> None:
+    response = await client.post("/tasks/1/complete")
+    assert response.status_code == 403
+
+
+async def test_delete_task_requires_api_key(client: AsyncClient) -> None:
+    response = await client.delete("/tasks/1")
+    assert response.status_code == 403
+
+
 async def test_dashboard_populates_weather_when_available(
     client: AsyncClient, state: AppState
 ) -> None:

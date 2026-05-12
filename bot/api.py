@@ -138,6 +138,17 @@ class LocationEventResponse(BaseModel):
     current_place: str | None
 
 
+# --- Tasks schemas ---------------------------------------------------------
+
+
+class TasksListResponse(BaseModel):
+    tasks: list[TaskCard]
+
+
+class TaskMutationResponse(BaseModel):
+    ok: bool
+
+
 # Mapping meta.intent → cards à rafraîchir côté front. Les intents purement
 # informatifs (answer, search, weather, fuel, memory, feed) n'altèrent aucune
 # card du dashboard ; l'UI affiche juste la réponse texte (bulle éphémère).
@@ -442,6 +453,63 @@ def create_app(state: AppState) -> FastAPI:
             recorded=True,
             current_place=current.place if current else None,
         )
+
+    @app.get(
+        "/tasks",
+        response_model=TasksListResponse,
+        dependencies=[Depends(verify_api_key)],
+    )
+    async def list_tasks(deps: BotDeps = Depends(get_deps)) -> TasksListResponse:
+        """Liste toutes les tâches en cours (non terminées), triées par échéance.
+
+        Utilisé par la PWA pour afficher l'overlay des tâches (cochage et
+        suppression). Les tâches sans `due_at` sont placées à la fin
+        (cf. l'order_by de `TaskManager.list_pending`).
+        """
+        pending = await deps.tasks.list_pending()
+        items = [
+            TaskCard(
+                id=t.id,
+                content=t.content,
+                due_at=t.due_at.isoformat() if t.due_at is not None else None,
+            )
+            for t in pending
+        ]
+        return TasksListResponse(tasks=items)
+
+    @app.post(
+        "/tasks/{task_id}/complete",
+        response_model=TaskMutationResponse,
+        dependencies=[Depends(verify_api_key)],
+    )
+    async def complete_task(
+        task_id: int, deps: BotDeps = Depends(get_deps)
+    ) -> TaskMutationResponse:
+        """Marque une tâche comme terminée. 404 si introuvable ou déjà terminée."""
+        ok = await deps.tasks.complete(task_id)
+        if not ok:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Task not found or already completed",
+            )
+        log.info("task_completed", task_id=task_id)
+        return TaskMutationResponse(ok=True)
+
+    @app.delete(
+        "/tasks/{task_id}",
+        response_model=TaskMutationResponse,
+        dependencies=[Depends(verify_api_key)],
+    )
+    async def delete_task(task_id: int, deps: BotDeps = Depends(get_deps)) -> TaskMutationResponse:
+        """Supprime une tâche. 404 si introuvable."""
+        ok = await deps.tasks.delete(task_id)
+        if not ok:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Task not found",
+            )
+        log.info("task_deleted", task_id=task_id)
+        return TaskMutationResponse(ok=True)
 
     return app
 
