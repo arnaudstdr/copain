@@ -125,7 +125,7 @@
     .panel-empty { padding: 28px 20px; color: var(--text3); font-size: 13px; text-align: center; }
 
     /* ── Tasks overlay ── */
-    .task-row { position: relative; background: var(--bg3); border: 1px solid var(--border2); border-radius: 12px; overflow: hidden; touch-action: pan-y; }
+    .task-row { position: relative; background: var(--bg3); border: 1px solid var(--border2); border-radius: 12px; overflow: hidden; touch-action: pan-y; flex-shrink: 0; }
     .task-row-inner { display: flex; align-items: center; gap: 11px; padding: 11px 13px; background: var(--bg3); position: relative; z-index: 2; transition: transform 0.2s ease; will-change: transform; }
     .task-row.swiped .task-row-inner { transform: translateX(-84px); }
     .task-check { width: 22px; height: 22px; border-radius: 50%; border: 2px solid var(--text3); flex-shrink: 0; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: background 0.15s, border-color 0.15s, transform 0.1s; }
