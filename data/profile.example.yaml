@@ -9,28 +9,35 @@
 # - le fichier doit parser en YAML valide.
 #
 # Pour activer : copie ce fichier en `data/profile.yaml` et édite-le.
+#
+# ⚠️ Piège YAML : n'écris JAMAIS une liste vide `[]` puis des items `-` en
+# dessous (mélange flow-style + block-style invalide). Pour ajouter des
+# items à une section, supprime simplement le `[]` (ou laisse les exemples
+# commentés ci-dessous comme modèle).
 
 identity:
   name: Arnaud
   city: Sélestat
   language: fr
 
-# Personnes proches souvent mentionnées
-family: []
-  # - { name: ..., relation: épouse, birthday: 1990-01-01 }
+# Personnes proches souvent mentionnées. Décommente et adapte.
+family:
+  # - { name: Anne, relation: épouse, birthday: 1990-01-01 }
+  # - { name: Léo, relation: fils, birthday: 2018-06-12 }
 
 work:
-  role:
+  role: Développeur Python
   hours: 8h30-17h30 en semaine
-  location:
+  location: Obernai
 
-vehicles: []
-  # - { brand: ..., model: ..., fuel_type: gazole }
+# Décommente et adapte.
+vehicles:
+  # - { brand: Renault, model: Clio, fuel_type: sp95 }
 
-# Habitudes que l'assistant peut anticiper
-routines: []
-  # - Sport mardi/jeudi 19h
-  # - Course le samedi matin
+# Habitudes que l'assistant peut anticiper (texte libre, une routine par ligne).
+routines:
+  # - Cyclisme sur route le mercredi
+  # - Course à pied le samedi matin
 
 preferences:
   tone: tutoiement
