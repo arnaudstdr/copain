@@ -44,8 +44,32 @@ class SearxngClient:
             else None
         )
 
-    async def search(self, query: str, limit: int = 5) -> list[SearchResult]:
-        cache_key = hash_key("searxng", query, limit) if self._cache else None
+    async def search(
+        self,
+        query: str,
+        limit: int = 5,
+        *,
+        time_range: str | None = None,
+        categories: str | None = None,
+        language: str = "fr",
+        bypass_cache: bool = False,
+    ) -> list[SearchResult]:
+        """Interroge SearXNG. Paramètres avancés optionnels.
+
+        - `time_range` : `day | week | month | year` (vide = tout) pour
+          filtrer la fraîcheur. Indispensable pour la curation news.
+        - `categories` : `news | general | it | science | …` pour cibler
+          un type de source. `news` privilégie les sites d'actualités.
+        - `language` : `fr | en | all`. `all` utile pour les actus IA
+          anglo-saxonnes.
+        - `bypass_cache` : ignore le cache TTL (utile pour le briefing
+          matin qui doit voir du frais à chaque réveil).
+        """
+        cache_key = (
+            hash_key("searxng", query, limit, time_range, categories, language)
+            if self._cache and not bypass_cache
+            else None
+        )
         if self._cache is not None and cache_key is not None:
             cached = await self._cache.get(cache_key)
             if cached is not None:
@@ -54,7 +78,11 @@ class SearxngClient:
                 return [dict(item) for item in cached]  # type: ignore[misc]
 
         url = f"{self._base_url}/search"
-        params = {"q": query, "format": "json", "language": "fr"}
+        params: dict[str, str] = {"q": query, "format": "json", "language": language}
+        if time_range:
+            params["time_range"] = time_range
+        if categories:
+            params["categories"] = categories
         payload = await get_json_with_retry(
             self._client,
             url,
