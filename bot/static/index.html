@@ -101,8 +101,8 @@
     .send-btn:disabled { opacity: 0.4; cursor: default; }
 
     /* ── Preview photo ── */
-    #preview-bar { padding: 8px 14px; border-top: 1px solid var(--border); background: var(--bg2); display: flex; align-items: center; gap: 12px; flex-shrink: 0; }
-    #preview-bar.hidden { display: none; }
+    #preview-bar, #chat-preview-bar { padding: 8px 14px; border-top: 1px solid var(--border); background: var(--bg2); display: flex; align-items: center; gap: 12px; flex-shrink: 0; }
+    #preview-bar.hidden, #chat-preview-bar.hidden { display: none; }
     .preview-wrap { position: relative; width: 44px; height: 44px; flex-shrink: 0; }
     .preview-img { width: 44px; height: 44px; object-fit: cover; border-radius: 8px; }
     .remove-btn { position: absolute; top: -5px; right: -5px; width: 16px; height: 16px; border-radius: 50%; background: var(--red); border: none; color: #fff; font-size: 8px; cursor: pointer; display: flex; align-items: center; justify-content: center; }
@@ -351,7 +351,23 @@
       </div>
     </header>
     <div class="chat-feed" id="chat-feed"></div>
+
+    <!-- Chat photo preview -->
+    <div id="chat-preview-bar" class="hidden">
+      <div class="preview-wrap">
+        <img class="preview-img" id="chat-preview-img" src="" alt="" />
+        <button class="remove-btn" onclick="removeChatAttachment()">✕</button>
+      </div>
+      <span class="preview-label">Photo jointe</span>
+    </div>
+
     <div class="bar" id="chat-bar">
+      <input type="file" id="chat-file-input" accept="image/*" style="display:none" onchange="handleChatFileChange(event)" />
+      <button class="icon-btn" onclick="document.getElementById('chat-file-input').click()" title="Joindre une photo">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48"/>
+        </svg>
+      </button>
       <button class="icon-btn" id="chat-mic-btn" onclick="toggleChatMic()" title="Dicter">
         <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <path d="M12 1a3 3 0 00-3 3v8a3 3 0 006 0V4a3 3 0 00-3-3z"/>
@@ -1219,25 +1235,69 @@
       feed.appendChild(row);
       return;
     }
-    chatHistory.forEach(m => feed.appendChild(makeChatRow(m.role, m.text)));
+    chatHistory.forEach(m => feed.appendChild(makeChatRow(m.role, m.text, m.imgSrc)));
     feed.scrollTop = feed.scrollHeight;
   }
-  function makeChatRow(role, text) {
+  function makeChatRow(role, text, imgSrc) {
     const row = el("div", `row ${role === "user" ? "user" : "bot"}`);
     if (role !== "user") row.appendChild(el("div", "avatar-sm", "🤝"));
     const bubble = el("div", `bubble ${role === "user" ? "user" : "bot"}`);
-    bubble.appendChild(el("span", "bubble-text", text));
+    if (imgSrc) {
+      const img = document.createElement("img");
+      img.src = imgSrc;
+      img.className = "bubble-img";
+      img.alt = "photo";
+      bubble.appendChild(img);
+    }
+    if (text) {
+      bubble.appendChild(el("span", "bubble-text", text));
+    }
     row.appendChild(bubble);
     return row;
   }
+
+  // Pièce jointe spécifique au mode chat (séparée de `attachment` utilisée
+  // par la barre principale, pour que les deux vues ne s'écrasent pas).
+  let chatAttachment = null;
+
+  function handleChatFileChange(e) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = reader.result;
+      chatAttachment = { b64: result.split(",")[1], mediaType: file.type, preview: result };
+      document.getElementById("chat-preview-img").src = result;
+      document.getElementById("chat-preview-bar").classList.remove("hidden");
+      document.getElementById("chat-input").placeholder = "Ajoute un mot…";
+      updateChatSendBtn();
+    };
+    reader.readAsDataURL(file);
+    e.target.value = "";
+  }
+
+  function removeChatAttachment() {
+    chatAttachment = null;
+    document.getElementById("chat-preview-bar").classList.add("hidden");
+    document.getElementById("chat-preview-img").src = "";
+    document.getElementById("chat-input").placeholder = "Écris…";
+    updateChatSendBtn();
+  }
+
   async function chatSend() {
     const input = document.getElementById("chat-input");
     const text = input.value.trim();
-    if (!text || loading) return;
+    if ((!text && !chatAttachment) || loading) return;
     setLoading(true, "chat");
-    chatHistory.push({ role: "user", text });
+
+    // Snapshot la pièce jointe avant de reset, pour pouvoir l'afficher
+    // dans la bulle utilisateur et la transmettre à callImage.
+    const att = chatAttachment;
+    chatHistory.push({ role: "user", text, imgSrc: att?.preview ?? null });
+    removeChatAttachment();
     renderChatFeed();
     input.value = ""; autoResize(input); updateChatSendBtn();
+
     // Indicateur "en train d'écrire"
     const feed = document.getElementById("chat-feed");
     const typing = el("div", "row bot typing-row");
@@ -1248,7 +1308,7 @@
     typing.appendChild(tb); feed.appendChild(typing); feed.scrollTop = feed.scrollHeight;
 
     try {
-      const body = await callText(text);
+      const body = att ? await callImage(text, att) : await callText(text);
       chatHistory.push({ role: "assistant", text: body.response });
       // On rafraîchit le dashboard en arrière-plan si l'action a modifié quelque chose.
       if (body.refresh_cards && body.refresh_cards.length > 0) loadDashboard();
@@ -1286,7 +1346,7 @@
     return (document.getElementById("msg-input").value.trim() || !!attachment) && !loading;
   }
   function canChatSend() {
-    return document.getElementById("chat-input").value.trim() && !loading;
+    return (document.getElementById("chat-input").value.trim() || !!chatAttachment) && !loading;
   }
   function updateSendBtn() { document.getElementById("send-btn").disabled = !canSend(); }
   function updateChatSendBtn() { document.getElementById("chat-send-btn").disabled = !canChatSend(); }
