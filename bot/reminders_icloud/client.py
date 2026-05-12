@@ -228,10 +228,16 @@ class ICloudRemindersClient:
 
 
 def _build_vtodo(uid: str, title: str, due_at: datetime | None) -> str:
-    """Construit un VTODO iCalendar minimal (sans VALARM volontaire).
+    """Construit un VTODO iCalendar conforme aux exigences iCloud Reminders.
+
+    iCloud rejette avec `412 Precondition Failed` les VTODO trop minimalistes :
+    il exige au moins `CREATED`, `LAST-MODIFIED` et `DTSTAMP` (en plus de
+    `UID` et `SUMMARY`). On ajoute aussi `SEQUENCE:0` car certaines versions
+    de l'app Rappels iOS s'en servent pour la résolution de conflits de sync.
 
     Format RFC 5545. Pas de DTSTART (on parle de tâche, pas d'évent).
-    DUE en UTC (avec suffixe Z). STATUS NEEDS-ACTION par défaut.
+    DUE en UTC (avec suffixe Z). STATUS NEEDS-ACTION par défaut. Pas de
+    VALARM volontaire (la notif vient d'APScheduler/Pushover, pas d'iOS).
     """
 
     def _ical_utc(dt: datetime) -> str:
@@ -243,6 +249,7 @@ def _build_vtodo(uid: str, title: str, due_at: datetime | None) -> str:
             value.replace("\\", "\\\\").replace(",", "\\,").replace(";", "\\;").replace("\n", "\\n")
         )
 
+    now_utc = _ical_utc(datetime.now(UTC))
     lines = [
         "BEGIN:VCALENDAR",
         "VERSION:2.0",
@@ -250,7 +257,10 @@ def _build_vtodo(uid: str, title: str, due_at: datetime | None) -> str:
         "BEGIN:VTODO",
         f"UID:{uid}",
         f"SUMMARY:{_escape(title)}",
-        f"DTSTAMP:{_ical_utc(datetime.now(UTC))}",
+        f"DTSTAMP:{now_utc}",
+        f"CREATED:{now_utc}",
+        f"LAST-MODIFIED:{now_utc}",
+        "SEQUENCE:0",
         "STATUS:NEEDS-ACTION",
     ]
     if due_at is not None:
