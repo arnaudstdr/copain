@@ -202,6 +202,22 @@
     #chat-view { position: absolute; inset: 0; background: var(--bg); z-index: 12; display: flex; flex-direction: column; animation: slideRight 0.2s ease; }
     #chat-view.hidden { display: none; }
 
+    /* Briefing full-screen view */
+    #briefing-view { position: absolute; inset: 0; background: var(--bg); z-index: 12; display: flex; flex-direction: column; animation: slideRight 0.2s ease; }
+    #briefing-view.hidden { display: none; }
+    .briefing-body { flex: 1; overflow-y: auto; padding: 16px 18px max(20px, env(safe-area-inset-bottom)); font-size: 14.5px; line-height: 1.6; color: var(--text); }
+    .briefing-body h3 { font-size: 16px; font-weight: 600; margin: 18px 0 8px; color: var(--text); }
+    .briefing-body strong { font-weight: 600; color: var(--text); }
+    .briefing-body em { color: var(--text2); font-style: normal; }
+    .briefing-body a { color: var(--accent2); text-decoration: none; word-break: break-all; }
+    .briefing-body a:active { opacity: 0.7; }
+    .briefing-body ul { list-style: none; padding: 0; margin: 8px 0; }
+    .briefing-body li { padding: 8px 0 8px 18px; position: relative; border-bottom: 1px solid var(--border); }
+    .briefing-body li:last-child { border-bottom: none; }
+    .briefing-body li::before { content: "•"; color: var(--accent2); position: absolute; left: 4px; top: 8px; font-weight: 700; }
+    .briefing-body p { margin: 6px 0; }
+    .briefing-empty { color: var(--text3); text-align: center; padding: 40px 20px; font-size: 13.5px; }
+
     /* ── Animations ── */
     @keyframes bounce { 0%,80%,100%{transform:translateY(0)} 40%{transform:translateY(-6px)} }
     @keyframes fadeUp { from{opacity:0;transform:translateY(8px)} to{opacity:1;transform:translateY(0)} }
@@ -335,6 +351,22 @@
         <div class="panel-empty">Chargement…</div>
       </div>
     </div>
+  </div>
+
+  <!-- Briefing full-screen view -->
+  <div id="briefing-view" class="hidden">
+    <header>
+      <button class="header-btn" onclick="closeBriefing()" title="Retour">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M15 18l-6-6 6-6"/>
+        </svg>
+      </button>
+      <div class="greeting" style="margin-left:8px">
+        <div class="greeting-name">Briefing du matin</div>
+        <div class="greeting-date" id="briefing-date">—</div>
+      </div>
+    </header>
+    <div class="briefing-body" id="briefing-body"></div>
   </div>
 
   <!-- Chat overlay (mode conversation) -->
@@ -554,26 +586,14 @@
   }
 
   function briefingCard(b) {
-    const card = el("div", "card card-briefing");
-    const head = el("div", "card-briefing-toggle");
-    head.onclick = () => card.classList.toggle("open");
-    const left = el("div", "card-head");
-    left.appendChild(el("div", "card-icon", "☀️"));
-    const meta = el("div", "");
-    meta.appendChild(el("div", "card-label", "Briefing du matin"));
-    meta.appendChild(el("div", "card-primary", "Tape pour déplier"));
-    left.appendChild(meta);
-    const chev = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-    chev.setAttribute("class", "chevron");
-    chev.setAttribute("width", "16"); chev.setAttribute("height", "16");
-    chev.setAttribute("viewBox", "0 0 24 24"); chev.setAttribute("fill", "none");
-    chev.setAttribute("stroke", "currentColor"); chev.setAttribute("stroke-width", "2");
-    chev.innerHTML = '<path d="M9 18l6-6-6-6"/>';
-    head.appendChild(left);
-    head.appendChild(chev);
-    card.appendChild(head);
-    const body = el("div", "card-briefing-body", b.text);
-    card.appendChild(body);
+    const card = el("div", "card tappable");
+    card.onclick = () => openBriefing(b);
+    card.appendChild(makeHead("☀️", "Briefing du matin"));
+    // Aperçu : 2 premières lignes utiles, sans le préfixe "☀️ Bonjour…".
+    const lines = b.text.split("\n").filter(l => l.trim() && !l.startsWith("☀️ Bonjour"));
+    const preview = lines.slice(0, 2).join(" · ").slice(0, 110);
+    card.appendChild(el("div", "card-primary", "Tape pour lire en grand"));
+    if (preview) card.appendChild(el("div", "card-meta", preview + (preview.length >= 110 ? "…" : "")));
     return card;
   }
 
@@ -1062,6 +1082,98 @@
     return Number.isInteger(km) ? `${km} km` : `${km.toFixed(1)} km`;
   }
 
+  // ── Briefing (vue plein écran) ───────────────────────────────────────────
+  function openBriefing(b) {
+    const view = document.getElementById("briefing-view");
+    const body = document.getElementById("briefing-body");
+    const dateEl = document.getElementById("briefing-date");
+    if (b.created_at) {
+      const d = new Date(b.created_at);
+      dateEl.textContent = d.toLocaleDateString("fr-FR", {
+        weekday: "long", day: "numeric", month: "long"
+      });
+    } else {
+      dateEl.textContent = "";
+    }
+    body.innerHTML = renderBriefingMarkdown(b.text || "");
+    view.classList.remove("hidden");
+    body.scrollTop = 0;
+  }
+
+  function closeBriefing() {
+    document.getElementById("briefing-view").classList.add("hidden");
+  }
+
+  /**
+   * Mini-parseur markdown pour le briefing matin.
+   *
+   * Couvre uniquement les patterns produits par BriefingService :
+   *  - `**gras**`            → <strong>
+   *  - `*italique*`          → <em>
+   *  - URL nue               → <a href>
+   *  - lignes commençant par `- ` → groupées dans une <ul>
+   *  - lignes commençant par `📰 *…*` ou `🤖 *…*` → titre <h3>
+   *  - autres lignes non vides → <p>
+   *
+   * On échappe le HTML avant traitement pour éviter toute injection
+   * via le contenu du briefing (URLs externes, titres d'articles, etc.).
+   */
+  function renderBriefingMarkdown(text) {
+    const esc = escHtml(text);
+    const lines = esc.split("\n");
+    const out = [];
+    let listBuffer = [];
+
+    const flushList = () => {
+      if (listBuffer.length === 0) return;
+      out.push("<ul>" + listBuffer.map(l => `<li>${l}</li>`).join("") + "</ul>");
+      listBuffer = [];
+    };
+
+    for (const raw of lines) {
+      const line = inlineMd(raw);
+      const stripped = raw.trim();
+      if (!stripped) { flushList(); continue; }
+
+      // Titres de section : "📰 *Actus du jour*" ou "🤖 *Actus IA …*"
+      if (/^(📰|🤖|☀️|📅|✅|📋|🌤|🌧)/.test(stripped) && /\*[^*]+\*/.test(stripped)) {
+        flushList();
+        out.push(`<h3>${inlineMd(raw)}</h3>`);
+        continue;
+      }
+
+      // Item de liste : commence par "- "
+      if (stripped.startsWith("- ")) {
+        listBuffer.push(inlineMd(raw.replace(/^\s*-\s+/, "")));
+        continue;
+      }
+
+      // Ligne d'indentation (continuation d'un item, ex: URL sur ligne suivante)
+      if (/^\s{2,}/.test(raw) && listBuffer.length > 0) {
+        listBuffer[listBuffer.length - 1] += `<br>${inlineMd(raw.trim())}`;
+        continue;
+      }
+
+      flushList();
+      out.push(`<p>${line}</p>`);
+    }
+    flushList();
+    return out.join("");
+  }
+
+  function inlineMd(s) {
+    return s
+      // **gras** (greedy minimal)
+      .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
+      // *italique* (sans capturer **)
+      .replace(/(?<!\*)\*([^*]+)\*(?!\*)/g, "<em>$1</em>")
+      // URLs nues → liens (target=_blank pour ouvrir hors PWA)
+      .replace(
+        /(https?:\/\/[^\s<>"'()]+)/g,
+        '<a href="$1" target="_blank" rel="noopener">$1</a>'
+      );
+  }
+
   function renderTasks(tasks) {
     const list = document.getElementById("tasks-list");
     list.innerHTML = "";
@@ -1322,6 +1434,15 @@
   }
 
   // ── UI helpers ────────────────────────────────────────────────────────────
+  function escHtml(s) {
+    return String(s)
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#39;");
+  }
+
   function el(tag, cls, text) {
     const n = document.createElement(tag);
     if (cls) n.className = cls;
