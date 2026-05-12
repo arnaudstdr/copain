@@ -173,13 +173,14 @@ async def test_connect_matches_emoji_calendar_by_trimmed_name() -> None:
 async def test_list_today_uses_local_date(client: ICloudCalendarClient) -> None:
     fake_cal = MagicMock()
     fake_cal.name = "Personnel"
-    fake_cal.date_search = MagicMock(return_value=[])
+    fake_cal.search = MagicMock(return_value=[])
     client._calendar = fake_cal  # type: ignore[attr-defined]
 
     events = await client.list_today()
     assert events == []
-    assert fake_cal.date_search.called
-    start_arg, end_arg = fake_cal.date_search.call_args[0][:2]
+    assert fake_cal.search.called
+    kwargs = fake_cal.search.call_args.kwargs
+    start_arg, end_arg = kwargs["start"], kwargs["end"]
     # Même date, couvrant toute la journée.
     assert start_arg.date() == end_arg.date()
     assert start_arg.hour == 0
@@ -215,10 +216,10 @@ END:VCALENDAR"""
 
     cal_perso = MagicMock()
     cal_perso.name = "Personnel"
-    cal_perso.date_search = MagicMock(return_value=[entry_perso])
+    cal_perso.search = MagicMock(return_value=[entry_perso])
     cal_sport = MagicMock()
     cal_sport.name = "🚴 Sport"
-    cal_sport.date_search = MagicMock(return_value=[entry_sport])
+    cal_sport.search = MagicMock(return_value=[entry_sport])
 
     client._all_calendars = [cal_perso, cal_sport]  # type: ignore[attr-defined]
 
@@ -251,13 +252,13 @@ END:VCALENDAR"""
 
     cal_ok1 = MagicMock()
     cal_ok1.name = "Personnel"
-    cal_ok1.date_search = MagicMock(return_value=[entry])
+    cal_ok1.search = MagicMock(return_value=[entry])
     cal_broken = MagicMock()
     cal_broken.name = "Partagé"
-    cal_broken.date_search = MagicMock(side_effect=RuntimeError("403 forbidden"))
+    cal_broken.search = MagicMock(side_effect=RuntimeError("403 forbidden"))
     cal_ok2 = MagicMock()
     cal_ok2.name = "Sport"
-    cal_ok2.date_search = MagicMock(return_value=[])
+    cal_ok2.search = MagicMock(return_value=[])
 
     client._all_calendars = [cal_ok1, cal_broken, cal_ok2]  # type: ignore[attr-defined]
 
@@ -266,7 +267,7 @@ END:VCALENDAR"""
     events = await client.list_all_between(start, end)
 
     assert [e.title for e in events] == ["Tour en ville"]
-    assert cal_broken.date_search.called  # on a bien tenté
+    assert cal_broken.search.called  # on a bien tenté
 
 
 async def test_list_all_between_requires_connection(client: ICloudCalendarClient) -> None:
@@ -303,7 +304,7 @@ END:VCALENDAR"""
     entry_2.data = ical_2
     fake_cal = MagicMock()
     fake_cal.name = "Personnel"
-    fake_cal.date_search = MagicMock(return_value=[entry_1, entry_2])
+    fake_cal.search = MagicMock(return_value=[entry_1, entry_2])
     client._calendar = fake_cal  # type: ignore[attr-defined]
 
     start = datetime(2026, 4, 22, 0, 0, tzinfo=UTC)
@@ -334,7 +335,7 @@ END:VCALENDAR"""
     entry.data = ical
     fake_cal = MagicMock()
     fake_cal.name = "Personnel"
-    fake_cal.date_search = MagicMock(return_value=[entry])
+    fake_cal.search = MagicMock(return_value=[entry])
     client._calendar = fake_cal  # type: ignore[attr-defined]
 
     events = await client.list_between(

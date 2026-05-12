@@ -166,10 +166,10 @@ class ICloudCalendarClient:
         start_aware = _ensure_aware(start, self._tz)
         end_aware = _ensure_aware(end, self._tz)
         raw = await asyncio.to_thread(
-            cal.date_search,
+            _search_events,
+            cal,
             start_aware,
             end_aware,
-            expand=True,
         )
         events: list[CalendarEvent] = []
         for entry in raw:
@@ -208,12 +208,7 @@ class ICloudCalendarClient:
         for cal in self._all_calendars:
             cal_name = getattr(cal, "name", "?") or "?"
             try:
-                raw = await asyncio.to_thread(
-                    cal.date_search,
-                    start_aware,
-                    end_aware,
-                    expand=True,
-                )
+                raw = await asyncio.to_thread(_search_events, cal, start_aware, end_aware)
             except Exception as exc:
                 log.warning("calendar_list_failed_for", calendar=cal_name, error=str(exc))
                 continue
@@ -243,6 +238,17 @@ class ICloudCalendarClient:
 
 def _ensure_aware(dt: datetime, tz: ZoneInfo) -> datetime:
     return dt if dt.tzinfo else dt.replace(tzinfo=tz)
+
+
+def _search_events(cal: Any, start: datetime, end: datetime) -> list[Any]:
+    """Wrap autour de `Calendar.search` (caldav ≥ 1.0).
+
+    Remplace `Calendar.date_search` qui est déprécié depuis caldav 1.0
+    (warning à chaque appel, suppression prévue en 2.0). L'API `search`
+    accepte les mêmes bornes temporelles + un flag `event=True` pour
+    filtrer sur VEVENT et `expand=True` pour développer les récurrences.
+    """
+    return list(cal.search(start=start, end=end, event=True, expand=True))
 
 
 def _find_calendar(calendars: list[Any], requested: str) -> Any | None:
