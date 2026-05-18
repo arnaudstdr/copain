@@ -316,7 +316,13 @@ def create_app(state: AppState) -> FastAPI:
 
     @app.get("/", response_class=FileResponse, include_in_schema=False)
     async def chat_ui() -> FileResponse:
-        return FileResponse(STATIC_DIR / "index.html")
+        # Cache-Control no-store : la PWA iOS cache le HTML très agressivement
+        # (parfois même sans service worker). Sans ce header, un rebuild +
+        # redéploiement ne suffit pas à faire disparaître l'ancien dashboard.
+        return FileResponse(
+            STATIC_DIR / "index.html",
+            headers={"Cache-Control": "no-store, must-revalidate"},
+        )
 
     _TOUCH_ICON = STATIC_DIR / "icon-1024.png"
 
