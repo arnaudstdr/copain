@@ -120,7 +120,12 @@ class ReminderScheduler:
             _send_reminder,
             trigger="date",
             run_date=due_at,
-            args=[str(self._notifications_db_path), content, self._pushover_token, self._pushover_user],
+            args=[
+                str(self._notifications_db_path),
+                content,
+                self._pushover_token,
+                self._pushover_user,
+            ],
             id=f"task-{task_id}",
             replace_existing=True,
         )

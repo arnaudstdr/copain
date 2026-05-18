@@ -43,8 +43,6 @@ class Settings:
 
     timezone: str
 
-    briefing_hour: int
-    briefing_minute: int
     home_lat: float
     home_lon: float
     home_city: str
@@ -180,8 +178,6 @@ def load_settings() -> Settings:
         scheduler_db_path=Path(os.getenv("SCHEDULER_DB_PATH", data_dir / "scheduler.db")).resolve(),
         profile_path=Path(os.getenv("PROFILE_PATH", data_dir / "profile.yaml")).resolve(),
         timezone=os.getenv("TZ", "Europe/Paris"),
-        briefing_hour=_env_int("BRIEFING_HOUR", 8),
-        briefing_minute=_env_int("BRIEFING_MINUTE", 0),
         home_lat=_env_float("HOME_LAT", 48.26),
         home_lon=_env_float("HOME_LON", 7.45),
         home_city=os.getenv("HOME_CITY", "Sélestat"),

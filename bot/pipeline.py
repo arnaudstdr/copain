@@ -29,7 +29,6 @@ from bot.logging_conf import get_logger
 from bot.rss.manager import FeedAlreadyExists
 
 if TYPE_CHECKING:
-    from bot.briefing.service import BriefingService
     from bot.briefing.weather import DailyWeather, OpenMeteoClient
     from bot.calendar.client import ICloudCalendarClient
     from bot.calendar.models import CalendarEvent
@@ -40,6 +39,7 @@ if TYPE_CHECKING:
     from bot.llm.client import LLMClient
     from bot.locations.store import LocationEventStore
     from bot.memory.manager import MemoryManager
+    from bot.news.client import NewsCurator
     from bot.proactivity.service import ProactivityService
     from bot.profile import UserProfile
     from bot.rss.fetcher import FeedItem, RssFetcher
@@ -48,6 +48,7 @@ if TYPE_CHECKING:
     from bot.search.searxng import SearxngClient
     from bot.tasks.manager import TaskManager
     from bot.tasks.scheduler import ReminderScheduler
+    from bot.thoughts.manager import ThoughtManager
 
 log = get_logger(__name__)
 
@@ -77,6 +78,7 @@ _FALLBACK_META: Meta = {
     },
     "fuel": {"fuel_type": None, "radius_km": None, "location": None},
     "weather": {"location": None, "when": None},
+    "depot": {"content": None, "kind": None},
     "search_query": None,
 }
 
@@ -89,15 +91,16 @@ class BotDeps:
     llm: LLMClient
     memory: MemoryManager
     tasks: TaskManager
+    thoughts: ThoughtManager
     scheduler: ReminderScheduler
     search: SearxngClient
     rss: FeedManager
     rss_fetcher: RssFetcher
-    briefing: BriefingService
     calendar: ICloudCalendarClient
     fuel: FuelClient
     geocoder: NominatimClient
     weather: OpenMeteoClient
+    news: NewsCurator
     profile: UserProfile
     location_events: LocationEventStore
     proactivity: ProactivityService
@@ -171,18 +174,6 @@ async def process_message(
     elif meta["intent"] == "weather":
         text = await _handle_weather(meta, deps, intro=text)
 
-    elif meta["intent"] == "briefing":
-        # On reconstruit le briefing à la demande (météo + tâches + évents
-        # + actus IA) et on remplace le texte LLM par le briefing complet.
-        # Côté PWA, l'intent "briefing" déclenche l'ouverture de la vue
-        # plein écran (markdown rendu, liens cliquables) au lieu d'une
-        # bulle éphémère qui disparaîtrait avant d'être lue.
-        try:
-            text = await deps.briefing.build()
-        except Exception as exc:
-            log.warning("briefing_on_demand_failed", error=str(exc))
-            text = "Désolé, impossible de construire le briefing pour le moment."
-
     history_user = user_text if user_text else "(image envoyée)"
     if images:
         history_user = f"[photo] {history_user}"
@@ -197,6 +188,33 @@ async def _apply_side_effects(
     meta: Meta,
     deps: BotDeps,
 ) -> None:
+    # Cas dépôt cognitif : on persiste dans la table `thoughts` (listing
+    # chronologique, état) et on indexe en parallèle dans ChromaDB avec
+    # le tag `kind=depot` (préparation à la future détection de boucles).
+    # On NE déclenche PAS le store_memory générique sur ce chemin : un
+    # dépôt n'est pas un fait stable à apprendre sur l'utilisateur.
+    if meta["intent"] == "depot" and meta["depot"]["content"]:
+        thought = await deps.thoughts.create(
+            content=meta["depot"]["content"],
+            kind=meta["depot"]["kind"],
+        )
+        log.info(
+            "thought_stored",
+            thought_id=thought.id,
+            kind=thought.kind,
+            preview=thought.content[:80],
+        )
+        try:
+            await deps.memory.store_depot(
+                content=thought.content,
+                thought_id=thought.id,
+                thought_kind=thought.kind,
+            )
+        except Exception as exc:
+            # SQLite est la source de vérité, ChromaDB est best-effort.
+            log.warning("depot_chroma_indexing_failed", error=str(exc))
+        return
+
     if meta["store_memory"] and meta["memory_content"]:
         await deps.memory.store(
             original_message=user_text,

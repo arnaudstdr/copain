@@ -50,6 +50,7 @@ _NEUTRAL_META: dict[str, object] = {
     },
     "fuel": {"fuel_type": None, "radius_km": None, "location": None},
     "weather": {"location": None, "when": None},
+    "depot": {"content": None, "kind": None},
     "search_query": None,
 }
 
@@ -92,15 +93,16 @@ def _build_deps() -> BotDeps:
         llm=llm,
         memory=memory,
         tasks=MagicMock(),
+        thoughts=MagicMock(),
         scheduler=MagicMock(),
         search=MagicMock(),
         rss=MagicMock(),
         rss_fetcher=MagicMock(),
-        briefing=MagicMock(),
         calendar=MagicMock(),
         fuel=MagicMock(),
         geocoder=MagicMock(),
         weather=MagicMock(),
+        news=MagicMock(),
         profile=UserProfile(raw_yaml="", is_loaded=False),
         location_events=location_events,
         proactivity=proactivity,
@@ -396,7 +398,6 @@ async def test_dashboard_tolerates_weather_and_calendar_down(
     assert body["next_event"] is None
     assert body["today_tasks"] == []
     assert body["unread_notifications"] == 0
-    assert body["briefing"] is None
 
 
 # --- /event/location -------------------------------------------------------
@@ -659,92 +660,126 @@ async def test_events_empty_when_calendar_disconnected(
     assert response.json()["events"] == []
 
 
-# --- /fuel/stations ------------------------------------------------------
+# --- /news/latest ---------------------------------------------------------
 
 
-async def test_fuel_stations_requires_api_key(client: AsyncClient) -> None:
-    response = await client.get("/fuel/stations")
+async def test_news_latest_requires_api_key(client: AsyncClient) -> None:
+    response = await client.get("/news/latest")
     assert response.status_code == 403
 
 
-async def test_fuel_stations_returns_top5(client: AsyncClient, state: AppState) -> None:
-    from datetime import UTC, datetime
+async def test_news_latest_empty_profile_returns_hint(client: AsyncClient, state: AppState) -> None:
+    """Profil sans `news_topics.daily_briefing` → message d'aide, pas d'appel SearXNG."""
+    state.deps.news.fetch_top_news = AsyncMock()
+    response = await client.get("/news/latest", headers={"X-API-Key": API_KEY})
+    assert response.status_code == 200
+    body = response.json()
+    assert "profile.yaml" in body["markdown"]
+    state.deps.news.fetch_top_news.assert_not_called()
 
-    from bot.fuel.models import FuelStation
 
-    state.deps.settings.fuel_default_radius_km = 10.0
-    station = FuelStation(
-        id="A",
-        address="12 rue Y",
-        city="Sélestat",
-        postal_code="67600",
-        lat=48.26,
-        lon=7.45,
-        distance_km=2.3,
-        fuel_type="gazole",
-        price_eur=1.689,
-        updated_at=datetime(2026, 5, 12, 8, 0, tzinfo=UTC),
+async def test_news_latest_calls_curator(client: AsyncClient, state: AppState) -> None:
+    state.deps.profile = UserProfile(
+        raw_yaml="",
+        is_loaded=True,
+        data={
+            "news_topics": {
+                "daily_briefing": ["LLM agents", "OpenAI"],
+                "filters": {"domains_blocklist": ["reddit.com"]},
+            }
+        },
     )
-    state.deps.fuel.find_cheapest = AsyncMock(return_value=[station])
-
-    response = await client.get("/fuel/stations", headers={"X-API-Key": API_KEY})
+    state.deps.news.fetch_top_news = AsyncMock(return_value="**Actu 1**\n**Actu 2**")
+    response = await client.get("/news/latest", headers={"X-API-Key": API_KEY})
     assert response.status_code == 200
     body = response.json()
-    assert body["fuel_type"] == "gazole"
-    assert body["fuel_label"] == "Gazole"
-    assert body["city"] == "Sélestat"
-    assert len(body["stations"]) == 1
-    assert body["stations"][0]["price_eur"] == 1.689
+    assert "Actu 1" in body["markdown"]
+    assert "fetched_at" in body
+    kwargs = state.deps.news.fetch_top_news.await_args.kwargs
+    assert kwargs["topics"] == ["LLM agents", "OpenAI"]
+    assert kwargs["domains_blocklist"] == ["reddit.com"]
 
 
-async def test_fuel_stations_uses_work_when_at_work(client: AsyncClient, state: AppState) -> None:
+async def test_news_latest_curator_failure_returns_502(
+    client: AsyncClient, state: AppState
+) -> None:
+    state.deps.profile = UserProfile(
+        raw_yaml="", is_loaded=True, data={"news_topics": {"daily_briefing": ["AI"]}}
+    )
+    state.deps.news.fetch_top_news = AsyncMock(side_effect=RuntimeError("searxng down"))
+    response = await client.get("/news/latest", headers={"X-API-Key": API_KEY})
+    assert response.status_code == 502
+
+
+# --- /thoughts -------------------------------------------------------------
+
+
+async def test_thoughts_requires_api_key(client: AsyncClient) -> None:
+    response = await client.get("/thoughts")
+    assert response.status_code == 403
+
+
+async def test_thoughts_returns_recent_list(client: AsyncClient, state: AppState) -> None:
     from datetime import UTC, datetime
 
-    from bot.locations.presence import LocationPresence
+    fake_t1 = MagicMock()
+    fake_t1.id = 2
+    fake_t1.content = "j'ai peur pour les finances"
+    fake_t1.kind = "worry"
+    fake_t1.created_at = datetime(2026, 5, 18, 10, 30, tzinfo=UTC)
 
-    presence = LocationPresence(place="work", arrived_at=datetime.now(UTC), lat=None, lon=None)
-    state.deps.location_events.get_current_location = AsyncMock(return_value=presence)
-    state.deps.settings.work_lat = 48.46
-    state.deps.settings.work_lon = 7.48
-    state.deps.settings.work_city = "Obernai"
-    state.deps.settings.fuel_default_radius_km = 10.0
-    state.deps.fuel.find_cheapest = AsyncMock(return_value=[])
+    fake_t2 = MagicMock()
+    fake_t2.id = 1
+    fake_t2.content = "idée : refactorer le pipeline"
+    fake_t2.kind = "idea"
+    fake_t2.created_at = datetime(2026, 5, 17, 14, 0, tzinfo=UTC)
 
-    response = await client.get("/fuel/stations", headers={"X-API-Key": API_KEY})
-    assert response.status_code == 200
-    assert response.json()["city"] == "Obernai"
-    kwargs = state.deps.fuel.find_cheapest.await_args.kwargs
-    assert kwargs["center"].lat == 48.46
+    state.deps.thoughts.list_recent = AsyncMock(return_value=[fake_t1, fake_t2])
 
-
-async def test_fuel_stations_accepts_synonym(client: AsyncClient, state: AppState) -> None:
-    """`fuel_type=diesel` doit être normalisé en `gazole`."""
-    state.deps.settings.fuel_default_radius_km = 10.0
-    state.deps.fuel.find_cheapest = AsyncMock(return_value=[])
-
-    response = await client.get("/fuel/stations?fuel_type=diesel", headers={"X-API-Key": API_KEY})
+    response = await client.get("/thoughts", headers={"X-API-Key": API_KEY})
     assert response.status_code == 200
     body = response.json()
-    assert body["fuel_type"] == "gazole"
-    kwargs = state.deps.fuel.find_cheapest.await_args.kwargs
-    assert kwargs["fuel_type"] == "gazole"
+    assert len(body["thoughts"]) == 2
+    assert body["thoughts"][0]["id"] == 2
+    assert body["thoughts"][0]["kind"] == "worry"
+    assert body["thoughts"][1]["kind"] == "idea"
 
 
-async def test_fuel_stations_rejects_unknown_type(client: AsyncClient, state: AppState) -> None:
-    response = await client.get("/fuel/stations?fuel_type=charbon", headers={"X-API-Key": API_KEY})
+async def test_thoughts_with_since_filter(client: AsyncClient, state: AppState) -> None:
+    state.deps.thoughts.list_since = AsyncMock(return_value=[])
+    response = await client.get(
+        "/thoughts?since=2026-05-15T00:00:00",
+        headers={"X-API-Key": API_KEY},
+    )
+    assert response.status_code == 200
+    state.deps.thoughts.list_since.assert_awaited_once()
+    args, kwargs = state.deps.thoughts.list_since.await_args
+    since_arg = args[0] if args else kwargs.get("since")
+    assert since_arg.year == 2026
+    assert since_arg.month == 5
+    assert since_arg.day == 15
+
+
+async def test_thoughts_rejects_invalid_since(client: AsyncClient, state: AppState) -> None:
+    response = await client.get(
+        "/thoughts?since=not-a-date",
+        headers={"X-API-Key": API_KEY},
+    )
     assert response.status_code == 400
 
 
-async def test_fuel_stations_custom_radius_overrides_default(
-    client: AsyncClient, state: AppState
-) -> None:
-    state.deps.settings.fuel_default_radius_km = 10.0
-    state.deps.fuel.find_cheapest = AsyncMock(return_value=[])
-
-    response = await client.get("/fuel/stations?radius_km=5", headers={"X-API-Key": API_KEY})
+async def test_thoughts_clamps_excessive_limit(client: AsyncClient, state: AppState) -> None:
+    state.deps.thoughts.list_recent = AsyncMock(return_value=[])
+    response = await client.get(
+        "/thoughts?limit=99999",
+        headers={"X-API-Key": API_KEY},
+    )
     assert response.status_code == 200
-    kwargs = state.deps.fuel.find_cheapest.await_args.kwargs
-    assert kwargs["radius_km"] == 5.0
+    kwargs = state.deps.thoughts.list_recent.await_args.kwargs
+    assert kwargs["limit"] == 200
+
+
+# --- /dashboard suite -----------------------------------------------------
 
 
 async def test_dashboard_populates_weather_when_available(

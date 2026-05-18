@@ -289,6 +289,4 @@ class ProactivityService:
         except WeatherError as exc:
             log.warning("location_return_weather_failed", error=str(exc))
             return None
-        return (
-            f"{summary.description.capitalize()}, " f"{summary.temp_current:.0f}°C à {summary.city}"
-        )
+        return f"{summary.description.capitalize()}, {summary.temp_current:.0f}°C à {summary.city}"

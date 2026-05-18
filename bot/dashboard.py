@@ -2,20 +2,16 @@
 
 Ce module compose en un seul appel asynchrone toutes les sources visibles
 sur l'écran principal de l'app iPhone (météo, prochain évènement iCloud,
-tâches du jour, count des notifs non lues, dernier briefing du matin). Il
-ne touche pas au LLM et n'a pas de side effects : l'endpoint `GET /dashboard`
-peut être appelé à volonté pour rafraîchir l'UI après une action.
-
-La logique `_today_tasks` est partagée avec `BriefingService` pour éviter
-la divergence des règles "tâche du jour" entre le briefing 8h et la card
-du dashboard.
+tâches du jour, count des notifs non lues). Il ne touche pas au LLM et n'a
+pas de side effects : l'endpoint `GET /dashboard` peut être appelé à volonté
+pour rafraîchir l'UI après une action.
 """
 
 from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import dataclass
-from datetime import datetime, time
+from datetime import datetime
 from typing import TYPE_CHECKING
 from zoneinfo import ZoneInfo
 
@@ -23,7 +19,6 @@ from bot.briefing.weather import WeatherError, WeatherSummary
 from bot.calendar.client import ICloudCalendarError
 from bot.calendar.models import CalendarEvent
 from bot.logging_conf import get_logger
-from bot.notifications.models import PendingNotification
 from bot.tasks.models import Task
 
 if TYPE_CHECKING:
@@ -31,8 +26,6 @@ if TYPE_CHECKING:
     from bot.pipeline import BotDeps
 
 log = get_logger(__name__)
-
-BRIEFING_TEXT_PREFIX = "☀️ Bonjour ! Voici ton briefing du jour."
 
 
 @dataclass(frozen=True, slots=True)
@@ -43,15 +36,14 @@ class DashboardSnapshot:
     next_event: CalendarEvent | None
     today_tasks: list[Task]
     unread_notifications: int
-    latest_briefing: PendingNotification | None
 
 
 def today_tasks(pending: Sequence[Task], tz: ZoneInfo) -> list[Task]:
     """Filtre la liste des tâches non terminées pour ne garder que celles du jour.
 
     Une tâche sans `due_at` est exclue (sinon elle apparaîtrait tous les jours
-    dans le dashboard et dans le briefing). Une tâche avec `due_at` naïf est
-    interprétée dans `tz` (compat avec les anciens enregistrements).
+    dans le dashboard). Une tâche avec `due_at` naïf est interprétée dans
+    `tz` (compat avec les anciens enregistrements).
     """
     today = datetime.now(tz).date()
     result: list[Task] = []
@@ -79,10 +71,6 @@ async def build_dashboard(deps: BotDeps, notifications: NotificationStore) -> Da
     pending = await deps.tasks.list_pending()
     today_tasks_list = today_tasks(pending, tz)
     unread = await notifications.count_unread()
-    today_start = datetime.combine(datetime.now(tz).date(), time.min, tzinfo=tz)
-    latest_briefing = await notifications.latest_with_text_prefix(
-        BRIEFING_TEXT_PREFIX, since=today_start
-    )
 
     log.info(
         "dashboard_built",
@@ -90,14 +78,12 @@ async def build_dashboard(deps: BotDeps, notifications: NotificationStore) -> Da
         next_event=next_event is not None,
         tasks=len(today_tasks_list),
         unread=unread,
-        briefing=latest_briefing is not None,
     )
     return DashboardSnapshot(
         weather=weather,
         next_event=next_event,
         today_tasks=today_tasks_list,
         unread_notifications=unread,
-        latest_briefing=latest_briefing,
     )
 
 

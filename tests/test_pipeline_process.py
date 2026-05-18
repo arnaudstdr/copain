@@ -37,7 +37,10 @@ def _meta_block(
     fuel_location: str | None = None,
     weather_location: str | None = None,
     weather_when: str | None = None,
+    depot_content: str | None = None,
+    depot_kind: str | None = None,
     search_query: str | None = None,
+    response_text: str = "Réponse texte.",
 ) -> str:
     """Construit une réponse LLM factice avec bloc <meta> valide."""
     import json
@@ -67,9 +70,13 @@ def _meta_block(
             "location": weather_location,
             "when": weather_when,
         },
+        "depot": {
+            "content": depot_content,
+            "kind": depot_kind,
+        },
         "search_query": search_query,
     }
-    return f"Réponse texte.\n<meta>{json.dumps(meta)}</meta>"
+    return f"{response_text}\n<meta>{json.dumps(meta)}</meta>"
 
 
 @pytest.fixture
@@ -85,6 +92,7 @@ def deps() -> BotDeps:
     memory = MagicMock()
     memory.retrieve_context = AsyncMock(return_value=[])
     memory.store = AsyncMock()
+    memory.store_depot = AsyncMock()
 
     llm = MagicMock()
     llm.call = AsyncMock(return_value=_meta_block(intent="answer"))
@@ -97,12 +105,18 @@ def deps() -> BotDeps:
     fake_task.content = "acheter du pain"
     tasks.create = AsyncMock(return_value=fake_task)
 
+    thoughts = MagicMock()
+    fake_thought = MagicMock()
+    fake_thought.id = 7
+    fake_thought.content = "j'ai peur pour les finances de mon fils"
+    fake_thought.kind = "worry"
+    thoughts.create = AsyncMock(return_value=fake_thought)
+
     scheduler = MagicMock()
     search = MagicMock()
     search.search = AsyncMock(return_value=[])
     rss = MagicMock()
     rss_fetcher = MagicMock()
-    briefing = MagicMock()
     calendar = MagicMock()
     fuel = MagicMock()
     fuel.find_cheapest = AsyncMock(return_value=[])
@@ -122,15 +136,16 @@ def deps() -> BotDeps:
         llm=llm,
         memory=memory,
         tasks=tasks,
+        thoughts=thoughts,
         scheduler=scheduler,
         search=search,
         rss=rss,
         rss_fetcher=rss_fetcher,
-        briefing=briefing,
         calendar=calendar,
         fuel=fuel,
         geocoder=geocoder,
         weather=weather,
+        news=MagicMock(),
         profile=UserProfile(raw_yaml="", is_loaded=False),
         location_events=location_events,
         proactivity=proactivity,
@@ -205,6 +220,76 @@ async def test_process_task_without_due_skips_reminder(deps: BotDeps) -> None:
     await process_message("je dois ranger mon bureau", deps=deps)
     deps.tasks.create.assert_awaited_once()
     deps.scheduler.add_reminder.assert_not_called()
+
+
+async def test_process_depot_intent_persists_thought_and_indexes_chroma(
+    deps: BotDeps,
+) -> None:
+    """Un intent `depot` doit créer une ligne thoughts + indexer ChromaDB avec tag."""
+    deps.llm.call = AsyncMock(
+        return_value=_meta_block(
+            intent="depot",
+            depot_content="j'ai peur pour les finances de mon fils",
+            depot_kind="worry",
+            response_text="Noté.",
+        )
+    )
+    text, meta = await process_message("j'ai peur pour les finances de mon fils", deps=deps)
+
+    deps.thoughts.create.assert_awaited_once_with(
+        content="j'ai peur pour les finances de mon fils",
+        kind="worry",
+    )
+    deps.memory.store_depot.assert_awaited_once_with(
+        content="j'ai peur pour les finances de mon fils",
+        thought_id=7,
+        thought_kind="worry",
+    )
+    # La réponse texte du LLM ("Noté.") est préservée telle quelle.
+    assert text == "Noté."
+    assert meta["intent"] == "depot"
+
+
+async def test_process_depot_intent_skips_generic_memory_store(deps: BotDeps) -> None:
+    """Même si store_memory=true par accident, un dépôt ne déclenche pas memory.store."""
+    deps.llm.call = AsyncMock(
+        return_value=_meta_block(
+            intent="depot",
+            store_memory=True,
+            memory_content="ne doit pas être stocké",
+            depot_content="pensée déposée",
+            depot_kind="note",
+        )
+    )
+    await process_message("pensée déposée", deps=deps)
+    deps.thoughts.create.assert_awaited_once()
+    deps.memory.store.assert_not_called()
+
+
+async def test_process_depot_with_null_content_skips_persistence(deps: BotDeps) -> None:
+    """intent=depot mais content=null → on n'écrit rien (LLM mal calibré)."""
+    deps.llm.call = AsyncMock(
+        return_value=_meta_block(intent="depot", depot_content=None, depot_kind=None)
+    )
+    await process_message("bla", deps=deps)
+    deps.thoughts.create.assert_not_called()
+    deps.memory.store_depot.assert_not_called()
+
+
+async def test_process_depot_chroma_failure_is_swallowed(deps: BotDeps) -> None:
+    """Si ChromaDB plante, le dépôt SQLite reste persistant et l'utilisateur reçoit la réponse."""
+    deps.memory.store_depot = AsyncMock(side_effect=RuntimeError("chroma down"))
+    deps.llm.call = AsyncMock(
+        return_value=_meta_block(
+            intent="depot",
+            depot_content="une note libre",
+            depot_kind="note",
+            response_text="OK.",
+        )
+    )
+    text, _ = await process_message("une note libre", deps=deps)
+    deps.thoughts.create.assert_awaited_once()
+    assert text == "OK."
 
 
 async def test_process_search_intent_relaunches_llm_with_results(

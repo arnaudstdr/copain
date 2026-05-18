@@ -11,7 +11,15 @@ META_PATTERN = re.compile(r"<meta>\s*(\{.*?\})\s*</meta>", re.DOTALL)
 # Source unique de vérité : le frozenset est dérivé du Literal via get_args().
 # Ajouter un nouvel intent/action ne requiert de modifier qu'un seul endroit.
 Intent = Literal[
-    "answer", "task", "search", "memory", "feed", "event", "fuel", "weather", "briefing"
+    "answer",
+    "task",
+    "search",
+    "memory",
+    "feed",
+    "event",
+    "fuel",
+    "weather",
+    "depot",
 ]
 VALID_INTENTS: frozenset[str] = frozenset(get_args(Intent))
 
@@ -20,6 +28,9 @@ VALID_FEED_ACTIONS: frozenset[str] = frozenset(get_args(FeedAction))
 
 EventAction = Literal["create", "list"]
 VALID_EVENT_ACTIONS: frozenset[str] = frozenset(get_args(EventAction))
+
+DepotKind = Literal["worry", "idea", "note"]
+VALID_DEPOT_KINDS: frozenset[str] = frozenset(get_args(DepotKind))
 
 
 class TaskMeta(TypedDict):
@@ -55,6 +66,11 @@ class WeatherMeta(TypedDict):
     when: str | None
 
 
+class DepotMeta(TypedDict):
+    content: str | None
+    kind: DepotKind | None
+
+
 class Meta(TypedDict):
     intent: Intent
     store_memory: bool
@@ -64,6 +80,7 @@ class Meta(TypedDict):
     event: EventMeta
     fuel: FuelMeta
     weather: WeatherMeta
+    depot: DepotMeta
     search_query: str | None
 
 
@@ -175,6 +192,17 @@ def _validate(data: Any) -> Meta:
         "when": _opt_str(weather_raw.get("when"), "weather.when"),
     }
 
+    depot_raw = data.get("depot") or {"content": None, "kind": None}
+    if not isinstance(depot_raw, dict):
+        raise MetaParseError("depot doit être un objet ou null")
+    depot_kind = depot_raw.get("kind")
+    if depot_kind is not None and depot_kind not in VALID_DEPOT_KINDS:
+        raise MetaParseError(f"depot.kind invalide : {depot_kind!r}")
+    depot: DepotMeta = {
+        "content": _opt_str(depot_raw.get("content"), "depot.content"),
+        "kind": depot_kind,
+    }
+
     search_query = _opt_str(data.get("search_query"), "search_query")
 
     return Meta(
@@ -186,6 +214,7 @@ def _validate(data: Any) -> Meta:
         event=event,
         fuel=fuel,
         weather=weather,
+        depot=depot,
         search_query=search_query,
     )
 

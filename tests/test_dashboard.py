@@ -8,7 +8,7 @@ des couches HTTP et SQLite. Les tests E2E de `GET /dashboard` vivent dans
 from __future__ import annotations
 
 from collections import deque
-from datetime import datetime, time, timedelta
+from datetime import datetime, timedelta
 from unittest.mock import AsyncMock, MagicMock
 from zoneinfo import ZoneInfo
 
@@ -17,7 +17,7 @@ import pytest
 from bot.briefing.weather import WeatherError, WeatherSummary
 from bot.calendar.client import ICloudCalendarError
 from bot.calendar.models import CalendarEvent
-from bot.dashboard import BRIEFING_TEXT_PREFIX, build_dashboard, today_tasks
+from bot.dashboard import build_dashboard, today_tasks
 from bot.pipeline import BotDeps
 from bot.profile import UserProfile
 from bot.tasks.models import Task
@@ -44,15 +44,16 @@ def deps() -> BotDeps:
         llm=MagicMock(),
         memory=MagicMock(),
         tasks=MagicMock(),
+        thoughts=MagicMock(),
         scheduler=MagicMock(),
         search=MagicMock(),
         rss=MagicMock(),
         rss_fetcher=MagicMock(),
-        briefing=MagicMock(),
         calendar=MagicMock(),
         fuel=MagicMock(),
         geocoder=MagicMock(),
         weather=MagicMock(),
+        news=MagicMock(),
         profile=UserProfile(raw_yaml="", is_loaded=False),
         location_events=location_events,
         proactivity=MagicMock(),
@@ -64,7 +65,6 @@ def deps() -> BotDeps:
 def notifications_stub() -> MagicMock:
     stub = MagicMock()
     stub.count_unread = AsyncMock(return_value=0)
-    stub.latest_with_text_prefix = AsyncMock(return_value=None)
     return stub
 
 
@@ -141,7 +141,6 @@ async def test_build_dashboard_aggregates_all_sources(
     assert snap.next_event is event
     assert len(snap.today_tasks) == 1
     assert snap.unread_notifications == 3
-    assert snap.latest_briefing is None
 
 
 async def test_build_dashboard_weather_error_returns_none(
@@ -289,22 +288,3 @@ async def test_build_dashboard_weather_uses_home_when_at_other_place(
 
     kwargs = deps.weather.get_today.await_args.kwargs
     assert kwargs["city"] == "Sélestat"
-
-
-async def test_build_dashboard_uses_today_start_for_briefing_lookup(
-    deps: BotDeps, notifications_stub: MagicMock
-) -> None:
-    """`latest_with_text_prefix` doit être appelé avec le début du jour local."""
-    deps.weather.get_today = AsyncMock(side_effect=WeatherError("down"))
-    deps.calendar.is_connected = False
-    deps.tasks.list_pending = AsyncMock(return_value=[])
-
-    await build_dashboard(deps, notifications_stub)
-
-    notifications_stub.latest_with_text_prefix.assert_awaited_once()
-    args = notifications_stub.latest_with_text_prefix.await_args
-    assert args.args[0] == BRIEFING_TEXT_PREFIX
-    expected_since = datetime.combine(datetime.now(TZ).date(), time.min, tzinfo=TZ)
-    actual_since = args.kwargs["since"]
-    # Tolérance d'une seconde sur le offset (now() est appelé deux fois).
-    assert abs((actual_since - expected_since).total_seconds()) < 1.0

@@ -1,4 +1,4 @@
-"""Store async des notifications poussées (briefing, rappels de tâches, proactivité).
+"""Store async des notifications poussées (rappels de tâches, proactivité).
 
 Les jobs APScheduler écrivent dans cette table, et `GET /notifications`
 les lit puis les marque comme lues. Le client iOS (raccourci via Tailscale)
@@ -96,27 +96,3 @@ class NotificationStore:
             )
             result = await session.execute(stmt)
             return int(result.scalar_one())
-
-    async def latest_with_text_prefix(
-        self,
-        prefix: str,
-        since: datetime,
-    ) -> PendingNotification | None:
-        """Retourne la notification la plus récente dont le texte commence par `prefix`.
-
-        Filtré sur `created_at >= since` pour ne pas remonter d'historique.
-        Sert au dashboard à exposer le dernier briefing du jour (le modèle
-        `PendingNotification` n'a pas de colonne `title` ou `category` ;
-        on filtre sur le préfixe du texte, ce qui est suffisant pour les
-        catégories de notif aux préfixes stables comme le briefing matinal).
-        """
-        async with self._sessionmaker() as session:
-            stmt = (
-                select(PendingNotification)
-                .where(PendingNotification.text.startswith(prefix))
-                .where(PendingNotification.created_at >= since)
-                .order_by(PendingNotification.created_at.desc())
-                .limit(1)
-            )
-            result = await session.execute(stmt)
-            return result.scalar_one_or_none()  # type: ignore[no-any-return, unused-ignore]

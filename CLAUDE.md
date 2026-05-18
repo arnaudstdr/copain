@@ -7,34 +7,54 @@ as an HTTP API (FastAPI) called directly from an iOS Shortcut through a
 Tailscale tunnel. Partly self-hosted (local services on a Raspberry Pi 5
 8 GB, main LLM in the cloud).
 
+### Product positioning
+
+copain n'est pas un assistant productiviste — c'est un **cerveau d'appoint**
+pensé pour quelqu'un avec TDA/H + anxiété : il doit **absorber la charge
+mentale**, pas en rajouter. Toute nouvelle feature passe le filtre « est-ce
+que ça sort quelque chose de la tête de l'utilisateur, ou est-ce que ça en
+rajoute ? ». Conséquence concrète : pas de pushs spontanés non sollicités
+(le briefing matin a été retiré), priorité aux **dépôts** (`intent=depot`)
+pour vider des pensées parasites sans tenter de les traiter.
+
 ### Current features
 
 - **Conversation** with automatic semantic memory (ChromaDB + embeddings)
 - **Tasks + reminders** in natural language (SQLite). Reminders are written
   to a `pending_notifications` table at due time; the iOS client polls
   `GET /notifications` to consume them.
+- **Décharge cognitive (`intent=depot`)** : l'utilisateur dépose une pensée
+  parasite ("j'ai peur pour X", "j'ai eu une idée Y", "note Z") et le LLM
+  l'accuse sobrement (1-3 mots). Persistée dans la table `thoughts`
+  (`id, content, kind, created_at, processed_at`) + indexée dans ChromaDB
+  avec tag `{kind: "depot", thought_kind, thought_id}` pour préparer une
+  future détection de boucles. `kind` ∈ `worry | idea | note`. Consultable
+  via `GET /thoughts?since=&limit=`.
 - **Web search** via self-hosted SearXNG with FR summary
 - **RSS feeds**: add/list/remove + summary of the latest news on demand
-- **Morning briefing** automatically every day (configurable time, default
-  8am): local weather + today's tasks + today's events + top 5 summarised RSS
-  items, also enqueued into `pending_notifications`
+- **Card Actu (curation IA, fetch au tap)** : `GET /news/latest` interroge
+  SearXNG (news 24h) + LLM (curation/résumé) selon les topics du profil
+  YAML (`news_topics.daily_briefing`). La card du dashboard affiche les
+  états idle/loading/data ; le tap ouvre l'overlay markdown.
 - **Photo analysis**: image sent in base64 via `POST /ask/image` → LLM
   multimodal vision → routed through the normal pipeline
   (memory/task/event depending on content)
 - **iCloud calendar** (CalDAV): event creation and listing in any iCloud
   calendar
-- **Fuel prices**: via `data.economie.gouv.fr` open data API, top 5 stations
-  around `HOME_CITY` (geocoding via OSM Nominatim)
+- **Fuel prices** (intent `fuel` LLM uniquement, plus de card dashboard) :
+  via `data.economie.gouv.fr` open data API, top 5 stations autour de
+  `HOME_CITY` (geocoding via OSM Nominatim)
 - **Weather**: via Open-Meteo, supports FR expressions (`demain`, `ce
   weekend`, etc.) up to 16 days
 - **Opt-in proactivity** (`PROACTIVITY_ENABLED=true`): rain alerts + event
   reminders with five safeguards (feature flag, time window, daily budget,
   dedup, cooldown). Disabled by default.
 - **Dashboard PWA**: l'iPhone tape `/` et reçoit une PWA orientée "tableau
-  de bord" (cards météo / prochain évent / tâches / notifs / briefing
-  accordéon + raccourcis carburant et RSS). `GET /dashboard` agrège l'état
-  en un seul appel. Mode chat optionnel via icône 💬 pour les conversations
-  longues.
+  de bord" (cards météo / prochain évent / tâches / notifs / actu).
+  `GET /dashboard` agrège l'état en un seul appel. Mode chat optionnel via
+  icône 💬 pour les conversations longues. **Plus de briefing matin
+  automatique ni de card carburant** (intentionnellement, pour ne pas
+  pousser d'info entrante non sollicitée).
 - **Profil utilisateur YAML** (`data/profile.yaml`): fichier édité à la main
   décrivant l'utilisateur (identité, famille, travail, voiture, routines,
   préférences). Injecté tel quel dans le system prompt à chaque appel LLM,
@@ -84,7 +104,9 @@ FastAPI app (bot/api.py, served by uvicorn)
         │     │                          (header X-Source: siri active le voice_mode TTS)
         │     ├── POST /ask/image     → idem avec image (multimodal) → { response, intent, refresh_cards }
         │     ├── GET  /notifications → NotificationStore.get_unread() + mark_read()
-        │     ├── GET  /dashboard     → build_dashboard(): météo + next évent + tâches du jour + count notifs + briefing
+        │     ├── GET  /dashboard     → build_dashboard(): météo + next évent + tâches du jour + count notifs
+        │     ├── GET  /news/latest   → NewsCurator.fetch_top_news() → { markdown, fetched_at } (card Actu)
+        │     ├── GET  /thoughts      → ThoughtManager.list_recent/list_since → liste des dépôts cognitifs
         │     └── POST /event/location → LocationEventStore.record_event() → { recorded, current_place }
         │
         ├── Pipeline (bot/pipeline.py, transport-agnostic)
@@ -102,11 +124,12 @@ FastAPI app (bot/api.py, served by uvicorn)
         │     └── capture_exception(exc, **context)  → API + APScheduler listeners
         │
         ├── <meta> parser
-        │     └── Intent ∈ {answer, task, search, memory, feed, event, fuel, weather}
-        │         + TaskMeta / FeedMeta / EventMeta / FuelMeta / WeatherMeta
+        │     └── Intent ∈ {answer, task, search, memory, feed, event, fuel, weather, depot}
+        │         + TaskMeta / FeedMeta / EventMeta / FuelMeta / WeatherMeta / DepotMeta
         │
         ├── Memory Manager (ChromaDB + nomic-embed-text via Ollama)
         │     ├── store()             → embed + persist the memory_content
+        │     ├── store_depot()       → embed + tag {kind=depot, thought_id, thought_kind}
         │     └── retrieve_context()  → top-5 relevant chunks
         │
         ├── Task Manager (SQLite via SQLAlchemy async + aiosqlite)
@@ -114,6 +137,9 @@ FastAPI app (bot/api.py, served by uvicorn)
         │     └── ReminderScheduler
         │           ├── SQLAlchemyJobStore → persisted one-shot reminders (write into NotificationStore)
         │           └── MemoryJobStore     → cron (non-serialisable closures)
+        │
+        ├── Thought Manager (SQLite — table `thoughts`)
+        │     └── create / list_recent / list_since (intent `depot`)
         │
         ├── NotificationStore (bot/notifications/store.py)
         │     ├── add(text, title, priority, sound) → SQLite row + Pushover push
@@ -135,14 +161,13 @@ FastAPI app (bot/api.py, served by uvicorn)
         │     ├── create_event(calendar_name?)      → fuzzy match of the target calendar
         │     └── list_between / list_today / list_upcoming
         │
-        ├── Fuel (open data fuel prices)
+        ├── Fuel (open data fuel prices — intent LLM uniquement)
         │     ├── FuelClient         → data.economie.gouv.fr (ODS v2.1)
         │     └── NominatimClient    → OSM geocoding (FR, in-memory cache)
         │
-        └── Briefing Service (APScheduler cron job)
-              ├── OpenMeteoClient (Sélestat weather)
-              ├── _today_tasks / _today_events / _rss_block
-              └── send_daily → enqueues the briefing into NotificationStore
+        └── News Curator (card Actu, fetch au tap)
+              ├── SearxngClient (categories=news, time_range=day)
+              └── LLM (curation + résumé 1-2 lignes par article)
 ```
 
 ---
@@ -167,7 +192,7 @@ FastAPI app (bot/api.py, served by uvicorn)
 | Geocoding     | Nominatim OSM (HTTP, no key, in-memory cache)           |
 | Logs          | structlog (console in dev, JSON in prod)                |
 | Container     | Docker + Docker Compose                                 |
-| Tests         | pytest + pytest-asyncio (auto mode, 215 tests)          |
+| Tests         | pytest + pytest-asyncio (auto mode, 322 tests)          |
 | Quality       | ruff (lint+format) + mypy strict via pre-commit         |
 | Interface web | Vanilla JS PWA, servie par FastAPI à `/`                |
 | Monitoring    | Sentry SDK (opt-in via `SENTRY_DSN`)                    |
@@ -185,7 +210,9 @@ Missing or invalid → 403 with a warning logged (source IP included).
 | POST   | `/ask`             | `{ "message": str }` <br>(header `X-Source: siri` → mode vocal)   | `{ "response": str, "intent": str, "refresh_cards": [str] }`                                            |
 | POST   | `/ask/image`       | `{ "message": str, "image_b64": str, "media_type": str }`         | `{ "response": str, "intent": str, "refresh_cards": [str] }`                                            |
 | GET    | `/notifications`   | —                                                                 | `{ "notifications": [ { "id": int, "text": str, "created_at": str } ] }`                                |
-| GET    | `/dashboard`       | —                                                                 | `{ "weather": …, "next_event": …, "today_tasks": […], "unread_notifications": int, "briefing": … }`     |
+| GET    | `/dashboard`       | —                                                                 | `{ "weather": …, "next_event": …, "today_tasks": […], "unread_notifications": int }`                    |
+| GET    | `/news/latest`     | —                                                                 | `{ "markdown": str, "fetched_at": str }`                                                                |
+| GET    | `/thoughts`        | `?since=<ISO>&limit=<int>` (optionnels)                           | `{ "thoughts": [ { "id": int, "content": str, "kind": str\|null, "created_at": str } ] }`              |
 | POST   | `/event/location`  | `{ "event": "arrived"\|"left", "place": str, "lat"?, "lon"?, "at"? }` | `{ "recorded": bool, "current_place": str \| null }`                                                |
 
 Quick smoke test:
@@ -206,7 +233,7 @@ On every call, the LLM receives a system prompt whose centrepiece is a
 
 ```json
 {
-  "intent": "answer|task|search|memory|feed|event|fuel|weather",
+  "intent": "answer|task|search|memory|feed|event|fuel|weather|depot",
   "store_memory": true|false,
   "memory_content": "factual summary if store_memory=true, otherwise null",
   "task": {
@@ -236,6 +263,10 @@ On every call, the LLM receives a system prompt whose centrepiece is a
   "weather": {
     "location": "city or place if specified, otherwise null (= HOME_CITY)",
     "when": "FR expression if specified (e.g. 'demain', 'ce weekend'), otherwise null (= today)"
+  },
+  "depot": {
+    "content": "raw thought verbatim if intent=depot, otherwise null",
+    "kind": "worry|idea|note if intent=depot, otherwise null"
   },
   "search_query": "query if intent=search, otherwise null"
 }

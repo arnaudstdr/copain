@@ -284,3 +284,67 @@ def test_extract_meta_weather_location_wrong_type_raises() -> None:
 "search_query": null}</meta>"""
     with pytest.raises(MetaParseError, match=r"weather\.location"):
         extract_meta(raw)
+
+
+def test_extract_meta_depot_worry() -> None:
+    raw = """\
+Noté.
+<meta>
+{
+  "intent": "depot",
+  "store_memory": false,
+  "memory_content": null,
+  "task": {"content": null, "due_str": null},
+  "feed": {"action": null, "name": null, "url": null},
+  "event": {"action": null, "title": null, "start_str": null, "end_str": null,
+            "location": null, "description": null, "range_str": null},
+  "fuel": {"fuel_type": null, "radius_km": null, "location": null},
+  "weather": {"location": null, "when": null},
+  "depot": {"content": "j'ai peur pour les finances de mon fils", "kind": "worry"},
+  "search_query": null
+}
+</meta>"""
+    text, meta = extract_meta(raw)
+    assert text.strip() == "Noté."
+    assert meta["intent"] == "depot"
+    assert meta["depot"]["content"] == "j'ai peur pour les finances de mon fils"
+    assert meta["depot"]["kind"] == "worry"
+
+
+def test_extract_meta_depot_idea() -> None:
+    raw = """<meta>{"intent":"depot","store_memory":false,"memory_content":null,
+"task":{"content":null,"due_str":null},
+"feed":{"action":null,"name":null,"url":null},
+"event":{"action":null,"title":null,"start_str":null,"end_str":null,
+"location":null,"description":null,"range_str":null},
+"fuel":{"fuel_type":null,"radius_km":null,"location":null},
+"weather":{"location":null,"when":null},
+"depot":{"content":"refactorer le pipeline","kind":"idea"},
+"search_query":null}</meta>"""
+    _, meta = extract_meta(raw)
+    assert meta["depot"]["kind"] == "idea"
+
+
+def test_extract_meta_depot_invalid_kind_raises() -> None:
+    raw = """<meta>{"intent":"depot","store_memory":false,"memory_content":null,
+"task":{"content":null,"due_str":null},
+"feed":{"action":null,"name":null,"url":null},
+"event":{"action":null,"title":null,"start_str":null,"end_str":null,
+"location":null,"description":null,"range_str":null},
+"fuel":{"fuel_type":null,"radius_km":null,"location":null},
+"weather":{"location":null,"when":null},
+"depot":{"content":"x","kind":"sadness"},
+"search_query":null}</meta>"""
+    with pytest.raises(MetaParseError, match=r"depot\.kind"):
+        extract_meta(raw)
+
+
+def test_extract_meta_depot_optional_in_old_format() -> None:
+    """Rétrocompat : si le LLM oublie depot, défauts à None."""
+    raw = """<meta>{"intent": "answer", "store_memory": false, "memory_content": null,
+"task": {"content": null, "due_str": null},
+"feed": {"action": null, "name": null, "url": null},
+"search_query": null}</meta>"""
+    _, meta = extract_meta(raw)
+    assert meta["depot"]["content"] is None
+    assert meta["depot"]["kind"] is None

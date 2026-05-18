@@ -5,8 +5,8 @@ Trois endpoints, tous authentifiés par le header `X-API-Key` validé contre
 
 - `POST /ask`         — message texte → réponse complète (pas de streaming SSE).
 - `POST /ask/image`   — message + image base64 → analyse multimodale.
-- `GET  /notifications` — file des notifications poussées (briefing, rappels,
-  proactivité). Lit puis marque les entrées comme lues.
+- `GET  /notifications` — file des notifications poussées (rappels, proactivité).
+  Lit puis marque les entrées comme lues.
 
 La logique métier (pipeline LLM + routing `<meta>` + side effects) vit dans
 `bot.pipeline.process_message`. Cette couche reste fine : auth + I/O + appel
@@ -105,17 +105,11 @@ class TaskCard(BaseModel):
     due_at: str | None
 
 
-class BriefingCard(BaseModel):
-    text: str
-    created_at: str
-
-
 class DashboardResponse(BaseModel):
     weather: WeatherCard | None
     next_event: NextEventCard | None
     today_tasks: list[TaskCard]
     unread_notifications: int
-    briefing: BriefingCard | None
 
 
 # --- Location schemas -------------------------------------------------------
@@ -147,6 +141,28 @@ class TasksListResponse(BaseModel):
 
 class TaskMutationResponse(BaseModel):
     ok: bool
+
+
+# --- Thoughts schemas ------------------------------------------------------
+
+
+class ThoughtItem(BaseModel):
+    id: int
+    content: str
+    kind: str | None
+    created_at: str  # ISO
+
+
+class ThoughtsListResponse(BaseModel):
+    thoughts: list[ThoughtItem]
+
+
+# --- News schemas ----------------------------------------------------------
+
+
+class NewsLatestResponse(BaseModel):
+    markdown: str
+    fetched_at: str  # ISO 8601 UTC
 
 
 # --- Weather / Events detail schemas ---------------------------------------
@@ -188,27 +204,6 @@ class CalendarEventItem(BaseModel):
 
 class EventsListResponse(BaseModel):
     events: list[CalendarEventItem]
-
-
-# --- Fuel detail schemas ---------------------------------------------------
-
-
-class FuelStationItem(BaseModel):
-    id: str
-    address: str
-    city: str
-    postal_code: str
-    distance_km: float
-    price_eur: float
-    updated_at: str | None  # ISO
-
-
-class FuelStationsResponse(BaseModel):
-    fuel_type: str
-    fuel_label: str
-    city: str  # nom du centre de recherche (HOME ou WORK)
-    radius_km: float
-    stations: list[FuelStationItem]
 
 
 # Mapping meta.intent → cards à rafraîchir côté front. Les intents purement
@@ -574,6 +569,89 @@ def create_app(state: AppState) -> FastAPI:
         return TaskMutationResponse(ok=True)
 
     @app.get(
+        "/news/latest",
+        response_model=NewsLatestResponse,
+        dependencies=[Depends(verify_api_key)],
+    )
+    async def news_latest(deps: BotDeps = Depends(get_deps)) -> NewsLatestResponse:
+        """Récupère et résume les actus 24h pour la card Actu du dashboard.
+
+        Lit les topics + blocklist depuis `data/profile.yaml` (section
+        `news_topics.daily_briefing`), interroge SearXNG via NewsCurator
+        et demande au LLM de curer + résumer. Pas de cache côté backend :
+        SearXNG est déjà caché côté client, et un appel n'a lieu qu'au
+        tap utilisateur (pas en boucle).
+        """
+        from bot.news.client import extract_news_config
+
+        topics, blocklist = extract_news_config(deps.profile.data)
+        if not topics:
+            return NewsLatestResponse(
+                markdown=(
+                    "Aucun topic configuré dans `data/profile.yaml` "
+                    "(section `news_topics.daily_briefing`)."
+                ),
+                fetched_at=datetime.now(UTC).isoformat(),
+            )
+
+        try:
+            markdown = await deps.news.fetch_top_news(topics=topics, domains_blocklist=blocklist)
+        except Exception as exc:
+            log.exception("news_latest_failed", error=str(exc))
+            capture_exception(exc, source="api_news_latest")
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail="Impossible de récupérer les actus pour le moment.",
+            ) from exc
+
+        return NewsLatestResponse(
+            markdown=markdown or "Aucune actu pertinente sur les dernières 24h.",
+            fetched_at=datetime.now(UTC).isoformat(),
+        )
+
+    @app.get(
+        "/thoughts",
+        response_model=ThoughtsListResponse,
+        dependencies=[Depends(verify_api_key)],
+    )
+    async def list_thoughts(
+        deps: BotDeps = Depends(get_deps),
+        since: str | None = None,
+        limit: int = 50,
+    ) -> ThoughtsListResponse:
+        """Liste les dépôts cognitifs récents (intent `depot`).
+
+        Filtre optionnel `since` (ISO 8601). `limit` plafonné à 200 pour
+        éviter les payloads trop gros. Tri chronologique inverse (les
+        dépôts les plus récents en premier).
+        """
+        capped_limit = max(1, min(limit, 200))
+        if since is not None:
+            try:
+                since_dt = datetime.fromisoformat(since)
+            except ValueError as exc:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"`since` doit être un timestamp ISO 8601 valide : {since!r}",
+                ) from exc
+            if since_dt.tzinfo is None:
+                since_dt = since_dt.replace(tzinfo=UTC)
+            rows = await deps.thoughts.list_since(since_dt, limit=capped_limit)
+        else:
+            rows = await deps.thoughts.list_recent(limit=capped_limit)
+
+        items = [
+            ThoughtItem(
+                id=t.id,
+                content=t.content,
+                kind=t.kind,
+                created_at=t.created_at.isoformat(),
+            )
+            for t in rows
+        ]
+        return ThoughtsListResponse(thoughts=items)
+
+    @app.get(
         "/weather/forecast",
         response_model=WeatherForecastResponse,
         dependencies=[Depends(verify_api_key)],
@@ -666,75 +744,6 @@ def create_app(state: AppState) -> FastAPI:
         ]
         return EventsListResponse(events=items)
 
-    @app.get(
-        "/fuel/stations",
-        response_model=FuelStationsResponse,
-        dependencies=[Depends(verify_api_key)],
-    )
-    async def fuel_stations(
-        deps: BotDeps = Depends(get_deps),
-        fuel_type: str = "gazole",
-        radius_km: float | None = None,
-    ) -> FuelStationsResponse:
-        """Top 5 stations les moins chères pour `fuel_type` autour du lieu courant.
-
-        Pas d'appel LLM — interrogation directe de `FuelClient` qui parle à
-        l'API data.economie.gouv.fr. Le centre de recherche suit la règle
-        contextuelle (WORK si on est au bureau, HOME sinon). `radius_km`
-        défaut = `FUEL_DEFAULT_RADIUS_KM`.
-        """
-        from bot.fuel.models import FUEL_LABELS, GeoPoint, normalize_fuel_type
-
-        normalized = normalize_fuel_type(fuel_type)
-        if normalized is None:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Type de carburant inconnu : {fuel_type!r}",
-            )
-
-        presence = await deps.location_events.get_current_location()
-        if presence is not None and presence.place == "work":
-            center = GeoPoint(lat=deps.settings.work_lat, lon=deps.settings.work_lon)
-            city = deps.settings.work_city
-        else:
-            center = GeoPoint(lat=deps.settings.home_lat, lon=deps.settings.home_lon)
-            city = deps.settings.home_city
-
-        radius = radius_km if radius_km is not None else deps.settings.fuel_default_radius_km
-        try:
-            stations = await deps.fuel.find_cheapest(
-                fuel_type=normalized,
-                center=center,
-                radius_km=radius,
-                limit=5,
-            )
-        except Exception as exc:
-            log.exception("fuel_stations_failed", error=str(exc))
-            raise HTTPException(
-                status_code=status.HTTP_502_BAD_GATEWAY,
-                detail="data.economie.gouv.fr indisponible",
-            ) from exc
-
-        items = [
-            FuelStationItem(
-                id=s.id,
-                address=s.address,
-                city=s.city,
-                postal_code=s.postal_code,
-                distance_km=s.distance_km,
-                price_eur=s.price_eur,
-                updated_at=s.updated_at.isoformat() if s.updated_at else None,
-            )
-            for s in stations
-        ]
-        return FuelStationsResponse(
-            fuel_type=normalized,
-            fuel_label=FUEL_LABELS[normalized],
-            city=city,
-            radius_km=radius,
-            stations=items,
-        )
-
     return app
 
 
@@ -792,18 +801,9 @@ def _snapshot_to_response(snap: DashboardSnapshot) -> DashboardResponse:
         )
         for t in snap.today_tasks
     ]
-    briefing = (
-        BriefingCard(
-            text=snap.latest_briefing.text,
-            created_at=snap.latest_briefing.created_at.isoformat(),
-        )
-        if snap.latest_briefing is not None
-        else None
-    )
     return DashboardResponse(
         weather=weather,
         next_event=next_event,
         today_tasks=tasks,
         unread_notifications=snap.unread_notifications,
-        briefing=briefing,
     )

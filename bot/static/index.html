@@ -68,12 +68,6 @@
 
     .card-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 
-    /* Accordéon briefing */
-    .card-briefing-toggle { display: flex; align-items: center; justify-content: space-between; cursor: pointer; }
-    .card-briefing-toggle .chevron { transition: transform 0.2s; color: var(--text3); }
-    .card-briefing.open .chevron { transform: rotate(90deg); }
-    .card-briefing-body { display: none; margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--border2); font-size: 13.5px; line-height: 1.55; color: var(--text2); white-space: pre-wrap; }
-    .card-briefing.open .card-briefing-body { display: block; }
 
     /* Cards secondaires : raccourcis carburant + RSS */
     .shortcut-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
@@ -140,21 +134,6 @@
     .weather-day-temps { font-size: 13px; font-weight: 500; white-space: nowrap; }
     .weather-day-precip { font-size: 11px; color: var(--blue); margin-left: 8px; white-space: nowrap; }
 
-    /* ── Fuel overlay ── */
-    .fuel-chips { display: flex; gap: 6px; padding: 4px 16px 12px; overflow-x: auto; scrollbar-width: none; flex-shrink: 0; }
-    .fuel-chips::-webkit-scrollbar { display: none; }
-    .fuel-chip { flex-shrink: 0; padding: 6px 13px; border-radius: 16px; background: var(--bg3); border: 1px solid var(--border2); color: var(--text2); font-size: 12.5px; font-family: inherit; cursor: pointer; transition: background 0.15s, color 0.15s, border-color 0.15s; }
-    .fuel-chip.active { background: var(--accent); border-color: var(--accent); color: #fff; }
-    .fuel-chip:active { transform: scale(0.95); }
-    .fuel-station { background: var(--bg3); border: 1px solid var(--border2); border-radius: 12px; padding: 11px 13px; display: flex; align-items: center; gap: 12px; flex-shrink: 0; }
-    .fuel-rank { width: 26px; height: 26px; border-radius: 50%; background: var(--bg4); display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 600; color: var(--text2); flex-shrink: 0; }
-    .fuel-rank.top { background: var(--green); color: #0f0f11; }
-    .fuel-station-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
-    .fuel-price { font-size: 15px; font-weight: 600; }
-    .fuel-address { font-size: 12px; color: var(--text2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .fuel-distance { font-size: 11px; color: var(--text3); white-space: nowrap; }
-    .fuel-freshness { font-size: 11px; color: var(--text3); text-align: center; padding: 6px 0; flex-shrink: 0; }
-
     /* ── Events overlay ── */
     .events-day-group { display: flex; flex-direction: column; gap: 6px; flex-shrink: 0; }
     .events-day-label { font-size: 11.5px; color: var(--text3); text-transform: uppercase; letter-spacing: 0.5px; font-weight: 500; padding: 8px 4px 2px; }
@@ -202,21 +181,21 @@
     #chat-view { position: absolute; inset: 0; background: var(--bg); z-index: 12; display: flex; flex-direction: column; animation: slideRight 0.2s ease; }
     #chat-view.hidden { display: none; }
 
-    /* Briefing full-screen view */
-    #briefing-view { position: absolute; inset: 0; background: var(--bg); z-index: 12; display: flex; flex-direction: column; animation: slideRight 0.2s ease; }
-    #briefing-view.hidden { display: none; }
-    .briefing-body { flex: 1; overflow-y: auto; padding: 16px 18px max(20px, env(safe-area-inset-bottom)); font-size: 14.5px; line-height: 1.6; color: var(--text); }
-    .briefing-body h3 { font-size: 16px; font-weight: 600; margin: 18px 0 8px; color: var(--text); }
-    .briefing-body strong { font-weight: 600; color: var(--text); }
-    .briefing-body em { color: var(--text2); font-style: normal; }
-    .briefing-body a { color: var(--accent2); text-decoration: none; word-break: break-all; }
-    .briefing-body a:active { opacity: 0.7; }
-    .briefing-body ul { list-style: none; padding: 0; margin: 8px 0; }
-    .briefing-body li { padding: 8px 0 8px 18px; position: relative; border-bottom: 1px solid var(--border); }
-    .briefing-body li:last-child { border-bottom: none; }
-    .briefing-body li::before { content: "•"; color: var(--accent2); position: absolute; left: 4px; top: 8px; font-weight: 700; }
-    .briefing-body p { margin: 6px 0; }
-    .briefing-empty { color: var(--text3); text-align: center; padding: 40px 20px; font-size: 13.5px; }
+    /* Markdown full-screen view (briefings, actu, …) */
+    #markdown-view { position: absolute; inset: 0; background: var(--bg); z-index: 12; display: flex; flex-direction: column; animation: slideRight 0.2s ease; }
+    #markdown-view.hidden { display: none; }
+    .markdown-body { flex: 1; overflow-y: auto; padding: 16px 18px max(20px, env(safe-area-inset-bottom)); font-size: 14.5px; line-height: 1.6; color: var(--text); }
+    .markdown-body h3 { font-size: 16px; font-weight: 600; margin: 18px 0 8px; color: var(--text); }
+    .markdown-body strong { font-weight: 600; color: var(--text); }
+    .markdown-body em { color: var(--text2); font-style: normal; }
+    .markdown-body a { color: var(--accent2); text-decoration: none; word-break: break-all; }
+    .markdown-body a:active { opacity: 0.7; }
+    .markdown-body ul { list-style: none; padding: 0; margin: 8px 0; }
+    .markdown-body li { padding: 8px 0 8px 18px; position: relative; border-bottom: 1px solid var(--border); }
+    .markdown-body li:last-child { border-bottom: none; }
+    .markdown-body li::before { content: "•"; color: var(--accent2); position: absolute; left: 4px; top: 8px; font-weight: 700; }
+    .markdown-body p { margin: 6px 0; }
+    .markdown-empty { color: var(--text3); text-align: center; padding: 40px 20px; font-size: 13.5px; }
 
     /* ── Animations ── */
     @keyframes bounce { 0%,80%,100%{transform:translateY(0)} 40%{transform:translateY(-6px)} }
@@ -339,34 +318,20 @@
     </div>
   </div>
 
-  <!-- Fuel panel -->
-  <div id="fuel-overlay" class="overlay hidden" onclick="if(event.target===this)closeFuel()">
-    <div class="panel">
-      <div class="panel-head">
-        <span class="panel-title" id="fuel-title">⛽ Carburant</span>
-        <button class="close-btn" onclick="closeFuel()">✕</button>
-      </div>
-      <div id="fuel-chips" class="fuel-chips"></div>
-      <div class="panel-list" id="fuel-list">
-        <div class="panel-empty">Chargement…</div>
-      </div>
-    </div>
-  </div>
-
-  <!-- Briefing full-screen view -->
-  <div id="briefing-view" class="hidden">
+  <!-- Markdown full-screen view (réutilisé pour la card Actu) -->
+  <div id="markdown-view" class="hidden">
     <header>
-      <button class="header-btn" onclick="closeBriefing()" title="Retour">
+      <button class="header-btn" onclick="closeMarkdownView()" title="Retour">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <path d="M15 18l-6-6 6-6"/>
         </svg>
       </button>
       <div class="greeting" style="margin-left:8px">
-        <div class="greeting-name">Briefing du matin</div>
-        <div class="greeting-date" id="briefing-date">—</div>
+        <div class="greeting-name" id="markdown-title">—</div>
+        <div class="greeting-date" id="markdown-subtitle">—</div>
       </div>
     </header>
-    <div class="briefing-body" id="briefing-body"></div>
+    <div class="markdown-body" id="markdown-body"></div>
   </div>
 
   <!-- Chat overlay (mode conversation) -->
@@ -424,16 +389,6 @@
   const API_BASE = "";
   const PROFILE_NAME = "Arnaud";
 
-  // Raccourcis du dashboard. Si `onTap` est défini → appel direct (pas
-  // d'appel LLM), sinon `msg` est envoyé via /ask. On préfère onTap dès
-  // qu'on a un endpoint REST dédié pour la donnée.
-  const SHORTCUTS = [
-    { icon: "⛽", label: "Carburant", sub: "Stations proches",
-      onTap: () => openFuel() },
-    { icon: "📰", label: "Actu", sub: "Résumé du jour",
-      msg: "Résume les dernières actus de mes flux RSS" },
-  ];
-
   // ── État ──────────────────────────────────────────────────────────────────
   let loading      = false;
   let attachment   = null;   // { b64, mediaType, preview }
@@ -442,6 +397,9 @@
   let ephemeralTimer = null;
   let dashboardData = null;
   let chatHistory  = [];     // [{role, text}]
+  // Card Actu : état persistant en mémoire (la card reste « fraîche » tant
+  // que la PWA est ouverte ; un reload de la page remet à zéro).
+  let newsState   = { fetchedAt: null, loading: false, markdown: null };
 
   // ── Init ──────────────────────────────────────────────────────────────────
   document.addEventListener("DOMContentLoaded", async () => {
@@ -490,10 +448,8 @@
     root.appendChild(tasksCard(d.today_tasks));
     // Notifs (count)
     root.appendChild(notifCard(d.unread_notifications));
-    // Briefing accordéon
-    if (d.briefing) root.appendChild(briefingCard(d.briefing));
-    // Shortcuts (Carburant + Actu)
-    root.appendChild(shortcutRow());
+    // Actu (vraie card avec fetch au clic)
+    root.appendChild(newsCard());
   }
 
   function renderDashboardError() {
@@ -585,29 +541,65 @@
     return card;
   }
 
-  function briefingCard(b) {
+  function newsCard() {
     const card = el("div", "card tappable");
-    card.onclick = () => openBriefing(b);
-    card.appendChild(makeHead("☀️", "Briefing du matin"));
-    // Aperçu : 2 premières lignes utiles, sans le préfixe "☀️ Bonjour…".
-    const lines = b.text.split("\n").filter(l => l.trim() && !l.startsWith("☀️ Bonjour"));
-    const preview = lines.slice(0, 2).join(" · ").slice(0, 110);
-    card.appendChild(el("div", "card-primary", "Tape pour lire en grand"));
-    if (preview) card.appendChild(el("div", "card-meta", preview + (preview.length >= 110 ? "…" : "")));
+    card.onclick = openNews;
+    card.appendChild(makeHead("📰", "Actu"));
+    if (newsState.loading) {
+      card.appendChild(el("div", "card-primary", "Chargement…"));
+      card.appendChild(el("div", "card-meta", "Curation des dernières 24h"));
+      return card;
+    }
+    if (newsState.markdown) {
+      card.appendChild(el("div", "card-primary", "Tape pour relire"));
+      const ago = newsState.fetchedAt ? formatRelativeAge(newsState.fetchedAt) : "";
+      card.appendChild(el("div", "card-meta", ago ? `Mis à jour ${ago}` : ""));
+      return card;
+    }
+    card.classList.add("empty");
+    card.appendChild(el("div", "card-primary", "Tape pour les dernières actus"));
+    card.appendChild(el("div", "card-meta", "Curation IA des 24h"));
     return card;
   }
 
-  function shortcutRow() {
-    const row = el("div", "shortcut-row");
-    SHORTCUTS.forEach(s => {
-      const node = el("div", "shortcut");
-      node.onclick = s.onTap ? s.onTap : () => triggerAsk(s.msg);
-      node.appendChild(el("div", "shortcut-icon", s.icon));
-      node.appendChild(el("div", "shortcut-label", s.label));
-      node.appendChild(el("div", "shortcut-sub", s.sub));
-      row.appendChild(node);
-    });
-    return row;
+  async function openNews() {
+    // Si on a déjà un fetch en mémoire, on rouvre l'overlay sans refetch.
+    if (newsState.markdown && !newsState.loading) {
+      openMarkdownView("Actu du jour", newsState.markdown, newsState.fetchedAt);
+      return;
+    }
+    if (newsState.loading) return;
+
+    newsState.loading = true;
+    if (dashboardData) renderDashboard(dashboardData);
+
+    try {
+      const res = await fetch(`${API_BASE}/news/latest`, {
+        headers: { "X-API-Key": API_KEY }
+      });
+      if (!res.ok) throw new Error(`${res.status}`);
+      const data = await res.json();
+      newsState.markdown = data.markdown || "";
+      newsState.fetchedAt = data.fetched_at;
+      newsState.loading = false;
+      if (dashboardData) renderDashboard(dashboardData);
+      openMarkdownView("Actu du jour", newsState.markdown, newsState.fetchedAt);
+    } catch (e) {
+      newsState.loading = false;
+      if (dashboardData) renderDashboard(dashboardData);
+      showToast("Impossible de charger les actus");
+    }
+  }
+
+  function formatRelativeAge(iso) {
+    const d = new Date(iso);
+    if (isNaN(d.getTime())) return "";
+    const ageMin = Math.max(0, Math.floor((Date.now() - d.getTime()) / 60_000));
+    if (ageMin < 1) return "à l'instant";
+    if (ageMin < 60) return `il y a ${ageMin} min`;
+    const ageH = Math.floor(ageMin / 60);
+    if (ageH < 24) return `il y a ${ageH} h`;
+    return `il y a ${Math.floor(ageH / 24)} j`;
   }
 
   function renderBellBadge(count) {
@@ -652,14 +644,6 @@
   function handleAskResponse(body, userText) {
     const intent = body.intent || "answer";
     const refresh = body.refresh_cards || [];
-
-    // Cas spécial briefing : le pipeline renvoie le briefing complet
-    // dans body.response. On ouvre la vue plein écran (markdown rendu,
-    // liens cliquables) au lieu d'une bulle éphémère qui disparaîtrait.
-    if (intent === "briefing") {
-      openBriefing({ text: body.response, created_at: new Date().toISOString() });
-      return;
-    }
 
     // Mode action : toast court + rafraîchissement des cards concernées
     if (refresh.length > 0) {
@@ -818,7 +802,6 @@
   }
   function closeNotifs() {
     document.getElementById("notif-overlay").classList.add("hidden");
-    // On rafraîchit le dashboard pour récupérer un éventuel nouveau briefing.
     loadDashboard();
   }
 
@@ -983,151 +966,47 @@
     return item;
   }
 
-  // ── Carburant (overlay) ──────────────────────────────────────────────────
-  const FUEL_TYPES = [
-    { key: "gazole", label: "Gazole" },
-    { key: "sp95",   label: "SP95" },
-    { key: "sp98",   label: "SP98" },
-    { key: "e10",    label: "E10" },
-    { key: "e85",    label: "E85" },
-    { key: "gplc",   label: "GPLc" },
-  ];
-  let currentFuelType = "gazole";
-
-  function openFuel() {
-    currentFuelType = "gazole";
-    document.getElementById("fuel-overlay").classList.remove("hidden");
-    renderFuelChips();
-    loadFuelStations();
-  }
-
-  function closeFuel() {
-    document.getElementById("fuel-overlay").classList.add("hidden");
-  }
-
-  function renderFuelChips() {
-    const row = document.getElementById("fuel-chips");
-    row.innerHTML = "";
-    FUEL_TYPES.forEach(f => {
-      const chip = document.createElement("button");
-      chip.className = "fuel-chip" + (f.key === currentFuelType ? " active" : "");
-      chip.type = "button";
-      chip.textContent = f.label;
-      chip.onclick = () => {
-        if (f.key === currentFuelType) return;
-        currentFuelType = f.key;
-        renderFuelChips();
-        loadFuelStations();
-      };
-      row.appendChild(chip);
-    });
-  }
-
-  async function loadFuelStations() {
-    const list = document.getElementById("fuel-list");
-    list.innerHTML = '<div class="panel-empty">Chargement…</div>';
-    try {
-      const res = await fetch(
-        `${API_BASE}/fuel/stations?fuel_type=${currentFuelType}`,
-        { headers: { "X-API-Key": API_KEY } }
-      );
-      if (!res.ok) throw new Error(`${res.status}`);
-      const data = await res.json();
-      document.getElementById("fuel-title").textContent =
-        `⛽ ${data.fuel_label} · ${data.city} (${formatKm(data.radius_km)})`;
-      renderFuelStations(data.stations);
-    } catch (e) {
-      list.innerHTML = '<div class="panel-empty">Impossible de charger les prix</div>';
-    }
-  }
-
-  function renderFuelStations(stations) {
-    const list = document.getElementById("fuel-list");
-    list.innerHTML = "";
-    if (!stations || stations.length === 0) {
-      list.innerHTML = '<div class="panel-empty">Aucune station trouvée dans le rayon</div>';
-      return;
-    }
-    stations.forEach((s, i) => list.appendChild(makeFuelStation(s, i)));
-    // Ligne "Prix mis à jour il y a X" sur la plus fraîche.
-    const freshness = computeFreshness(stations);
-    if (freshness) {
-      list.appendChild(el("div", "fuel-freshness", `Prix mis à jour ${freshness}`));
-    }
-  }
-
-  function makeFuelStation(s, index) {
-    const item = el("div", "fuel-station");
-    const rank = el("div", "fuel-rank" + (index === 0 ? " top" : ""), String(index + 1));
-    item.appendChild(rank);
-
-    const body = el("div", "fuel-station-body");
-    body.appendChild(el("div", "fuel-price", `${s.price_eur.toFixed(3)} €`));
-    const addressParts = [s.address, s.postal_code, s.city].filter(Boolean).join(", ");
-    body.appendChild(el("div", "fuel-address", addressParts || "adresse inconnue"));
-    item.appendChild(body);
-
-    item.appendChild(el("div", "fuel-distance", `${s.distance_km.toFixed(1)} km`));
-    return item;
-  }
-
-  function computeFreshness(stations) {
-    let freshest = null;
-    for (const s of stations) {
-      if (!s.updated_at) continue;
-      const d = new Date(s.updated_at);
-      if (freshest === null || d > freshest) freshest = d;
-    }
-    if (freshest === null) return null;
-    const ageMin = Math.floor((Date.now() - freshest.getTime()) / 60000);
-    if (ageMin < 1) return "à l'instant";
-    if (ageMin < 60) return `il y a ${ageMin} min`;
-    const ageH = Math.floor(ageMin / 60);
-    if (ageH < 24) return `il y a ${ageH}h`;
-    return `il y a ${Math.floor(ageH / 24)} j`;
-  }
-
-  function formatKm(km) {
-    return Number.isInteger(km) ? `${km} km` : `${km.toFixed(1)} km`;
-  }
-
-  // ── Briefing (vue plein écran) ───────────────────────────────────────────
-  function openBriefing(b) {
-    const view = document.getElementById("briefing-view");
-    const body = document.getElementById("briefing-body");
-    const dateEl = document.getElementById("briefing-date");
-    if (b.created_at) {
-      const d = new Date(b.created_at);
-      dateEl.textContent = d.toLocaleDateString("fr-FR", {
-        weekday: "long", day: "numeric", month: "long"
-      });
+  // ── Markdown view (réutilisé pour la card Actu) ────────────────────────
+  function openMarkdownView(title, text, subtitle) {
+    const view = document.getElementById("markdown-view");
+    const body = document.getElementById("markdown-body");
+    const titleEl = document.getElementById("markdown-title");
+    const subtitleEl = document.getElementById("markdown-subtitle");
+    titleEl.textContent = title || "";
+    if (subtitle) {
+      // Accepte soit un timestamp ISO, soit un texte libre.
+      const d = new Date(subtitle);
+      subtitleEl.textContent = isNaN(d.getTime())
+        ? subtitle
+        : d.toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long" });
     } else {
-      dateEl.textContent = "";
+      subtitleEl.textContent = "";
     }
-    body.innerHTML = renderBriefingMarkdown(b.text || "");
+    body.innerHTML = renderMarkdown(text || "");
     view.classList.remove("hidden");
     body.scrollTop = 0;
   }
 
-  function closeBriefing() {
-    document.getElementById("briefing-view").classList.add("hidden");
+  function closeMarkdownView() {
+    document.getElementById("markdown-view").classList.add("hidden");
   }
 
   /**
-   * Mini-parseur markdown pour le briefing matin.
+   * Mini-parseur markdown utilisé par la card Actu (et plus largement
+   * tout texte enrichi côté backend).
    *
-   * Couvre uniquement les patterns produits par BriefingService :
+   * Couvre :
    *  - `**gras**`            → <strong>
    *  - `*italique*`          → <em>
    *  - URL nue               → <a href>
    *  - lignes commençant par `- ` → groupées dans une <ul>
-   *  - lignes commençant par `📰 *…*` ou `🤖 *…*` → titre <h3>
+   *  - lignes commençant par un emoji + `*titre*` → <h3>
    *  - autres lignes non vides → <p>
    *
    * On échappe le HTML avant traitement pour éviter toute injection
-   * via le contenu du briefing (URLs externes, titres d'articles, etc.).
+   * via le contenu (URLs externes, titres d'articles, etc.).
    */
-  function renderBriefingMarkdown(text) {
+  function renderMarkdown(text) {
     const esc = escHtml(text);
     const lines = esc.split("\n");
     const out = [];

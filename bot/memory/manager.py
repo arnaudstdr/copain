@@ -90,6 +90,42 @@ class MemoryManager:
         )
         log.info("memory_stored", entry_id=entry_id, preview=memory_content[:80])
 
+    async def store_depot(
+        self,
+        content: str,
+        thought_id: int,
+        thought_kind: str | None,
+    ) -> None:
+        """Indexe un dépôt cognitif (intent `depot`) dans ChromaDB.
+
+        Le tag `kind="depot"` permettra une future détection de boucles
+        (clustering sémantique sur les dépôts récurrents). `thought_id`
+        pointe vers la ligne SQLite correspondante pour récupérer le
+        contexte complet (created_at, processed_at).
+        """
+        vector = await self._embedder.embed(content)
+        entry_id = uuid.uuid4().hex
+        metadata: dict[str, Any] = {
+            "timestamp": datetime.now(UTC).isoformat(),
+            "kind": "depot",
+            "thought_id": thought_id,
+            "thought_kind": thought_kind or "none",
+        }
+        await asyncio.to_thread(
+            self._collection.add,
+            ids=[entry_id],
+            embeddings=[vector],  # type: ignore[arg-type, unused-ignore]
+            documents=[content],
+            metadatas=[metadata],
+        )
+        log.info(
+            "depot_stored",
+            entry_id=entry_id,
+            thought_id=thought_id,
+            thought_kind=thought_kind,
+            preview=content[:80],
+        )
+
     async def store_many(self, items: Sequence[tuple[str, str]]) -> None:
         """Batch-embed et persiste plusieurs (original_message, memory_content).
 

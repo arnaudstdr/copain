@@ -19,7 +19,6 @@ from collections.abc import Awaitable, Callable
 import uvicorn
 
 from bot.api import AppState, create_app
-from bot.briefing.service import BriefingService
 from bot.briefing.weather import OpenMeteoClient
 from bot.calendar.client import ICloudCalendarClient, ICloudCalendarError
 from bot.config import Settings, load_settings
@@ -44,6 +43,7 @@ from bot.search.searxng import SearxngClient
 from bot.sentry_setup import configure_sentry
 from bot.tasks.manager import TaskManager
 from bot.tasks.scheduler import ReminderScheduler
+from bot.thoughts.manager import ThoughtManager
 
 log = get_logger(__name__)
 
@@ -51,7 +51,6 @@ DEFAULT_FEEDS: tuple[tuple[str, str, str], ...] = (
     ("The Verge", "https://www.theverge.com/rss/index.xml", "tech"),
 )
 
-BRIEFING_JOB_ID = "daily-briefing"
 PROACTIVITY_JOB_ID = "proactivity-tick"
 
 
@@ -81,6 +80,7 @@ async def _build_state(
     )
     engine = create_shared_engine(settings.db_path)
     tasks = TaskManager(engine, scheduler=scheduler)
+    thoughts = ThoughtManager(engine)
     rss = FeedManager(engine)
     rss_fetcher = RssFetcher()
     pushover = PushoverClient(token=settings.pushover_token, user=settings.pushover_user)
@@ -121,16 +121,6 @@ async def _build_state(
     profile = load_profile(settings.profile_path)
     news = NewsCurator(searxng=search, llm=llm)
 
-    briefing = BriefingService(
-        settings=settings,
-        weather=weather,
-        tasks=tasks,
-        news=news,
-        profile=profile,
-        calendar=calendar,
-        notifications=notifications,
-    )
-
     location_events = LocationEventStore(engine)
 
     deps = BotDeps(
@@ -138,15 +128,16 @@ async def _build_state(
         llm=llm,
         memory=MemoryManager(settings.chroma_dir, embedder),
         tasks=tasks,
+        thoughts=thoughts,
         scheduler=scheduler,
         search=search,
         rss=rss,
         rss_fetcher=rss_fetcher,
-        briefing=briefing,
         calendar=calendar,
         fuel=fuel,
         geocoder=geocoder,
         weather=weather,
+        news=news,
         profile=profile,
         location_events=location_events,
         proactivity=proactivity,
@@ -156,6 +147,7 @@ async def _build_state(
     # Initialisations asynchrones — équivalent de l'ancien `post_init` PTB.
     await enable_wal_mode(engine)
     await tasks.init_schema()
+    await thoughts.init_schema()
     await rss.init_schema()
     await notifications.init_schema()
     await location_events.init_schema()
@@ -167,18 +159,9 @@ async def _build_state(
 
     scheduler.start()
 
-    async def _daily_briefing_job() -> None:
-        await briefing.send_daily()
-
     async def _proactivity_tick_job() -> None:
         await proactivity.tick()
 
-    scheduler.add_cron_job(
-        job_id=BRIEFING_JOB_ID,
-        func=_daily_briefing_job,
-        hour=settings.briefing_hour,
-        minute=settings.briefing_minute,
-    )
     if settings.proactivity_enabled:
         scheduler.add_interval_job(
             job_id=PROACTIVITY_JOB_ID,

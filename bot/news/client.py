@@ -1,6 +1,7 @@
 """Curation quotidienne des actualités IA via SearXNG + LLM.
 
-Le briefing matin appelle `NewsCurator.fetch_top_news(topics)` qui :
+La card actu de la PWA et tout appel manuel à `intent=news` passent par
+`NewsCurator.fetch_top_news(topics)` qui :
 
 1. Lance N recherches SearXNG en parallèle (une par topic) avec
    `time_range=day` + `categories=news` + `language=all` pour capter
@@ -13,14 +14,14 @@ Le briefing matin appelle `NewsCurator.fetch_top_news(topics)` qui :
 
 Le LLM joue ici un double rôle : filtre de pertinence (parmi 30-50
 résultats bruts) et rédacteur (résumé concis). C'est ce qui permet de
-passer d'un flot brut de news à un briefing court et exploitable.
+passer d'un flot brut de news à un fil court et exploitable.
 """
 
 from __future__ import annotations
 
 import asyncio
 from collections.abc import Sequence
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 from urllib.parse import urlparse
 
 from bot.logging_conf import get_logger
@@ -162,3 +163,37 @@ def _dedupe_and_filter(
         seen_urls.add(url)
         out.append(r)
     return out
+
+
+def extract_news_config(
+    profile_data: dict[str, Any],
+) -> tuple[list[str], list[str]]:
+    """Lit `news_topics.daily_briefing` et `news_topics.filters.domains_blocklist`.
+
+    Source attendue dans `data/profile.yaml` :
+
+        news_topics:
+          daily_briefing:
+            - "LLM agents"
+            - "OpenAI OR Anthropic"
+          filters:
+            domains_blocklist: [reddit.com, twitter.com]
+
+    Retourne `([], [])` si la section est absente ou mal formée — on
+    préfère renvoyer un fil vide plutôt qu'un crash en production.
+    """
+    section = profile_data.get("news_topics") or {}
+    if not isinstance(section, dict):
+        return [], []
+    raw_topics = section.get("daily_briefing") or []
+    if not isinstance(raw_topics, list):
+        return [], []
+    topics = [str(t).strip() for t in raw_topics if str(t).strip()]
+    filters = section.get("filters") or {}
+    if not isinstance(filters, dict):
+        return topics, []
+    raw_block = filters.get("domains_blocklist") or []
+    if not isinstance(raw_block, list):
+        return topics, []
+    blocklist = [str(d).strip() for d in raw_block if str(d).strip()]
+    return topics, blocklist
