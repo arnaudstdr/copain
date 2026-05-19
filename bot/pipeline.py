@@ -899,9 +899,32 @@ _FR_TIME_SUBSTITUTIONS: tuple[tuple[re.Pattern[str], str], ...] = (
     (re.compile(r"\bsoir\b", re.IGNORECASE), ""),
 )
 
+# Heures FR en notation "Xh" / "XhYY" (ex: "7h", "7h30", "19h00"). dateparser
+# FR interprète "7h" comme une durée (+7 heures) au lieu de l'heure 07:00,
+# donc on normalise en "HH:MM" avant de l'invoquer. Exclu derrière "dans" /
+# "il y a" / "depuis" / "pendant" où la notation reste une vraie durée.
+_FR_HOUR_PATTERN: re.Pattern[str] = re.compile(r"\b(\d{1,2})h(\d{2})?\b", re.IGNORECASE)
+_FR_DURATION_PREFIX: re.Pattern[str] = re.compile(
+    r"\b(?:dans|il\s+y\s+a|depuis|pendant)\s+$", re.IGNORECASE
+)
+
+
+def _normalize_fr_hour_markers(expr: str) -> str:
+    def replace(match: re.Match[str]) -> str:
+        hour = int(match.group(1))
+        if not 0 <= hour <= 23:
+            return match.group(0)
+        if _FR_DURATION_PREFIX.search(expr[: match.start()]):
+            return match.group(0)
+        minute = match.group(2) or "00"
+        return f"{hour:02d}:{minute}"
+
+    return _FR_HOUR_PATTERN.sub(replace, expr)
+
 
 def _normalize_fr_time_words(expr: str) -> str:
     """Remplace les mots FR que dateparser ignore par des expressions qu'il gère."""
+    expr = _normalize_fr_hour_markers(expr)
     for pattern, repl in _FR_TIME_SUBSTITUTIONS:
         expr = pattern.sub(repl, expr)
     return " ".join(expr.split())  # nettoie les espaces doubles laissés par les suppressions
