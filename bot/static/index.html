@@ -77,11 +77,13 @@
 
     html, body { height: 100%; background: var(--bg); color: var(--text); font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, sans-serif; overflow: hidden; -webkit-font-smoothing: antialiased; }
 
-    #app { display: flex; flex-direction: column; height: 100dvh; max-width: 480px; margin: 0 auto; background: var(--bg); position: relative; overflow: hidden; }
+    /* Hauteur du #app pilotée par JS via window.visualViewport (cf. setupAppHeight).
+       Fallback 100dvh pour les chargements pré-JS / navigateurs sans visualViewport.
+       Sur iOS 26 PWA standalone, 100dvh peut renvoyer une valeur trop petite — on
+       remplace par la vraie hauteur visuelle mesurée. */
+    :root { --app-h: 100dvh; }
 
-    /* Hauteur estimée de la composer-wrap (icon row + safe-area). Mise à jour
-       côté JS quand le preview-bar passe en visible pour absorber sa hauteur. */
-    :root { --composer-h: calc(56px + env(safe-area-inset-bottom)); }
+    #app { display: flex; flex-direction: column; height: var(--app-h); max-width: 480px; margin: 0 auto; background: var(--bg); position: relative; overflow: hidden; }
 
     /* ── Header ── */
     header { display: flex; align-items: center; gap: 12px; padding: 12px 16px; padding-top: max(12px, env(safe-area-inset-top)); border-bottom: 1px solid var(--border); background: var(--bg2); flex-shrink: 0; }
@@ -94,9 +96,7 @@
     .badge { position: absolute; top: -3px; right: -3px; background: var(--red); color: #fff; font-size: 9px; font-weight: 700; min-width: 16px; height: 16px; padding: 0 4px; border-radius: 8px; display: flex; align-items: center; justify-content: center; }
 
     /* ── Dashboard feed ── */
-    /* padding-bottom inclut --composer-h pour ne pas être caché derrière la
-       composer-wrap fixée au bas de la viewport. */
-    #dashboard { flex: 1; overflow-y: auto; padding: 12px 14px; padding-bottom: calc(var(--composer-h) + 12px); display: flex; flex-direction: column; gap: 10px; scroll-behavior: smooth; }
+    #dashboard { flex: 1; overflow-y: auto; padding: 12px 14px; display: flex; flex-direction: column; gap: 10px; scroll-behavior: smooth; }
     #dashboard::-webkit-scrollbar { width: 3px; }
     #dashboard::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 4px; }
 
@@ -124,30 +124,16 @@
 
 
     /* ── Bulle de réponse éphémère ── */
-    #ephemeral { position: absolute; bottom: calc(var(--composer-h) + 8px); left: 14px; right: 14px; background: var(--bg3); border: 1px solid var(--border2); border-radius: 14px; padding: 12px 14px; font-size: 13.5px; line-height: 1.5; color: var(--text); z-index: 8; box-shadow: var(--shadow-strong); animation: slideUpFade 0.2s ease; cursor: pointer; white-space: pre-wrap; max-height: 50dvh; overflow-y: auto; }
+    #ephemeral { position: absolute; bottom: 70px; left: 14px; right: 14px; background: var(--bg3); border: 1px solid var(--border2); border-radius: 14px; padding: 12px 14px; font-size: 13.5px; line-height: 1.5; color: var(--text); z-index: 8; box-shadow: var(--shadow-strong); animation: slideUpFade 0.2s ease; cursor: pointer; white-space: pre-wrap; max-height: 50dvh; overflow-y: auto; }
     #ephemeral.hidden { display: none; }
 
     /* ── Composer wrap (preview + input bar) ── */
-    /* Sortie du flow flexbox du #app : positionnée directement par rapport à
-       la viewport via position: fixed; bottom: 0. iOS PWA standalone gère
-       mal les hauteurs en cascade quand on essaie de descendre le #app
-       jusqu'au bas physique — fixer la composer-wrap supprime cette
-       dépendance. max-width 480px + margin auto reproduisent la contrainte
-       de largeur du #app pour les écrans plus larges. */
-    .composer-wrap {
-      position: fixed;
-      bottom: 0;
-      left: 0;
-      right: 0;
-      max-width: 480px;
-      margin: 0 auto;
-      background: var(--bg2);
-      z-index: 5;
-    }
-    /* Composer du chat : z-index > chat-view (z:12) pour passer au-dessus de
-       la composer du dashboard. Quand chat-view est cachée (display: none),
-       cette composer-wrap est masquée avec elle (DOM child). */
-    .composer-wrap.chat { z-index: 13; }
+    /* Composer dans le flow flexbox du #app : flex-shrink: 0 la garde à sa
+       taille naturelle, et comme c'est le dernier enfant après #dashboard
+       (flex: 1), elle est mécaniquement collée au bas du #app. La hauteur
+       du #app étant pilotée par JS via --app-h (visualViewport), le bas
+       du #app = le bas physique de l'écran. */
+    .composer-wrap { background: var(--bg2); flex-shrink: 0; }
 
     /* ── Input bar ── */
     .bar, #bar { display: flex; align-items: flex-end; gap: 7px; padding: 9px 14px; border-top: 1px solid var(--border); background: var(--bg2); flex-shrink: 0; padding-bottom: max(9px, env(safe-area-inset-bottom)); }
@@ -172,7 +158,7 @@
     .preview-label { font-size: 12px; color: var(--text2); }
 
     /* ── Toast ── */
-    #toast { position: absolute; bottom: calc(var(--composer-h) + 14px); left: 50%; transform: translateX(-50%); background: var(--bg4); border: 1px solid var(--border2); border-radius: 20px; padding: 8px 18px; font-size: 13px; color: var(--text); white-space: nowrap; z-index: 20; animation: toastIn 0.2s ease; pointer-events: none; max-width: 86%; overflow: hidden; text-overflow: ellipsis; }
+    #toast { position: absolute; bottom: 76px; left: 50%; transform: translateX(-50%); background: var(--bg4); border: 1px solid var(--border2); border-radius: 20px; padding: 8px 18px; font-size: 13px; color: var(--text); white-space: nowrap; z-index: 20; animation: toastIn 0.2s ease; pointer-events: none; max-width: 86%; overflow: hidden; text-overflow: ellipsis; }
 
     /* ── Notifications overlay ── */
     .overlay { position: absolute; inset: 0; background: var(--overlay-bg); z-index: 15; display: flex; flex-direction: column; justify-content: flex-end; animation: fadeIn 0.15s ease; }
@@ -230,7 +216,7 @@
     .task-completing { opacity: 0.4; pointer-events: none; }
 
     /* ── Chat overlay (mode conversation) ── */
-    .chat-feed { flex: 1; overflow-y: auto; padding: 12px 14px; padding-bottom: calc(var(--composer-h) + 12px); display: flex; flex-direction: column; gap: 10px; }
+    .chat-feed { flex: 1; overflow-y: auto; padding: 12px 14px; display: flex; flex-direction: column; gap: 10px; }
     .chat-feed::-webkit-scrollbar { width: 3px; }
     .chat-feed::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 4px; }
     .row { display: flex; align-items: flex-end; gap: 8px; animation: fadeUp 0.2s ease; }
@@ -480,6 +466,7 @@
 
   // ── Init ──────────────────────────────────────────────────────────────────
   document.addEventListener("DOMContentLoaded", async () => {
+    setupAppHeight();
     renderGreeting();
     try {
       const cfg = await fetch("/config").then(r => r.json());
@@ -492,6 +479,22 @@
     // Refresh périodique léger pour le count notif et la météo (toutes les 2 min).
     setInterval(loadDashboard, 120_000);
   });
+
+  // Pilote --app-h depuis window.visualViewport.height (fallback innerHeight).
+  // Sur iOS 26 PWA standalone, 100dvh peut renvoyer une valeur qui ne reflète
+  // pas la viewport visuelle réelle, ce qui laissait apparaître une bande
+  // vide sous la composer bar. visualViewport remonte la vraie hauteur
+  // utilisable (et s'ajuste quand le clavier s'ouvre/se ferme).
+  function setupAppHeight() {
+    const update = () => {
+      const h = window.visualViewport?.height || window.innerHeight;
+      document.documentElement.style.setProperty("--app-h", `${h}px`);
+    };
+    update();
+    window.addEventListener("resize", update);
+    window.addEventListener("orientationchange", update);
+    window.visualViewport?.addEventListener("resize", update);
+  }
 
   function renderGreeting() {
     document.getElementById("greeting-name").textContent = `Bonjour ${PROFILE_NAME}`;
@@ -941,20 +944,6 @@
   }
 
   // ── Photo ─────────────────────────────────────────────────────────────────
-  // Met à jour la CSS var `--composer-h` selon que le preview-bar est visible
-  // ou non. Le padding-bottom du dashboard / chat-feed suit cette variable, ce
-  // qui évite que la dernière card / le dernier message soit caché derrière
-  // la composer-wrap fixée à la viewport.
-  function refreshComposerHeight(previewVisible) {
-    const base = 56;          // hauteur input bar
-    const previewH = 60;      // hauteur preview-bar
-    const total = base + (previewVisible ? previewH : 0);
-    document.documentElement.style.setProperty(
-      "--composer-h",
-      `calc(${total}px + env(safe-area-inset-bottom))`
-    );
-  }
-
   function handleFileChange(e) {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -965,7 +954,6 @@
       document.getElementById("preview-img").src = result;
       document.getElementById("preview-bar").classList.remove("hidden");
       document.getElementById("msg-input").placeholder = "Ajoute un mot…";
-      refreshComposerHeight(true);
       updateSendBtn();
     };
     reader.readAsDataURL(file);
@@ -977,7 +965,6 @@
     document.getElementById("preview-bar").classList.add("hidden");
     document.getElementById("preview-img").src = "";
     document.getElementById("msg-input").placeholder = "Écris un mot…";
-    refreshComposerHeight(false);
     updateSendBtn();
   }
 
@@ -1513,7 +1500,6 @@
       document.getElementById("chat-preview-img").src = result;
       document.getElementById("chat-preview-bar").classList.remove("hidden");
       document.getElementById("chat-input").placeholder = "Ajoute un mot…";
-      refreshComposerHeight(true);
       updateChatSendBtn();
     };
     reader.readAsDataURL(file);
@@ -1525,7 +1511,6 @@
     document.getElementById("chat-preview-bar").classList.add("hidden");
     document.getElementById("chat-preview-img").src = "";
     document.getElementById("chat-input").placeholder = "Écris…";
-    refreshComposerHeight(false);
     updateChatSendBtn();
   }
 
