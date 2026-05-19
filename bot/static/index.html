@@ -75,15 +75,13 @@
       }
     }
 
-    html { height: 100%; background: var(--bg); }
-    /* body en position: fixed + inset: 0 : sur iOS PWA standalone, 100dvh
-       peut être légèrement inférieur à la hauteur écran physique. En fixant
-       le body sur toute la viewport (qui inclut la zone home indicator via
-       viewport-fit=cover), on garantit que le #app descend bien jusqu'au
-       bas physique et que la composer bar (flex-shrink: 0) y est collée. */
-    body { position: fixed; inset: 0; background: var(--bg); color: var(--text); font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, sans-serif; overflow: hidden; -webkit-font-smoothing: antialiased; }
+    html, body { height: 100%; background: var(--bg); color: var(--text); font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, sans-serif; overflow: hidden; -webkit-font-smoothing: antialiased; }
 
-    #app { display: flex; flex-direction: column; height: 100%; max-width: 480px; margin: 0 auto; background: var(--bg); position: relative; overflow: hidden; }
+    #app { display: flex; flex-direction: column; height: 100dvh; max-width: 480px; margin: 0 auto; background: var(--bg); position: relative; overflow: hidden; }
+
+    /* Hauteur estimée de la composer-wrap (icon row + safe-area). Mise à jour
+       côté JS quand le preview-bar passe en visible pour absorber sa hauteur. */
+    :root { --composer-h: calc(56px + env(safe-area-inset-bottom)); }
 
     /* ── Header ── */
     header { display: flex; align-items: center; gap: 12px; padding: 12px 16px; padding-top: max(12px, env(safe-area-inset-top)); border-bottom: 1px solid var(--border); background: var(--bg2); flex-shrink: 0; }
@@ -96,7 +94,9 @@
     .badge { position: absolute; top: -3px; right: -3px; background: var(--red); color: #fff; font-size: 9px; font-weight: 700; min-width: 16px; height: 16px; padding: 0 4px; border-radius: 8px; display: flex; align-items: center; justify-content: center; }
 
     /* ── Dashboard feed ── */
-    #dashboard { flex: 1; overflow-y: auto; padding: 12px 14px; display: flex; flex-direction: column; gap: 10px; scroll-behavior: smooth; }
+    /* padding-bottom inclut --composer-h pour ne pas être caché derrière la
+       composer-wrap fixée au bas de la viewport. */
+    #dashboard { flex: 1; overflow-y: auto; padding: 12px 14px; padding-bottom: calc(var(--composer-h) + 12px); display: flex; flex-direction: column; gap: 10px; scroll-behavior: smooth; }
     #dashboard::-webkit-scrollbar { width: 3px; }
     #dashboard::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 4px; }
 
@@ -124,8 +124,30 @@
 
 
     /* ── Bulle de réponse éphémère ── */
-    #ephemeral { position: absolute; bottom: 70px; left: 14px; right: 14px; background: var(--bg3); border: 1px solid var(--border2); border-radius: 14px; padding: 12px 14px; font-size: 13.5px; line-height: 1.5; color: var(--text); z-index: 8; box-shadow: var(--shadow-strong); animation: slideUpFade 0.2s ease; cursor: pointer; white-space: pre-wrap; max-height: 50dvh; overflow-y: auto; }
+    #ephemeral { position: absolute; bottom: calc(var(--composer-h) + 8px); left: 14px; right: 14px; background: var(--bg3); border: 1px solid var(--border2); border-radius: 14px; padding: 12px 14px; font-size: 13.5px; line-height: 1.5; color: var(--text); z-index: 8; box-shadow: var(--shadow-strong); animation: slideUpFade 0.2s ease; cursor: pointer; white-space: pre-wrap; max-height: 50dvh; overflow-y: auto; }
     #ephemeral.hidden { display: none; }
+
+    /* ── Composer wrap (preview + input bar) ── */
+    /* Sortie du flow flexbox du #app : positionnée directement par rapport à
+       la viewport via position: fixed; bottom: 0. iOS PWA standalone gère
+       mal les hauteurs en cascade quand on essaie de descendre le #app
+       jusqu'au bas physique — fixer la composer-wrap supprime cette
+       dépendance. max-width 480px + margin auto reproduisent la contrainte
+       de largeur du #app pour les écrans plus larges. */
+    .composer-wrap {
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      max-width: 480px;
+      margin: 0 auto;
+      background: var(--bg2);
+      z-index: 5;
+    }
+    /* Composer du chat : z-index > chat-view (z:12) pour passer au-dessus de
+       la composer du dashboard. Quand chat-view est cachée (display: none),
+       cette composer-wrap est masquée avec elle (DOM child). */
+    .composer-wrap.chat { z-index: 13; }
 
     /* ── Input bar ── */
     .bar, #bar { display: flex; align-items: flex-end; gap: 7px; padding: 9px 14px; border-top: 1px solid var(--border); background: var(--bg2); flex-shrink: 0; padding-bottom: max(9px, env(safe-area-inset-bottom)); }
@@ -150,7 +172,7 @@
     .preview-label { font-size: 12px; color: var(--text2); }
 
     /* ── Toast ── */
-    #toast { position: absolute; bottom: 76px; left: 50%; transform: translateX(-50%); background: var(--bg4); border: 1px solid var(--border2); border-radius: 20px; padding: 8px 18px; font-size: 13px; color: var(--text); white-space: nowrap; z-index: 20; animation: toastIn 0.2s ease; pointer-events: none; max-width: 86%; overflow: hidden; text-overflow: ellipsis; }
+    #toast { position: absolute; bottom: calc(var(--composer-h) + 14px); left: 50%; transform: translateX(-50%); background: var(--bg4); border: 1px solid var(--border2); border-radius: 20px; padding: 8px 18px; font-size: 13px; color: var(--text); white-space: nowrap; z-index: 20; animation: toastIn 0.2s ease; pointer-events: none; max-width: 86%; overflow: hidden; text-overflow: ellipsis; }
 
     /* ── Notifications overlay ── */
     .overlay { position: absolute; inset: 0; background: var(--overlay-bg); z-index: 15; display: flex; flex-direction: column; justify-content: flex-end; animation: fadeIn 0.15s ease; }
@@ -208,7 +230,7 @@
     .task-completing { opacity: 0.4; pointer-events: none; }
 
     /* ── Chat overlay (mode conversation) ── */
-    .chat-feed { flex: 1; overflow-y: auto; padding: 12px 14px; display: flex; flex-direction: column; gap: 10px; }
+    .chat-feed { flex: 1; overflow-y: auto; padding: 12px 14px; padding-bottom: calc(var(--composer-h) + 12px); display: flex; flex-direction: column; gap: 10px; }
     .chat-feed::-webkit-scrollbar { width: 3px; }
     .chat-feed::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 4px; }
     .row { display: flex; align-items: flex-end; gap: 8px; animation: fadeUp 0.2s ease; }
@@ -283,36 +305,39 @@
   <!-- Bulle éphémère réponse LLM -->
   <div id="ephemeral" class="hidden" onclick="hideEphemeral()"></div>
 
-  <!-- Photo preview -->
-  <div id="preview-bar" class="hidden">
-    <div class="preview-wrap">
-      <img class="preview-img" id="preview-img" src="" alt="" />
-      <button class="remove-btn" onclick="removeAttachment()">✕</button>
+  <!-- Composer (preview photo + input bar) fixée au bas de la viewport -->
+  <div class="composer-wrap" id="composer-wrap">
+    <!-- Photo preview -->
+    <div id="preview-bar" class="hidden">
+      <div class="preview-wrap">
+        <img class="preview-img" id="preview-img" src="" alt="" />
+        <button class="remove-btn" onclick="removeAttachment()">✕</button>
+      </div>
+      <span class="preview-label">Photo jointe</span>
     </div>
-    <span class="preview-label">Photo jointe</span>
-  </div>
 
-  <!-- Input bar -->
-  <div id="bar">
-    <input type="file" id="file-input" accept="image/*" style="display:none" onchange="handleFileChange(event)" />
-    <button class="icon-btn" onclick="document.getElementById('file-input').click()" title="Joindre une photo">
-      <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-        <path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48"/>
-      </svg>
-    </button>
-    <button class="icon-btn" id="mic-btn" onclick="toggleMic()" title="Dicter">
-      <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-        <path d="M12 1a3 3 0 00-3 3v8a3 3 0 006 0V4a3 3 0 00-3-3z"/>
-        <path d="M19 10v2a7 7 0 01-14 0v-2"/>
-        <line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/>
-      </svg>
-    </button>
-    <textarea class="msg-input" id="msg-input" placeholder="Écris un mot…" rows="1" onkeydown="handleKey(event)" oninput="autoResize(this); updateSendBtn();"></textarea>
-    <button class="send-btn" id="send-btn" onclick="send()" disabled>
-      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-        <line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/>
-      </svg>
-    </button>
+    <!-- Input bar -->
+    <div id="bar">
+      <input type="file" id="file-input" accept="image/*" style="display:none" onchange="handleFileChange(event)" />
+      <button class="icon-btn" onclick="document.getElementById('file-input').click()" title="Joindre une photo">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48"/>
+        </svg>
+      </button>
+      <button class="icon-btn" id="mic-btn" onclick="toggleMic()" title="Dicter">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 1a3 3 0 00-3 3v8a3 3 0 006 0V4a3 3 0 00-3-3z"/>
+          <path d="M19 10v2a7 7 0 01-14 0v-2"/>
+          <line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/>
+        </svg>
+      </button>
+      <textarea class="msg-input" id="msg-input" placeholder="Écris un mot…" rows="1" onkeydown="handleKey(event)" oninput="autoResize(this); updateSendBtn();"></textarea>
+      <button class="send-btn" id="send-btn" onclick="send()" disabled>
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          <line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/>
+        </svg>
+      </button>
+    </div>
   </div>
 
   <!-- Notifications panel -->
@@ -398,35 +423,38 @@
     </header>
     <div class="chat-feed" id="chat-feed"></div>
 
-    <!-- Chat photo preview -->
-    <div id="chat-preview-bar" class="hidden">
-      <div class="preview-wrap">
-        <img class="preview-img" id="chat-preview-img" src="" alt="" />
-        <button class="remove-btn" onclick="removeChatAttachment()">✕</button>
+    <!-- Composer du chat (preview + input) fixée au bas, z-index plus élevé
+         que la composer du dashboard pour la couvrir quand chat-view est visible. -->
+    <div class="composer-wrap chat">
+      <div id="chat-preview-bar" class="hidden">
+        <div class="preview-wrap">
+          <img class="preview-img" id="chat-preview-img" src="" alt="" />
+          <button class="remove-btn" onclick="removeChatAttachment()">✕</button>
+        </div>
+        <span class="preview-label">Photo jointe</span>
       </div>
-      <span class="preview-label">Photo jointe</span>
-    </div>
 
-    <div class="bar" id="chat-bar">
-      <input type="file" id="chat-file-input" accept="image/*" style="display:none" onchange="handleChatFileChange(event)" />
-      <button class="icon-btn" onclick="document.getElementById('chat-file-input').click()" title="Joindre une photo">
-        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48"/>
-        </svg>
-      </button>
-      <button class="icon-btn" id="chat-mic-btn" onclick="toggleChatMic()" title="Dicter">
-        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M12 1a3 3 0 00-3 3v8a3 3 0 006 0V4a3 3 0 00-3-3z"/>
-          <path d="M19 10v2a7 7 0 01-14 0v-2"/>
-          <line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/>
-        </svg>
-      </button>
-      <textarea class="msg-input" id="chat-input" placeholder="Écris…" rows="1" onkeydown="handleChatKey(event)" oninput="autoResize(this); updateChatSendBtn();"></textarea>
-      <button class="send-btn" id="chat-send-btn" onclick="chatSend()" disabled>
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-          <line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/>
-        </svg>
-      </button>
+      <div class="bar" id="chat-bar">
+        <input type="file" id="chat-file-input" accept="image/*" style="display:none" onchange="handleChatFileChange(event)" />
+        <button class="icon-btn" onclick="document.getElementById('chat-file-input').click()" title="Joindre une photo">
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48"/>
+          </svg>
+        </button>
+        <button class="icon-btn" id="chat-mic-btn" onclick="toggleChatMic()" title="Dicter">
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 1a3 3 0 00-3 3v8a3 3 0 006 0V4a3 3 0 00-3-3z"/>
+            <path d="M19 10v2a7 7 0 01-14 0v-2"/>
+            <line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/>
+          </svg>
+        </button>
+        <textarea class="msg-input" id="chat-input" placeholder="Écris…" rows="1" onkeydown="handleChatKey(event)" oninput="autoResize(this); updateChatSendBtn();"></textarea>
+        <button class="send-btn" id="chat-send-btn" onclick="chatSend()" disabled>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/>
+          </svg>
+        </button>
+      </div>
     </div>
   </div>
 
@@ -913,6 +941,20 @@
   }
 
   // ── Photo ─────────────────────────────────────────────────────────────────
+  // Met à jour la CSS var `--composer-h` selon que le preview-bar est visible
+  // ou non. Le padding-bottom du dashboard / chat-feed suit cette variable, ce
+  // qui évite que la dernière card / le dernier message soit caché derrière
+  // la composer-wrap fixée à la viewport.
+  function refreshComposerHeight(previewVisible) {
+    const base = 56;          // hauteur input bar
+    const previewH = 60;      // hauteur preview-bar
+    const total = base + (previewVisible ? previewH : 0);
+    document.documentElement.style.setProperty(
+      "--composer-h",
+      `calc(${total}px + env(safe-area-inset-bottom))`
+    );
+  }
+
   function handleFileChange(e) {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -923,6 +965,7 @@
       document.getElementById("preview-img").src = result;
       document.getElementById("preview-bar").classList.remove("hidden");
       document.getElementById("msg-input").placeholder = "Ajoute un mot…";
+      refreshComposerHeight(true);
       updateSendBtn();
     };
     reader.readAsDataURL(file);
@@ -934,6 +977,7 @@
     document.getElementById("preview-bar").classList.add("hidden");
     document.getElementById("preview-img").src = "";
     document.getElementById("msg-input").placeholder = "Écris un mot…";
+    refreshComposerHeight(false);
     updateSendBtn();
   }
 
@@ -1469,6 +1513,7 @@
       document.getElementById("chat-preview-img").src = result;
       document.getElementById("chat-preview-bar").classList.remove("hidden");
       document.getElementById("chat-input").placeholder = "Ajoute un mot…";
+      refreshComposerHeight(true);
       updateChatSendBtn();
     };
     reader.readAsDataURL(file);
@@ -1480,6 +1525,7 @@
     document.getElementById("chat-preview-bar").classList.add("hidden");
     document.getElementById("chat-preview-img").src = "";
     document.getElementById("chat-input").placeholder = "Écris…";
+    refreshComposerHeight(false);
     updateChatSendBtn();
   }
 
