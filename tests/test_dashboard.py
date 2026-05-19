@@ -39,12 +39,18 @@ def deps() -> BotDeps:
     location_events = MagicMock()
     location_events.get_current_location = AsyncMock(return_value=None)
 
+    expenses = MagicMock()
+    expenses.list_for_month = AsyncMock(return_value=[])
+    expenses.list_savings_for_year = AsyncMock(return_value=[])
+    expenses.is_recurring_ticked_this_month = AsyncMock(return_value=False)
+
     return BotDeps(
         settings=settings,
         llm=MagicMock(),
         memory=MagicMock(),
         tasks=MagicMock(),
         thoughts=MagicMock(),
+        expenses=expenses,
         scheduler=MagicMock(),
         search=MagicMock(),
         rss=MagicMock(),
@@ -288,3 +294,65 @@ async def test_build_dashboard_weather_uses_home_when_at_other_place(
 
     kwargs = deps.weather.get_today.await_args.kwargs
     assert kwargs["city"] == "Sélestat"
+
+
+# --- Budget -----------------------------------------------------------------
+
+
+def _profile_with_finance(*, with_loyer: bool = True) -> UserProfile:
+    if not with_loyer:
+        return UserProfile(raw_yaml="", is_loaded=False)
+    return UserProfile(
+        raw_yaml="",
+        is_loaded=True,
+        data={
+            "finances": {
+                "currency": "EUR",
+                "recurring": [
+                    {
+                        "key": "loyer",
+                        "label": "Loyer",
+                        "amount": 800,
+                        "day": 5,
+                        "kind": "expense",
+                    }
+                ],
+            }
+        },
+    )
+
+
+async def test_build_dashboard_budget_is_none_when_yaml_missing(
+    deps: BotDeps, notifications_stub: MagicMock
+) -> None:
+    deps.weather.get_today = AsyncMock(side_effect=WeatherError("x"))
+    deps.calendar.is_connected = False
+    deps.tasks.list_pending = AsyncMock(return_value=[])
+    snap = await build_dashboard(deps, notifications_stub)
+    assert snap.budget is None
+
+
+async def test_build_dashboard_budget_is_none_when_manager_raises(
+    deps: BotDeps, notifications_stub: MagicMock
+) -> None:
+    deps.profile = _profile_with_finance()
+    deps.expenses.list_for_month = AsyncMock(side_effect=RuntimeError("db down"))
+    deps.weather.get_today = AsyncMock(side_effect=WeatherError("x"))
+    deps.calendar.is_connected = False
+    deps.tasks.list_pending = AsyncMock(return_value=[])
+    snap = await build_dashboard(deps, notifications_stub)
+    assert snap.budget is None
+
+
+async def test_build_dashboard_budget_present_when_configured(
+    deps: BotDeps, notifications_stub: MagicMock
+) -> None:
+    deps.profile = _profile_with_finance()
+    deps.weather.get_today = AsyncMock(side_effect=WeatherError("x"))
+    deps.calendar.is_connected = False
+    deps.tasks.list_pending = AsyncMock(return_value=[])
+    deps.expenses.list_for_month = AsyncMock(return_value=[])
+    deps.expenses.list_savings_for_year = AsyncMock(return_value=[])
+    snap = await build_dashboard(deps, notifications_stub)
+    assert snap.budget is not None
+    assert snap.budget.pending_recurring_count == 1

@@ -24,6 +24,7 @@ from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Literal
+from zoneinfo import ZoneInfo
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Request, status
 from fastapi.middleware.cors import CORSMiddleware
@@ -105,11 +106,22 @@ class TaskCard(BaseModel):
     due_at: str | None
 
 
+class BudgetCard(BaseModel):
+    month: str  # ISO date du 1er du mois (YYYY-MM-DD)
+    income_eur: float
+    spent_eur: float  # punctual + recurring_tick + saving_tick
+    remaining_eur: float  # prévisionnel (revenu - sorties reelles - pending)
+    saved_this_year_eur: float
+    pending_recurring_count: int
+    has_overdue: bool
+
+
 class DashboardResponse(BaseModel):
     weather: WeatherCard | None
     next_event: NextEventCard | None
     today_tasks: list[TaskCard]
     unread_notifications: int
+    budget: BudgetCard | None
 
 
 # --- Location schemas -------------------------------------------------------
@@ -165,6 +177,41 @@ class NewsLatestResponse(BaseModel):
     fetched_at: str  # ISO 8601 UTC
 
 
+# --- Budget schemas --------------------------------------------------------
+
+
+class BudgetTransaction(BaseModel):
+    id: int
+    kind: str  # punctual | recurring_tick | saving_tick | income
+    amount_eur: float
+    label: str
+    category: str | None
+    recurring_key: str | None
+    occurred_on: str  # ISO date
+
+
+class BudgetPendingItem(BaseModel):
+    key: str
+    label: str
+    amount_eur: float
+    day: int
+    kind: str  # expense | saving
+    is_overdue: bool
+
+
+class BudgetMonthDetail(BaseModel):
+    month: str  # ISO date du 1er du mois
+    currency: str
+    income_eur: float
+    spent_punctual_eur: float
+    spent_recurring_eur: float
+    saved_this_month_eur: float
+    saved_this_year_eur: float
+    remaining_eur: float
+    transactions: list[BudgetTransaction]
+    pending: list[BudgetPendingItem]
+
+
 # --- Weather / Events detail schemas ---------------------------------------
 
 
@@ -212,6 +259,7 @@ class EventsListResponse(BaseModel):
 _REFRESH_BY_INTENT: dict[str, list[str]] = {
     "task": ["today_tasks", "unread_notifications"],
     "event": ["next_event"],
+    "expense": ["budget"],
 }
 
 
@@ -658,6 +706,77 @@ def create_app(state: AppState) -> FastAPI:
         return ThoughtsListResponse(thoughts=items)
 
     @app.get(
+        "/budget",
+        response_model=BudgetMonthDetail,
+        dependencies=[Depends(verify_api_key)],
+    )
+    async def get_budget(
+        deps: BotDeps = Depends(get_deps),
+    ) -> BudgetMonthDetail:
+        """État détaillé du mois courant : transactions + pending récurrentes.
+
+        Alimente l'overlay de la card Budget. Le calcul réutilise
+        `compute_budget` (mêmes invariants que le dashboard) pour rester
+        cohérent — si une saisie disparaît / apparaît, les deux vues le
+        voient en même temps.
+
+        Si la section `finances` du YAML est absente, retourne une réponse
+        "vide" avec `currency=EUR` et toutes les agrégations à 0 plutôt
+        qu'une 404 : l'UI peut afficher un message d'aide vers le YAML.
+        """
+        from bot.finance.budget import compute_budget
+        from bot.finance.config import extract_finance_config
+
+        tz = ZoneInfo(deps.settings.timezone)
+        today_d = datetime.now(tz).date()
+        month_start = today_d.replace(day=1)
+        cfg = extract_finance_config(deps.profile.data)
+        month_rows = await deps.expenses.list_for_month(month_start)
+        year_savings = await deps.expenses.list_savings_for_year(today_d.year)
+        summary = compute_budget(
+            config=cfg,
+            month_expenses=month_rows,
+            year_savings=year_savings,
+            today=today_d,
+        )
+
+        transactions = [
+            BudgetTransaction(
+                id=e.id,
+                kind=e.kind,
+                amount_eur=e.amount_cents / 100,
+                label=e.label,
+                category=e.category,
+                recurring_key=e.recurring_key,
+                occurred_on=e.occurred_on.isoformat(),
+            )
+            for e in month_rows
+        ]
+        pending = [
+            BudgetPendingItem(
+                key=p.key,
+                label=p.label,
+                amount_eur=p.amount_cents / 100,
+                day=p.day,
+                kind=p.kind,
+                is_overdue=p.is_overdue,
+            )
+            for p in summary.pending_recurring
+        ]
+        return BudgetMonthDetail(
+            month=summary.month.isoformat(),
+            currency=cfg.currency,
+            income_eur=summary.income_cents / 100,
+            spent_punctual_eur=summary.spent_punctual_cents / 100,
+            spent_recurring_eur=summary.spent_recurring_cents / 100,
+            saved_this_month_eur=summary.saved_this_month_cents / 100,
+            saved_this_year_eur=summary.saved_this_year_cents / 100,
+            remaining_eur=summary.remaining_cents / 100,
+            transactions=transactions,
+            pending=pending,
+        )
+
+    @app.get(
         "/weather/forecast",
         response_model=WeatherForecastResponse,
         dependencies=[Depends(verify_api_key)],
@@ -807,9 +926,23 @@ def _snapshot_to_response(snap: DashboardSnapshot) -> DashboardResponse:
         )
         for t in snap.today_tasks
     ]
+    budget: BudgetCard | None = None
+    if snap.budget is not None:
+        b = snap.budget
+        spent_cents = b.spent_punctual_cents + b.spent_recurring_cents + b.saved_this_month_cents
+        budget = BudgetCard(
+            month=b.month.isoformat(),
+            income_eur=b.income_cents / 100,
+            spent_eur=spent_cents / 100,
+            remaining_eur=b.remaining_cents / 100,
+            saved_this_year_eur=b.saved_this_year_cents / 100,
+            pending_recurring_count=b.pending_recurring_count,
+            has_overdue=b.has_overdue,
+        )
     return DashboardResponse(
         weather=weather,
         next_event=next_event,
         today_tasks=tasks,
         unread_notifications=snap.unread_notifications,
+        budget=budget,
     )

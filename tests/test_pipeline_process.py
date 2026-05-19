@@ -39,6 +39,12 @@ def _meta_block(
     weather_when: str | None = None,
     depot_content: str | None = None,
     depot_kind: str | None = None,
+    expense_action: str | None = None,
+    expense_amount: float | None = None,
+    expense_label: str | None = None,
+    expense_category: str | None = None,
+    expense_recurring_key: str | None = None,
+    expense_when: str | None = None,
     search_query: str | None = None,
     response_text: str = "Réponse texte.",
 ) -> str:
@@ -73,6 +79,14 @@ def _meta_block(
         "depot": {
             "content": depot_content,
             "kind": depot_kind,
+        },
+        "expense": {
+            "action": expense_action,
+            "amount": expense_amount,
+            "label": expense_label,
+            "category": expense_category,
+            "recurring_key": expense_recurring_key,
+            "when": expense_when,
         },
         "search_query": search_query,
     }
@@ -112,6 +126,15 @@ def deps() -> BotDeps:
     fake_thought.kind = "worry"
     thoughts.create = AsyncMock(return_value=fake_thought)
 
+    expenses = MagicMock()
+    fake_expense = MagicMock()
+    fake_expense.id = 42
+    expenses.add_punctual = AsyncMock(return_value=fake_expense)
+    expenses.add_income = AsyncMock(return_value=fake_expense)
+    expenses.tick_recurring = AsyncMock(return_value=fake_expense)
+    expenses.list_for_month = AsyncMock(return_value=[])
+    expenses.is_recurring_ticked_this_month = AsyncMock(return_value=False)
+
     scheduler = MagicMock()
     search = MagicMock()
     search.search = AsyncMock(return_value=[])
@@ -137,6 +160,7 @@ def deps() -> BotDeps:
         memory=memory,
         tasks=tasks,
         thoughts=thoughts,
+        expenses=expenses,
         scheduler=scheduler,
         search=search,
         rss=rss,
@@ -661,3 +685,145 @@ async def test_process_weather_location_not_found(deps: BotDeps) -> None:
     text, _ = await process_message("météo à Atlantide", deps=deps)
     assert "Atlantide" in text
     deps.weather.get_forecast.assert_not_called()
+
+
+async def test_process_expense_spend_calls_add_punctual(deps: BotDeps) -> None:
+    deps.llm.call = AsyncMock(
+        return_value=_meta_block(
+            intent="expense",
+            expense_action="spend",
+            expense_amount=27,
+            expense_label="pharmacie",
+            expense_category="santé",
+            response_text="Noté.",
+        )
+    )
+    text, meta = await process_message("j'ai dépensé 27€ à la pharmacie", deps=deps)
+    assert text == "Noté."
+    assert meta["intent"] == "expense"
+    deps.expenses.add_punctual.assert_awaited_once()
+    kwargs = deps.expenses.add_punctual.await_args.kwargs
+    assert kwargs["amount_cents"] == 2700
+    assert kwargs["label"] == "pharmacie"
+    assert kwargs["category"] == "santé"
+    # Pas de store_memory générique sur une saisie expense.
+    deps.memory.store.assert_not_called()
+
+
+async def test_process_expense_income_calls_add_income(deps: BotDeps) -> None:
+    deps.llm.call = AsyncMock(
+        return_value=_meta_block(
+            intent="expense",
+            expense_action="income",
+            expense_amount=2500,
+            expense_label="salaire mai",
+            response_text="✓ Saisi.",
+        )
+    )
+    await process_message("salaire 2500€", deps=deps)
+    deps.expenses.add_income.assert_awaited_once()
+    kwargs = deps.expenses.add_income.await_args.kwargs
+    assert kwargs["amount_cents"] == 250000
+    assert kwargs["label"] == "salaire mai"
+
+
+async def test_process_expense_tick_recurring_unknown_key_is_noop(
+    deps: BotDeps,
+) -> None:
+    # Profil sans section finances → cfg.find("loyer") = None → skip.
+    deps.llm.call = AsyncMock(
+        return_value=_meta_block(
+            intent="expense",
+            expense_action="tick_recurring",
+            expense_amount=800,
+            expense_label="Loyer",
+            expense_recurring_key="loyer",
+        )
+    )
+    await process_message("le loyer est passé", deps=deps)
+    deps.expenses.tick_recurring.assert_not_awaited()
+
+
+async def test_process_expense_tick_recurring_calls_manager(deps: BotDeps) -> None:
+    profile = UserProfile(
+        raw_yaml="",
+        is_loaded=True,
+        data={
+            "finances": {
+                "recurring": [
+                    {
+                        "key": "loyer",
+                        "label": "Loyer appartement",
+                        "amount": 800,
+                        "day": 5,
+                        "kind": "expense",
+                    }
+                ]
+            }
+        },
+    )
+    deps.profile = profile
+    deps.llm.call = AsyncMock(
+        return_value=_meta_block(
+            intent="expense",
+            expense_action="tick_recurring",
+            expense_amount=800,
+            expense_label="Loyer appartement",
+            expense_recurring_key="loyer",
+        )
+    )
+    await process_message("le loyer est passé", deps=deps)
+    deps.expenses.tick_recurring.assert_awaited_once()
+    kwargs = deps.expenses.tick_recurring.await_args.kwargs
+    assert kwargs["recurring_key"] == "loyer"
+    assert kwargs["kind"] == "expense"
+    assert kwargs["amount_cents"] == 80000  # depuis le YAML (source de vérité)
+
+
+async def test_process_expense_tick_already_ticked_skipped(deps: BotDeps) -> None:
+    profile = UserProfile(
+        raw_yaml="",
+        is_loaded=True,
+        data={
+            "finances": {
+                "recurring": [
+                    {
+                        "key": "loyer",
+                        "label": "Loyer",
+                        "amount": 800,
+                        "day": 5,
+                        "kind": "expense",
+                    }
+                ]
+            }
+        },
+    )
+    deps.profile = profile
+    deps.expenses.is_recurring_ticked_this_month = AsyncMock(return_value=True)
+    deps.llm.call = AsyncMock(
+        return_value=_meta_block(
+            intent="expense",
+            expense_action="tick_recurring",
+            expense_amount=800,
+            expense_label="Loyer",
+            expense_recurring_key="loyer",
+        )
+    )
+    await process_message("le loyer est passé", deps=deps)
+    deps.expenses.tick_recurring.assert_not_awaited()
+
+
+async def test_process_expense_negative_amount_silently_skipped(deps: BotDeps) -> None:
+    # Le parser rejette les amount < 0, donc le LLM renvoyant un montant
+    # négatif déclenche un parse error → fallback meta (intent=answer).
+    # On vérifie ici qu'un montant null/zéro n'aboutit pas à un add_*.
+    deps.llm.call = AsyncMock(
+        return_value=_meta_block(
+            intent="expense",
+            expense_action="spend",
+            expense_amount=0,
+            expense_label="vide",
+        )
+    )
+    await process_message("dépense 0€", deps=deps)
+    deps.expenses.add_punctual.assert_not_awaited()

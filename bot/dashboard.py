@@ -18,6 +18,8 @@ from zoneinfo import ZoneInfo
 from bot.briefing.weather import WeatherError, WeatherSummary
 from bot.calendar.client import ICloudCalendarError
 from bot.calendar.models import CalendarEvent
+from bot.finance.budget import BudgetSummary, compute_budget
+from bot.finance.config import extract_finance_config
 from bot.logging_conf import get_logger
 from bot.tasks.models import Task
 
@@ -36,6 +38,7 @@ class DashboardSnapshot:
     next_event: CalendarEvent | None
     today_tasks: list[Task]
     unread_notifications: int
+    budget: BudgetSummary | None
 
 
 def today_tasks(pending: Sequence[Task], tz: ZoneInfo) -> list[Task]:
@@ -71,6 +74,7 @@ async def build_dashboard(deps: BotDeps, notifications: NotificationStore) -> Da
     pending = await deps.tasks.list_pending()
     today_tasks_list = today_tasks(pending, tz)
     unread = await notifications.count_unread()
+    budget = await _safe_budget_summary(deps)
 
     log.info(
         "dashboard_built",
@@ -78,12 +82,14 @@ async def build_dashboard(deps: BotDeps, notifications: NotificationStore) -> Da
         next_event=next_event is not None,
         tasks=len(today_tasks_list),
         unread=unread,
+        budget=budget is not None,
     )
     return DashboardSnapshot(
         weather=weather,
         next_event=next_event,
         today_tasks=today_tasks_list,
         unread_notifications=unread,
+        budget=budget,
     )
 
 
@@ -120,3 +126,29 @@ async def _safe_next_event(deps: BotDeps) -> CalendarEvent | None:
         log.warning("dashboard_calendar_skipped", error=str(exc))
         return None
     return events[0] if events else None
+
+
+async def _safe_budget_summary(deps: BotDeps) -> BudgetSummary | None:
+    """Calcule l'état budgétaire courant.
+
+    Si la section `finances` du YAML est absente ou si une erreur survient
+    (YAML mal formé, SQLite indisponible), retourne `None` et la card côté
+    front affichera un état vide. Pas de propagation : le reste du
+    dashboard reste utilisable.
+    """
+    try:
+        cfg = extract_finance_config(deps.profile.data)
+        if not cfg.is_configured:
+            return None
+        today_d = datetime.now(ZoneInfo(deps.settings.timezone)).date()
+        month_rows = await deps.expenses.list_for_month(today_d.replace(day=1))
+        year_savings = await deps.expenses.list_savings_for_year(today_d.year)
+        return compute_budget(
+            config=cfg,
+            month_expenses=month_rows,
+            year_savings=year_savings,
+            today=today_d,
+        )
+    except Exception as exc:
+        log.warning("dashboard_budget_skipped", error=str(exc))
+        return None

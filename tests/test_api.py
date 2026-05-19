@@ -51,6 +51,14 @@ _NEUTRAL_META: dict[str, object] = {
     "fuel": {"fuel_type": None, "radius_km": None, "location": None},
     "weather": {"location": None, "when": None},
     "depot": {"content": None, "kind": None},
+    "expense": {
+        "action": None,
+        "amount": None,
+        "label": None,
+        "category": None,
+        "recurring_key": None,
+        "when": None,
+    },
     "search_query": None,
 }
 
@@ -88,12 +96,18 @@ def _build_deps() -> BotDeps:
     proactivity = MagicMock()
     proactivity.on_location_event = AsyncMock()
 
+    expenses = MagicMock()
+    expenses.list_for_month = AsyncMock(return_value=[])
+    expenses.list_savings_for_year = AsyncMock(return_value=[])
+    expenses.is_recurring_ticked_this_month = AsyncMock(return_value=False)
+
     return BotDeps(
         settings=settings,
         llm=llm,
         memory=memory,
         tasks=MagicMock(),
         thoughts=MagicMock(),
+        expenses=expenses,
         scheduler=MagicMock(),
         search=MagicMock(),
         rss=MagicMock(),
@@ -207,6 +221,40 @@ async def test_ask_task_intent_lists_cards_to_refresh(client: AsyncClient, state
     assert body["intent"] == "task"
     assert "today_tasks" in body["refresh_cards"]
     assert "unread_notifications" in body["refresh_cards"]
+
+
+async def test_ask_expense_intent_refreshes_budget_card(
+    client: AsyncClient, state: AppState
+) -> None:
+    """Une saisie expense doit signaler au front que la card budget a bougé."""
+    fake_expense = MagicMock()
+    fake_expense.id = 42
+    state.deps.expenses.add_punctual = AsyncMock(return_value=fake_expense)
+    state.deps.llm.call = AsyncMock(
+        return_value=(
+            "Noté.\n"
+            '<meta>{"intent":"expense","store_memory":false,"memory_content":null,'
+            '"task":{"content":null,"due_str":null},'
+            '"feed":{"action":null,"name":null,"url":null},'
+            '"event":{"action":null,"title":null,"start_str":null,"end_str":null,'
+            '"location":null,"description":null,"range_str":null,"calendar_name":null},'
+            '"fuel":{"fuel_type":null,"radius_km":null,"location":null},'
+            '"weather":{"location":null,"when":null},'
+            '"depot":{"content":null,"kind":null},'
+            '"expense":{"action":"spend","amount":27,"label":"pharmacie",'
+            '"category":"santé","recurring_key":null,"when":null},'
+            '"search_query":null}</meta>'
+        )
+    )
+    response = await client.post(
+        "/ask",
+        headers={"X-API-Key": API_KEY},
+        json={"message": "27€ pharmacie"},
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["intent"] == "expense"
+    assert body["refresh_cards"] == ["budget"]
 
 
 async def test_ask_without_x_source_uses_default_mode(client: AsyncClient, state: AppState) -> None:
@@ -777,6 +825,73 @@ async def test_thoughts_clamps_excessive_limit(client: AsyncClient, state: AppSt
     assert response.status_code == 200
     kwargs = state.deps.thoughts.list_recent.await_args.kwargs
     assert kwargs["limit"] == 200
+
+
+# --- /budget --------------------------------------------------------------
+
+
+async def test_budget_requires_api_key(client: AsyncClient) -> None:
+    response = await client.get("/budget")
+    assert response.status_code == 403
+
+
+async def test_budget_returns_empty_state_when_yaml_missing(
+    client: AsyncClient, state: AppState
+) -> None:
+    state.deps.expenses.list_for_month = AsyncMock(return_value=[])
+    state.deps.expenses.list_savings_for_year = AsyncMock(return_value=[])
+    response = await client.get("/budget", headers={"X-API-Key": API_KEY})
+    assert response.status_code == 200
+    body = response.json()
+    assert body["currency"] == "EUR"
+    assert body["income_eur"] == 0
+    assert body["remaining_eur"] == 0
+    assert body["pending"] == []
+
+
+async def test_budget_returns_summary_with_transactions(
+    client: AsyncClient, state: AppState
+) -> None:
+    from datetime import date as _date
+
+    from bot.finance.models import Expense
+    from bot.profile import UserProfile
+
+    state.deps.profile = UserProfile(
+        raw_yaml="",
+        is_loaded=True,
+        data={
+            "finances": {
+                "currency": "EUR",
+                "recurring": [
+                    {
+                        "key": "loyer",
+                        "label": "Loyer",
+                        "amount": 800,
+                        "day": 5,
+                        "kind": "expense",
+                    }
+                ],
+            }
+        },
+    )
+    income = Expense(
+        kind="income",
+        amount_cents=250000,
+        label="Salaire",
+        recurring_key=None,
+        occurred_on=_date(2026, 5, 5),
+    )
+    income.id = 1
+    state.deps.expenses.list_for_month = AsyncMock(return_value=[income])
+    state.deps.expenses.list_savings_for_year = AsyncMock(return_value=[])
+    response = await client.get("/budget", headers={"X-API-Key": API_KEY})
+    assert response.status_code == 200
+    body = response.json()
+    assert body["income_eur"] == 2500.0
+    assert len(body["transactions"]) == 1
+    assert len(body["pending"]) == 1
+    assert body["pending"][0]["key"] == "loyer"
 
 
 # --- /dashboard suite -----------------------------------------------------

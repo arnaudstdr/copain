@@ -20,6 +20,7 @@ Intent = Literal[
     "fuel",
     "weather",
     "depot",
+    "expense",
 ]
 VALID_INTENTS: frozenset[str] = frozenset(get_args(Intent))
 
@@ -31,6 +32,9 @@ VALID_EVENT_ACTIONS: frozenset[str] = frozenset(get_args(EventAction))
 
 DepotKind = Literal["worry", "idea", "note"]
 VALID_DEPOT_KINDS: frozenset[str] = frozenset(get_args(DepotKind))
+
+ExpenseAction = Literal["spend", "income", "tick_recurring"]
+VALID_EXPENSE_ACTIONS: frozenset[str] = frozenset(get_args(ExpenseAction))
 
 
 class TaskMeta(TypedDict):
@@ -71,6 +75,15 @@ class DepotMeta(TypedDict):
     kind: DepotKind | None
 
 
+class ExpenseMeta(TypedDict):
+    action: ExpenseAction | None
+    amount: float | None  # euros (le pipeline convertit en cents)
+    label: str | None
+    category: str | None  # libre, uniquement pour action=spend
+    recurring_key: str | None  # uniquement pour action=tick_recurring
+    when: str | None  # expression FR ("hier"), null = aujourd'hui
+
+
 class Meta(TypedDict):
     intent: Intent
     store_memory: bool
@@ -81,6 +94,7 @@ class Meta(TypedDict):
     fuel: FuelMeta
     weather: WeatherMeta
     depot: DepotMeta
+    expense: ExpenseMeta
     search_query: str | None
 
 
@@ -203,6 +217,31 @@ def _validate(data: Any) -> Meta:
         "kind": depot_kind,
     }
 
+    expense_raw = data.get("expense") or {
+        "action": None,
+        "amount": None,
+        "label": None,
+        "category": None,
+        "recurring_key": None,
+        "when": None,
+    }
+    if not isinstance(expense_raw, dict):
+        raise MetaParseError("expense doit être un objet ou null")
+    expense_action = expense_raw.get("action")
+    if expense_action is not None and expense_action not in VALID_EXPENSE_ACTIONS:
+        raise MetaParseError(f"expense.action invalide : {expense_action!r}")
+    expense_amount = _opt_float(expense_raw.get("amount"), "expense.amount")
+    if expense_amount is not None and expense_amount < 0:
+        raise MetaParseError("expense.amount doit être positif")
+    expense: ExpenseMeta = {
+        "action": expense_action,
+        "amount": expense_amount,
+        "label": _opt_str(expense_raw.get("label"), "expense.label"),
+        "category": _opt_str(expense_raw.get("category"), "expense.category"),
+        "recurring_key": _opt_str(expense_raw.get("recurring_key"), "expense.recurring_key"),
+        "when": _opt_str(expense_raw.get("when"), "expense.when"),
+    }
+
     search_query = _opt_str(data.get("search_query"), "search_query")
 
     return Meta(
@@ -215,6 +254,7 @@ def _validate(data: Any) -> Meta:
         fuel=fuel,
         weather=weather,
         depot=depot,
+        expense=expense,
         search_query=search_query,
     )
 

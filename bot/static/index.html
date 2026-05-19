@@ -437,6 +437,8 @@
     root.appendChild(eventCard(d.next_event));
     // Tâches
     root.appendChild(tasksCard(d.today_tasks));
+    // Budget (restant ce mois)
+    root.appendChild(budgetCard(d.budget));
     // Notifs (count)
     root.appendChild(notifCard(d.unread_notifications));
     // Actu (vraie card avec fetch au clic)
@@ -516,6 +518,92 @@
       card.appendChild(el("div", "card-meta", "Tape pour gérer"));
     }
     return card;
+  }
+
+  function budgetCard(b) {
+    const card = el("div", "card");
+    card.appendChild(makeHead("💰", "Budget"));
+    if (!b) {
+      card.classList.add("empty");
+      card.appendChild(el("div", "card-primary", "Non configuré"));
+      card.appendChild(el("div", "card-secondary", "Ajoute la section `finances` dans data/profile.yaml"));
+      return card;
+    }
+    card.classList.add("tappable");
+    card.onclick = openBudget;
+    const remaining = formatEur(b.remaining_eur);
+    const primary = el("div", "card-primary", `Restant : ${remaining}`);
+    if (b.remaining_eur < 0) primary.style.color = "#ff453a";
+    card.appendChild(primary);
+    const savedLine = `Épargné cette année : ${formatEur(b.saved_this_year_eur)}`;
+    card.appendChild(el("div", "card-secondary", savedLine));
+    if (b.pending_recurring_count > 0) {
+      const meta = el(
+        "div",
+        "card-meta",
+        b.pending_recurring_count === 1
+          ? "1 récurrente à pointer"
+          : `${b.pending_recurring_count} récurrentes à pointer`
+      );
+      if (b.has_overdue) meta.style.color = "#ff453a";
+      card.appendChild(meta);
+    }
+    return card;
+  }
+
+  function formatEur(amount) {
+    const rounded = Math.round(amount * 100) / 100;
+    if (Number.isInteger(rounded)) return `${rounded} €`;
+    return `${rounded.toFixed(2).replace(".", ",")} €`;
+  }
+
+  async function openBudget() {
+    try {
+      const res = await fetch(`${API_BASE}/budget`, { headers: { "X-API-Key": API_KEY } });
+      if (!res.ok) throw new Error(`${res.status}`);
+      const data = await res.json();
+      openMarkdownView("Budget du mois", renderBudgetMarkdown(data), null);
+    } catch (e) {
+      showToast("Impossible de charger le budget");
+    }
+  }
+
+  function renderBudgetMarkdown(b) {
+    const lines = [];
+    const monthDate = new Date(b.month + "T00:00:00");
+    const monthLabel = monthDate.toLocaleDateString("fr-FR", { month: "long", year: "numeric" });
+    lines.push(`## ${monthLabel.charAt(0).toUpperCase() + monthLabel.slice(1)}`);
+    lines.push("");
+    lines.push(`**Restant prévisionnel : ${formatEur(b.remaining_eur)}**`);
+    lines.push("");
+    lines.push(`- Revenu : ${formatEur(b.income_eur)}`);
+    lines.push(`- Récurrentes pointées : ${formatEur(b.spent_recurring_eur)}`);
+    lines.push(`- Ponctuelles : ${formatEur(b.spent_punctual_eur)}`);
+    lines.push(`- Épargne ce mois : ${formatEur(b.saved_this_month_eur)}`);
+    lines.push(`- Épargné cette année : ${formatEur(b.saved_this_year_eur)}`);
+    lines.push("");
+    if (b.pending && b.pending.length > 0) {
+      lines.push(`### À pointer (${b.pending.length})`);
+      for (const p of b.pending) {
+        const overdue = p.is_overdue ? " ⚠ en retard" : "";
+        const kind = p.kind === "saving" ? " (épargne)" : "";
+        lines.push(`- **${p.label}** ${formatEur(p.amount_eur)}, prévu le ${p.day}${kind}${overdue}`);
+      }
+      lines.push("");
+    }
+    if (b.transactions && b.transactions.length > 0) {
+      lines.push("### Transactions du mois");
+      for (const t of b.transactions) {
+        const d = new Date(t.occurred_on + "T00:00:00");
+        const dayStr = d.toLocaleDateString("fr-FR", { day: "numeric", month: "short" });
+        const sign = t.kind === "income" ? "+" : "−";
+        const cat = t.category ? ` (${t.category})` : "";
+        lines.push(`- ${dayStr} — ${t.label}${cat} : ${sign}${formatEur(t.amount_eur)}`);
+      }
+    } else {
+      lines.push("_Aucune transaction enregistrée ce mois._");
+    }
+    return lines.join("\n");
   }
 
   function notifCard(count) {
@@ -648,11 +736,12 @@
 
   function actionToast(intent) {
     switch (intent) {
-      case "task":  return "✓ Tâche ajoutée";
-      case "event": return "✓ Évènement créé";
-      case "feed":  return "✓ Flux mis à jour";
-      case "memory":return "✓ Noté en mémoire";
-      default:      return "✓ Fait";
+      case "task":   return "✓ Tâche ajoutée";
+      case "event":  return "✓ Évènement créé";
+      case "feed":   return "✓ Flux mis à jour";
+      case "memory": return "✓ Noté en mémoire";
+      case "expense":return "✓ Saisie enregistrée";
+      default:       return "✓ Fait";
     }
   }
 

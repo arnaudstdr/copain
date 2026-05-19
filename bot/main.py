@@ -23,6 +23,8 @@ from bot.briefing.weather import OpenMeteoClient
 from bot.calendar.client import ICloudCalendarClient, ICloudCalendarError
 from bot.config import Settings, load_settings
 from bot.db import create_shared_engine, enable_wal_mode
+from bot.finance.cron import FinanceReminderJob
+from bot.finance.manager import ExpenseManager
 from bot.fuel.client import FuelClient
 from bot.fuel.geocoding import NominatimClient
 from bot.llm.client import LLMClient
@@ -52,6 +54,7 @@ DEFAULT_FEEDS: tuple[tuple[str, str, str], ...] = (
 )
 
 PROACTIVITY_JOB_ID = "proactivity-tick"
+FINANCE_REMINDER_JOB_ID = "finance-recurring-reminder"
 
 
 async def _seed_default_feeds(rss: FeedManager) -> None:
@@ -81,6 +84,7 @@ async def _build_state(
     engine = create_shared_engine(settings.db_path)
     tasks = TaskManager(engine, scheduler=scheduler)
     thoughts = ThoughtManager(engine)
+    expenses = ExpenseManager(engine)
     rss = FeedManager(engine)
     rss_fetcher = RssFetcher()
     pushover = PushoverClient(token=settings.pushover_token, user=settings.pushover_user)
@@ -129,6 +133,7 @@ async def _build_state(
         memory=MemoryManager(settings.chroma_dir, embedder),
         tasks=tasks,
         thoughts=thoughts,
+        expenses=expenses,
         scheduler=scheduler,
         search=search,
         rss=rss,
@@ -148,6 +153,7 @@ async def _build_state(
     await enable_wal_mode(engine)
     await tasks.init_schema()
     await thoughts.init_schema()
+    await expenses.init_schema()
     await rss.init_schema()
     await notifications.init_schema()
     await location_events.init_schema()
@@ -174,6 +180,19 @@ async def _build_state(
             window=f"{settings.proactivity_window_start_hour}-{settings.proactivity_window_end_hour}",
             budget=settings.proactivity_daily_budget,
         )
+
+    finance_reminder = FinanceReminderJob(
+        profile=profile,
+        expenses=expenses,
+        notifications=notifications,
+        timezone=settings.timezone,
+    )
+    scheduler.add_cron_job(
+        job_id=FINANCE_REMINDER_JOB_ID,
+        func=finance_reminder.run,
+        hour=settings.finance_reminder_hour,
+        minute=settings.finance_reminder_minute,
+    )
 
     state = AppState(settings=settings, deps=deps, notifications=notifications)
 

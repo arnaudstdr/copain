@@ -348,3 +348,111 @@ def test_extract_meta_depot_optional_in_old_format() -> None:
     _, meta = extract_meta(raw)
     assert meta["depot"]["content"] is None
     assert meta["depot"]["kind"] is None
+
+
+def test_extract_meta_expense_spend() -> None:
+    raw = """\
+Noté.
+<meta>
+{
+  "intent": "expense",
+  "store_memory": false,
+  "memory_content": null,
+  "task": {"content": null, "due_str": null},
+  "feed": {"action": null, "name": null, "url": null},
+  "event": {"action": null, "title": null, "start_str": null, "end_str": null,
+            "location": null, "description": null, "range_str": null, "calendar_name": null},
+  "fuel": {"fuel_type": null, "radius_km": null, "location": null},
+  "weather": {"location": null, "when": null},
+  "depot": {"content": null, "kind": null},
+  "expense": {"action": "spend", "amount": 27, "label": "pharmacie",
+              "category": "santé", "recurring_key": null, "when": null},
+  "search_query": null
+}
+</meta>"""
+    text, meta = extract_meta(raw)
+    assert text.strip() == "Noté."
+    assert meta["intent"] == "expense"
+    assert meta["expense"]["action"] == "spend"
+    assert meta["expense"]["amount"] == 27.0
+    assert meta["expense"]["label"] == "pharmacie"
+    assert meta["expense"]["category"] == "santé"
+    assert meta["expense"]["recurring_key"] is None
+
+
+def test_extract_meta_expense_income() -> None:
+    raw = """<meta>{"intent":"expense","store_memory":false,"memory_content":null,
+"task":{"content":null,"due_str":null},
+"feed":{"action":null,"name":null,"url":null},
+"event":{"action":null,"title":null,"start_str":null,"end_str":null,
+"location":null,"description":null,"range_str":null,"calendar_name":null},
+"fuel":{"fuel_type":null,"radius_km":null,"location":null},
+"weather":{"location":null,"when":null},
+"depot":{"content":null,"kind":null},
+"expense":{"action":"income","amount":2500,"label":"salaire mai",
+"category":null,"recurring_key":null,"when":null},
+"search_query":null}</meta>"""
+    _, meta = extract_meta(raw)
+    assert meta["expense"]["action"] == "income"
+    assert meta["expense"]["amount"] == 2500.0
+    assert meta["expense"]["label"] == "salaire mai"
+
+
+def test_extract_meta_expense_tick_recurring() -> None:
+    raw = """<meta>{"intent":"expense","store_memory":false,"memory_content":null,
+"task":{"content":null,"due_str":null},
+"feed":{"action":null,"name":null,"url":null},
+"event":{"action":null,"title":null,"start_str":null,"end_str":null,
+"location":null,"description":null,"range_str":null,"calendar_name":null},
+"fuel":{"fuel_type":null,"radius_km":null,"location":null},
+"weather":{"location":null,"when":null},
+"depot":{"content":null,"kind":null},
+"expense":{"action":"tick_recurring","amount":800,"label":"Loyer appartement",
+"category":null,"recurring_key":"loyer","when":null},
+"search_query":null}</meta>"""
+    _, meta = extract_meta(raw)
+    assert meta["expense"]["action"] == "tick_recurring"
+    assert meta["expense"]["recurring_key"] == "loyer"
+
+
+def test_extract_meta_expense_invalid_action_raises() -> None:
+    raw = """<meta>{"intent":"expense","store_memory":false,"memory_content":null,
+"task":{"content":null,"due_str":null},
+"feed":{"action":null,"name":null,"url":null},
+"event":{"action":null,"title":null,"start_str":null,"end_str":null,
+"location":null,"description":null,"range_str":null,"calendar_name":null},
+"fuel":{"fuel_type":null,"radius_km":null,"location":null},
+"weather":{"location":null,"when":null},
+"depot":{"content":null,"kind":null},
+"expense":{"action":"banana","amount":1,"label":"x",
+"category":null,"recurring_key":null,"when":null},
+"search_query":null}</meta>"""
+    with pytest.raises(MetaParseError, match=r"expense\.action"):
+        extract_meta(raw)
+
+
+def test_extract_meta_expense_negative_amount_rejected() -> None:
+    raw = """<meta>{"intent":"expense","store_memory":false,"memory_content":null,
+"task":{"content":null,"due_str":null},
+"feed":{"action":null,"name":null,"url":null},
+"event":{"action":null,"title":null,"start_str":null,"end_str":null,
+"location":null,"description":null,"range_str":null,"calendar_name":null},
+"fuel":{"fuel_type":null,"radius_km":null,"location":null},
+"weather":{"location":null,"when":null},
+"depot":{"content":null,"kind":null},
+"expense":{"action":"spend","amount":-10,"label":"x",
+"category":null,"recurring_key":null,"when":null},
+"search_query":null}</meta>"""
+    with pytest.raises(MetaParseError, match=r"expense\.amount.+positif"):
+        extract_meta(raw)
+
+
+def test_extract_meta_expense_optional_in_old_format() -> None:
+    """Rétrocompat : si le LLM oublie le bloc expense, défauts à None."""
+    raw = """<meta>{"intent": "answer", "store_memory": false, "memory_content": null,
+"task": {"content": null, "due_str": null},
+"feed": {"action": null, "name": null, "url": null},
+"search_query": null}</meta>"""
+    _, meta = extract_meta(raw)
+    assert meta["expense"]["action"] is None
+    assert meta["expense"]["amount"] is None

@@ -65,3 +65,25 @@ news_topics:
       - x.com
       - facebook.com
       - linkedin.com
+
+# Suivi des dépenses : revenus, ponctuelles, récurrentes, épargne.
+#
+# Les récurrentes (loyer, abonnements, versement épargne) sont déclarées
+# ici une fois pour toutes. Chaque mois, copain :
+# - notifie l'iPhone à la date prévue ("Le loyer de 800€ est-il passé ?")
+# - laisse pointer via /ask ("le loyer est passé") qui crée une ligne
+#   dans la table SQLite `expenses`.
+#
+# Les dépenses ponctuelles ("j'ai dépensé 27€ à la pharmacie") et le
+# salaire ("mon salaire est tombé : 2500€") sont saisis à la volée — pas
+# besoin de les déclarer ici.
+#
+# Champs requis : key (slug unique), label, amount (euros), day (1-31),
+# kind (expense | saving). category est optionnel.
+# `day=31` est automatiquement cappé au dernier jour des mois courts.
+finances:
+  currency: EUR
+  recurring:
+    # - { key: loyer,    label: "Loyer appartement", amount: 800,    day: 5,  kind: expense, category: logement }
+    # - { key: netflix,  label: "Netflix",           amount: 17.99,  day: 12, kind: expense, category: abonnement }
+    # - { key: pel,      label: "Versement PEL",     amount: 200,    day: 5,  kind: saving }

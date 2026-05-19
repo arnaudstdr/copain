@@ -33,6 +33,8 @@ if TYPE_CHECKING:
     from bot.calendar.client import ICloudCalendarClient
     from bot.calendar.models import CalendarEvent
     from bot.config import Settings
+    from bot.finance.budget import PendingRecurring
+    from bot.finance.manager import ExpenseManager
     from bot.fuel.client import FuelClient
     from bot.fuel.geocoding import NominatimClient
     from bot.fuel.models import FuelStation
@@ -79,6 +81,14 @@ _FALLBACK_META: Meta = {
     "fuel": {"fuel_type": None, "radius_km": None, "location": None},
     "weather": {"location": None, "when": None},
     "depot": {"content": None, "kind": None},
+    "expense": {
+        "action": None,
+        "amount": None,
+        "label": None,
+        "category": None,
+        "recurring_key": None,
+        "when": None,
+    },
     "search_query": None,
 }
 
@@ -92,6 +102,7 @@ class BotDeps:
     memory: MemoryManager
     tasks: TaskManager
     thoughts: ThoughtManager
+    expenses: ExpenseManager
     scheduler: ReminderScheduler
     search: SearxngClient
     rss: FeedManager
@@ -133,6 +144,7 @@ async def process_message(
     tz = ZoneInfo(deps.settings.timezone)
     now_str = datetime.now(tz).strftime("%A %d %B %Y à %H:%M")
     current_location = await deps.location_events.get_current_location()
+    pending_recurring = await _safe_pending_recurring(deps)
     system_prompt = build_system_prompt(
         memory_context=memory_context,
         recent_history=list(deps.history),
@@ -142,6 +154,7 @@ async def process_message(
         voice_mode=voice_mode,
         current_location=current_location,
         timezone=deps.settings.timezone,
+        pending_recurring=pending_recurring,
     )
 
     user_content = (
@@ -188,6 +201,14 @@ async def _apply_side_effects(
     meta: Meta,
     deps: BotDeps,
 ) -> None:
+    # Cas saisie financière : revenu, dépense ponctuelle ou pointage d'une
+    # récurrente connue. On NE déclenche pas non plus le store_memory
+    # générique (la valeur d'usage est dans la table `expenses`, pas dans
+    # la mémoire sémantique).
+    if meta["intent"] == "expense" and meta["expense"]["action"]:
+        await _handle_expense_side_effect(meta, deps)
+        return
+
     # Cas dépôt cognitif : on persiste dans la table `thoughts` (listing
     # chronologique, état) et on indexe en parallèle dans ChromaDB avec
     # le tag `kind=depot` (préparation à la future détection de boucles).
@@ -236,6 +257,141 @@ async def _apply_side_effects(
                 due_at=due_dt,
                 content=task.content,
             )
+
+
+async def _handle_expense_side_effect(meta: Meta, deps: BotDeps) -> None:
+    """Persiste une saisie financière (spend / income / tick_recurring).
+
+    Aucune réponse texte n'est produite ici : c'est le LLM qui renvoie un
+    ack court (« Noté. ») qui restera tel quel dans `text`. Cette fonction
+    se contente d'écrire dans SQLite et de logger.
+
+    Une saisie avec un `recurring_key` inconnu (i.e. absent du YAML) tombe
+    en silent no-op : le LLM aurait dû router vers `action=spend` mais on
+    refuse d'inventer une récurrente que l'utilisateur n'a pas déclarée.
+
+    Idempotence : si la récurrente est déjà pointée ce mois (cron + /ask
+    qui se chevauchent), on log et on skip — pas de double tick.
+    """
+    em = meta["expense"]
+    action = em["action"]
+    if action is None:
+        return
+
+    amount_eur = em["amount"]
+    if amount_eur is None or amount_eur <= 0:
+        log.warning("expense_skipped_invalid_amount", action=action, amount=amount_eur)
+        return
+    amount_cents = round(amount_eur * 100)
+
+    when = _parse_when_to_date(em["when"], deps.settings.timezone)
+    label = em["label"] or "Saisie"
+
+    if action == "spend":
+        expense = await deps.expenses.add_punctual(
+            amount_cents=amount_cents,
+            label=label,
+            category=em["category"],
+            occurred_on=when,
+        )
+        log.info(
+            "expense_spend_recorded",
+            expense_id=expense.id,
+            amount_cents=amount_cents,
+            label=label,
+        )
+        return
+
+    if action == "income":
+        expense = await deps.expenses.add_income(
+            amount_cents=amount_cents,
+            label=label,
+            occurred_on=when,
+        )
+        log.info(
+            "expense_income_recorded",
+            expense_id=expense.id,
+            amount_cents=amount_cents,
+            label=label,
+        )
+        return
+
+    if action == "tick_recurring":
+        key = em["recurring_key"]
+        if not key:
+            log.warning("expense_tick_missing_recurring_key")
+            return
+        # Import local pour éviter la boucle (config lit le YAML déjà parsé).
+        from bot.finance.config import extract_finance_config
+
+        try:
+            cfg = extract_finance_config(deps.profile.data)
+        except Exception as exc:
+            log.warning("expense_tick_finance_config_failed", error=str(exc))
+            return
+        item = cfg.find(key)
+        if item is None:
+            log.warning("expense_tick_unknown_key", key=key)
+            return
+        already = await deps.expenses.is_recurring_ticked_this_month(item.key, when)
+        if already:
+            log.info("expense_tick_duplicate_ignored", key=item.key, month=when.replace(day=1))
+            return
+        expense = await deps.expenses.tick_recurring(
+            recurring_key=item.key,
+            label=item.label,
+            amount_cents=item.amount_cents,
+            kind=item.kind,
+            occurred_on=when,
+            category=item.category,
+        )
+        log.info(
+            "expense_recurring_ticked",
+            expense_id=expense.id,
+            key=item.key,
+            kind=item.kind,
+        )
+
+
+async def _safe_pending_recurring(deps: BotDeps) -> Sequence[PendingRecurring]:
+    """Calcule les récurrentes en attente pour injection dans le system prompt.
+
+    Lit le YAML (`finances.recurring`), liste les écritures du mois courant,
+    et retourne les récurrentes non-pointées. Toute erreur (YAML mal formé,
+    SQLite indisponible) est avalée : on préfère un prompt sans la section
+    qu'un crash sur chaque requête.
+    """
+    try:
+        from bot.finance.budget import compute_budget
+        from bot.finance.config import extract_finance_config
+
+        cfg = extract_finance_config(deps.profile.data)
+        if not cfg.is_configured:
+            return ()
+        tz = ZoneInfo(deps.settings.timezone)
+        today_d = datetime.now(tz).date()
+        month_rows = await deps.expenses.list_for_month(today_d.replace(day=1))
+        summary = compute_budget(
+            config=cfg,
+            month_expenses=month_rows,
+            year_savings=(),  # inutile pour les pending
+            today=today_d,
+        )
+        return summary.pending_recurring
+    except Exception as exc:
+        log.warning("pending_recurring_skipped", error=str(exc))
+        return ()
+
+
+def _parse_when_to_date(when_str: str | None, tz_name: str) -> date:
+    """Parse une expression FR ('hier', 'le 5') en `date`, défaut = aujourd'hui."""
+    tz = ZoneInfo(tz_name)
+    if not when_str:
+        return datetime.now(tz).date()
+    parsed = _parse_due(when_str, tz_name)
+    if parsed is None:
+        return datetime.now(tz).date()
+    return parsed.astimezone(tz).date()
 
 
 async def _handle_feed(user_text: str, meta: Meta, deps: BotDeps, intro: str) -> str:

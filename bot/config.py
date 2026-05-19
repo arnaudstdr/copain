@@ -62,6 +62,9 @@ class Settings:
     proactivity_check_interval_min: int
     proactivity_rain_cooldown_hours: int
 
+    finance_reminder_hour: int
+    finance_reminder_minute: int
+
     fuel_default_radius_km: float
     nominatim_user_agent: str
 
@@ -193,6 +196,8 @@ def load_settings() -> Settings:
         proactivity_daily_budget=_env_int("PROACTIVITY_DAILY_BUDGET", 3),
         proactivity_check_interval_min=_env_int("PROACTIVITY_CHECK_INTERVAL_MIN", 30),
         proactivity_rain_cooldown_hours=_env_int("PROACTIVITY_RAIN_COOLDOWN_HOURS", 3),
+        finance_reminder_hour=_env_int("FINANCE_REMINDER_HOUR", 9),
+        finance_reminder_minute=_env_int("FINANCE_REMINDER_MINUTE", 0),
         fuel_default_radius_km=_env_float("FUEL_DEFAULT_RADIUS_KM", 10.0),
         nominatim_user_agent=os.getenv(
             "NOMINATIM_USER_AGENT",
