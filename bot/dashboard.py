@@ -37,6 +37,7 @@ class DashboardSnapshot:
     weather: WeatherSummary | None
     next_event: CalendarEvent | None
     today_tasks: list[Task]
+    overdue_tasks_count: int
     unread_notifications: int
     budget: BudgetSummary | None
 
@@ -59,6 +60,25 @@ def today_tasks(pending: Sequence[Task], tz: ZoneInfo) -> list[Task]:
     return result
 
 
+def overdue_tasks_count(pending: Sequence[Task], tz: ZoneInfo) -> int:
+    """Compte les tâches non terminées dont la date due est strictement avant aujourd'hui.
+
+    Critère "jour calendaire de retard" (cohérent avec le badge "En retard de
+    N jours" affiché dans l'overlay des tâches). Les tâches sans `due_at` ne
+    comptent pas, et celles dues à une heure passée du jour courant non plus
+    (elles restent dans `today_tasks`).
+    """
+    today = datetime.now(tz).date()
+    n = 0
+    for t in pending:
+        if t.due_at is None:
+            continue
+        due = t.due_at if t.due_at.tzinfo else t.due_at.replace(tzinfo=tz)
+        if due.astimezone(tz).date() < today:
+            n += 1
+    return n
+
+
 async def build_dashboard(deps: BotDeps, notifications: NotificationStore) -> DashboardSnapshot:
     """Agrège les cards du tableau de bord en un seul appel.
 
@@ -73,6 +93,7 @@ async def build_dashboard(deps: BotDeps, notifications: NotificationStore) -> Da
     next_event = await _safe_next_event(deps)
     pending = await deps.tasks.list_pending()
     today_tasks_list = today_tasks(pending, tz)
+    overdue_count = overdue_tasks_count(pending, tz)
     unread = await notifications.count_unread()
     budget = await _safe_budget_summary(deps)
 
@@ -81,6 +102,7 @@ async def build_dashboard(deps: BotDeps, notifications: NotificationStore) -> Da
         weather=weather is not None,
         next_event=next_event is not None,
         tasks=len(today_tasks_list),
+        overdue=overdue_count,
         unread=unread,
         budget=budget is not None,
     )
@@ -88,6 +110,7 @@ async def build_dashboard(deps: BotDeps, notifications: NotificationStore) -> Da
         weather=weather,
         next_event=next_event,
         today_tasks=today_tasks_list,
+        overdue_tasks_count=overdue_count,
         unread_notifications=unread,
         budget=budget,
     )

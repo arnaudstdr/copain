@@ -131,6 +131,7 @@ class DashboardResponse(BaseModel):
     weather: WeatherCard | None
     next_event: NextEventCard | None
     today_tasks: list[TaskCard]
+    overdue_tasks: int
     unread_notifications: int
     budget: BudgetCard | None
 
@@ -990,6 +991,7 @@ def _snapshot_to_response(snap: DashboardSnapshot) -> DashboardResponse:
         weather=weather,
         next_event=next_event,
         today_tasks=tasks,
+        overdue_tasks=snap.overdue_tasks_count,
         unread_notifications=snap.unread_notifications,
         budget=budget,
     )

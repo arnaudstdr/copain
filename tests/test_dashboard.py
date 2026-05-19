@@ -17,7 +17,7 @@ import pytest
 from bot.briefing.weather import WeatherError, WeatherSummary
 from bot.calendar.client import ICloudCalendarError
 from bot.calendar.models import CalendarEvent
-from bot.dashboard import build_dashboard, today_tasks
+from bot.dashboard import build_dashboard, overdue_tasks_count, today_tasks
 from bot.pipeline import BotDeps
 from bot.profile import UserProfile
 from bot.tasks.models import Task
@@ -105,6 +105,27 @@ def test_today_tasks_treats_naive_due_as_local_tz() -> None:
 
 def test_today_tasks_empty_returns_empty() -> None:
     assert today_tasks([], TZ) == []
+
+
+# --- overdue_tasks_count ----------------------------------------------------
+
+
+def test_overdue_tasks_count_strict_past_day() -> None:
+    now = datetime.now(TZ)
+    today_morning = now.replace(hour=6, minute=0, second=0, microsecond=0)
+    yesterday = today_morning - timedelta(days=1)
+    pending = [
+        _make_task("hier", yesterday),  # en retard
+        _make_task("avant-hier", yesterday - timedelta(days=1)),  # en retard
+        _make_task("aujourd'hui matin", today_morning),  # pas en retard (jour J)
+        _make_task("demain", today_morning + timedelta(days=1)),  # pas en retard
+        _make_task("sans due", None),  # exclue
+    ]
+    assert overdue_tasks_count(pending, TZ) == 2
+
+
+def test_overdue_tasks_count_empty_returns_zero() -> None:
+    assert overdue_tasks_count([], TZ) == 0
 
 
 # --- build_dashboard --------------------------------------------------------

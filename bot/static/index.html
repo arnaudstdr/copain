@@ -540,7 +540,7 @@
     // Prochain évent
     root.appendChild(eventCard(d.next_event));
     // Tâches
-    root.appendChild(tasksCard(d.today_tasks));
+    root.appendChild(tasksCard(d.today_tasks, d.overdue_tasks || 0));
     // Budget (restant ce mois)
     root.appendChild(budgetCard(d.budget));
     // Notifs (count)
@@ -600,15 +600,15 @@
     return card;
   }
 
-  function tasksCard(tasks) {
+  function tasksCard(tasks, overdueCount) {
     const card = el("div", "card tappable");
     card.onclick = openTasks;
     if (!tasks || tasks.length === 0) {
       card.classList.add("empty");
       card.appendChild(makeHead("✅", "Tâches du jour"));
       card.appendChild(el("div", "card-primary", "Aucune tâche aujourd'hui"));
-      const sub = el("div", "card-secondary", "Tape pour voir toutes les tâches");
-      card.appendChild(sub);
+      card.appendChild(el("div", "card-secondary", "Tape pour voir toutes les tâches"));
+      appendOverdueLine(card, overdueCount);
       return card;
     }
     const label = tasks.length === 1 ? "1 tâche aujourd'hui" : `${tasks.length} tâches aujourd'hui`;
@@ -622,7 +622,19 @@
     } else {
       card.appendChild(el("div", "card-meta", "Tape pour gérer"));
     }
+    appendOverdueLine(card, overdueCount);
     return card;
+  }
+
+  function appendOverdueLine(card, overdueCount) {
+    if (!overdueCount || overdueCount <= 0) return;
+    const line = el(
+      "div",
+      "card-meta",
+      overdueCount === 1 ? "1 en retard" : `${overdueCount} en retard`
+    );
+    line.style.color = "var(--red)";
+    card.appendChild(line);
   }
 
   function budgetCard(b) {
