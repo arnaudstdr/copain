@@ -75,7 +75,9 @@
       }
     }
 
-    html, body { height: 100%; background: var(--bg); color: var(--text); font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, sans-serif; overflow: hidden; -webkit-font-smoothing: antialiased; }
+    /* overscroll-behavior-y: none → empêche le rubber-band scroll iOS qui
+       peut décaler les éléments en position: fixed (composer-wrap). */
+    html, body { height: 100%; background: var(--bg); color: var(--text); font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, sans-serif; overflow: hidden; overscroll-behavior-y: none; -webkit-font-smoothing: antialiased; }
 
     #app { display: flex; flex-direction: column; height: 100dvh; max-width: 480px; margin: 0 auto; background: var(--bg); position: relative; overflow: hidden; }
 
@@ -143,6 +145,13 @@
       margin: 0 auto;
       background: var(--bg2);
       z-index: 5;
+      /* Hints GPU iOS Safari : force le compositing matériel sur la
+         composer-wrap, ce qui stabilise sa position au bas physique. Sans
+         ces hints, iOS peut la peindre dans le contexte du flow normal et
+         laisser apparaître une bande sous la barre. */
+      will-change: transform;
+      transform: translateZ(0);
+      -webkit-backface-visibility: hidden;
     }
     /* Composer du chat : z-index > chat-view (z:12) pour passer au-dessus de
        la composer du dashboard. Quand chat-view est cachée (display: none),
