@@ -10,8 +10,14 @@
        contrôles natifs (scrollbars, form inputs) en cohérence. -->
   <meta name="color-scheme" content="light dark" />
   <!-- theme-color piloté par le mode courant (status bar PWA et browser chrome). -->
+  <!-- theme-color choisi = couleur de la composer bar (bg2). Sur iOS PWA
+       standalone, la zone "réservée" iOS sous la viewport accessible
+       (~59px sur iPhone 15 / iOS 26) est peinte par le système avec cette
+       couleur. En la matchant à la composer, la transition visuelle est
+       continue : impossible de récupérer ces 59px côté web, mais ils
+       deviennent indiscernables. -->
   <meta name="theme-color" content="#13131a" media="(prefers-color-scheme: dark)" />
-  <meta name="theme-color" content="#f2f2f7" media="(prefers-color-scheme: light)" />
+  <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)" />
   <title>Copain</title>
   <link rel="manifest" href="/static/manifest.json" />
   <link rel="apple-touch-icon" href="/static/icon-1024.png" />
@@ -265,10 +271,6 @@
   </style>
 </head>
 <body>
-
-<!-- Debug overlay temporaire : viewport sizes en temps réel. À retirer. -->
-<div id="debug-panel" style="position: fixed; top: env(safe-area-inset-top, 0); right: 0; z-index: 9999; background: rgba(255, 0, 0, 0.82); color: #fff; font: 600 10px/1.35 ui-monospace, Menlo, monospace; padding: 6px 8px; border-radius: 0 0 0 8px; pointer-events: none; max-width: 200px; white-space: pre;">debug…</div>
-
 <div id="app">
 
   <!-- Header -->
@@ -493,39 +495,11 @@
     const update = () => {
       const h = window.visualViewport?.height || window.innerHeight;
       document.documentElement.style.setProperty("--app-h", `${h}px`);
-      refreshDebugPanel();
     };
     update();
     window.addEventListener("resize", update);
     window.addEventListener("orientationchange", update);
     window.visualViewport?.addEventListener("resize", update);
-    // Live refresh aussi : on regarde toutes les 500ms pour attraper les
-    // changements qui ne déclenchent pas les events ci-dessus.
-    setInterval(refreshDebugPanel, 500);
-  }
-
-  // Debug overlay : affiche les viewport sizes en temps réel pour comprendre
-  // ce qui ment sur iOS 26 PWA standalone. À retirer une fois le problème
-  // identifié.
-  function refreshDebugPanel() {
-    const panel = document.getElementById("debug-panel");
-    if (!panel) return;
-    const app = document.getElementById("app");
-    const appRect = app ? app.getBoundingClientRect() : { height: 0 };
-    const cssH = getComputedStyle(document.documentElement)
-      .getPropertyValue("--app-h").trim();
-    const lines = [
-      `innerH       ${window.innerHeight}`,
-      `vvH          ${window.visualViewport?.height ?? "n/a"}`,
-      `docH         ${document.documentElement.clientHeight}`,
-      `screenH      ${window.screen.height}`,
-      `app.height   ${Math.round(appRect.height)}`,
-      `app.bottom   ${Math.round(appRect.bottom)}`,
-      `--app-h      ${cssH}`,
-      `dpr          ${window.devicePixelRatio}`,
-      `standalone   ${window.navigator.standalone}`,
-    ];
-    panel.textContent = lines.join("\n");
   }
 
   function renderGreeting() {
