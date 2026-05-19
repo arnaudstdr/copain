@@ -176,6 +176,8 @@
     #markdown-view { position: absolute; inset: 0; background: var(--bg); z-index: 12; display: flex; flex-direction: column; animation: slideRight 0.2s ease; }
     #markdown-view.hidden { display: none; }
     .markdown-body { flex: 1; overflow-y: auto; padding: 16px 18px max(20px, env(safe-area-inset-bottom)); font-size: 14.5px; line-height: 1.6; color: var(--text); }
+    .markdown-body h1 { font-size: 20px; font-weight: 700; margin: 14px 0 10px; color: var(--text); }
+    .markdown-body h2 { font-size: 18px; font-weight: 700; margin: 16px 0 8px; color: var(--text); }
     .markdown-body h3 { font-size: 16px; font-weight: 600; margin: 18px 0 8px; color: var(--text); }
     .markdown-body strong { font-weight: 600; color: var(--text); }
     .markdown-body em { color: var(--text2); font-style: normal; }
@@ -1161,6 +1163,15 @@
       const line = inlineMd(raw);
       const stripped = raw.trim();
       if (!stripped) { flushList(); continue; }
+
+      // Titres ATX : "# ", "## ", "### "
+      const h = stripped.match(/^(#{1,3})\s+(.+)$/);
+      if (h) {
+        flushList();
+        const level = h[1].length;
+        out.push(`<h${level}>${inlineMd(h[2])}</h${level}>`);
+        continue;
+      }
 
       // Titres de section : "📰 *Actus du jour*" ou "🤖 *Actus IA …*"
       if (/^(📰|🤖|☀️|📅|✅|📋|🌤|🌧)/.test(stripped) && /\*[^*]+\*/.test(stripped)) {
