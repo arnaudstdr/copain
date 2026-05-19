@@ -543,8 +543,6 @@
     root.appendChild(tasksCard(d.today_tasks, d.overdue_tasks || 0));
     // Budget (restant ce mois)
     root.appendChild(budgetCard(d.budget));
-    // Notifs (count)
-    root.appendChild(notifCard(d.unread_notifications));
     // Actu (vraie card avec fetch au clic)
     root.appendChild(newsCard());
   }
@@ -773,20 +771,6 @@
       lines.push("_Aucune transaction enregistrée ce mois._");
     }
     return lines.join("\n");
-  }
-
-  function notifCard(count) {
-    const card = el("div", "card tappable");
-    card.onclick = openNotifs;
-    card.appendChild(makeHead("🔔", "Notifications"));
-    if (count === 0) {
-      card.classList.add("empty");
-      card.appendChild(el("div", "card-primary", "Aucune notif non lue"));
-    } else {
-      card.appendChild(el("div", "card-primary", count === 1 ? "1 notif non lue" : `${count} notifs non lues`));
-      card.appendChild(el("div", "card-secondary", "Tape pour les consulter"));
-    }
-    return card;
   }
 
   function newsCard() {
