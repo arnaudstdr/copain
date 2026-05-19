@@ -6,6 +6,12 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="apple-mobile-web-app-title" content="Copain" />
+  <!-- Indique au système que la PWA supporte les deux modes ; ajuste les
+       contrôles natifs (scrollbars, form inputs) en cohérence. -->
+  <meta name="color-scheme" content="light dark" />
+  <!-- theme-color piloté par le mode courant (status bar PWA et browser chrome). -->
+  <meta name="theme-color" content="#13131a" media="(prefers-color-scheme: dark)" />
+  <meta name="theme-color" content="#f2f2f7" media="(prefers-color-scheme: light)" />
   <title>Copain</title>
   <link rel="manifest" href="/static/manifest.json" />
   <link rel="apple-touch-icon" href="/static/icon-1024.png" />
@@ -15,6 +21,7 @@
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
     :root {
+      /* Palette sombre — défaut (le rendu pré-iOS-prefers ne change pas). */
       --bg: #0f0f11;
       --bg2: #13131a;
       --bg3: #1e1e2e;
@@ -31,6 +38,41 @@
       --orange: #f59e0b;
       --purple: #a855f7;
       --blue: #60a5fa;
+      /* Couleurs dérivées (fond de flash, overlays, shadows) — résolues à
+         partir du mode courant pour rester cohérentes entre les thèmes. */
+      --flash-bg: rgba(91, 91, 214, 0.18);
+      --overlay-bg: rgba(0, 0, 0, 0.55);
+      --shadow-strong: 0 8px 32px rgba(0, 0, 0, 0.4);
+      --track-bg: rgba(255, 255, 255, 0.1);
+      --on-accent: #fff;
+    }
+
+    /* Palette claire — alignée sur le system iOS (fonds quasi-blanc, accents
+       conservés). Active dès que l'iPhone est en mode clair. */
+    @media (prefers-color-scheme: light) {
+      :root {
+        --bg: #f2f2f7;
+        --bg2: #ffffff;
+        --bg3: #efeff3;
+        --bg4: #e5e5ea;
+        --border: #e5e5ea;
+        --border2: #d1d1d6;
+        --text: #1c1c1e;
+        --text2: #4a4a4f;
+        --text3: #8e8e93;
+        --accent: #5b5bd6;
+        --accent2: #4c4ad6;
+        --green: #34c759;
+        --red: #ff3b30;
+        --orange: #ff9500;
+        --purple: #af52de;
+        --blue: #007aff;
+        --flash-bg: rgba(91, 91, 214, 0.12);
+        --overlay-bg: rgba(0, 0, 0, 0.35);
+        --shadow-strong: 0 8px 24px rgba(0, 0, 0, 0.12);
+        --track-bg: rgba(0, 0, 0, 0.08);
+        --on-accent: #fff;
+      }
     }
 
     html, body { height: 100%; background: var(--bg); color: var(--text); font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, sans-serif; overflow: hidden; -webkit-font-smoothing: antialiased; }
@@ -56,7 +98,7 @@
     .card.tappable { cursor: pointer; }
     .card.tappable:active { transform: scale(0.985); background: var(--bg3); }
     .card.flash { animation: flash 0.6s ease; }
-    @keyframes flash { 0% { background: var(--bg2); } 30% { background: rgba(91, 91, 214, 0.18); } 100% { background: var(--bg2); } }
+    @keyframes flash { 0% { background: var(--bg2); } 30% { background: var(--flash-bg); } 100% { background: var(--bg2); } }
 
     .card-head { display: flex; align-items: center; gap: 10px; }
     .card-icon { width: 28px; height: 28px; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 15px; background: var(--bg3); flex-shrink: 0; }
@@ -68,9 +110,15 @@
 
     .card-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 
+    /* Enveloppes budgétaires : progress bar inline dans la card Budget. */
+    .envelope-track { height: 4px; border-radius: 2px; background: var(--track-bg); margin-top: 2px; overflow: hidden; }
+    .envelope-fill { height: 100%; background: var(--green); transition: width 0.2s ease; }
+    .envelope-fill.overrun { background: var(--red); }
+    .envelope-amount-overrun { color: var(--red); }
+
 
     /* ── Bulle de réponse éphémère ── */
-    #ephemeral { position: absolute; bottom: 70px; left: 14px; right: 14px; background: var(--bg3); border: 1px solid var(--border2); border-radius: 14px; padding: 12px 14px; font-size: 13.5px; line-height: 1.5; color: var(--text); z-index: 8; box-shadow: 0 8px 32px rgba(0,0,0,0.4); animation: slideUpFade 0.2s ease; cursor: pointer; white-space: pre-wrap; max-height: 50dvh; overflow-y: auto; }
+    #ephemeral { position: absolute; bottom: 70px; left: 14px; right: 14px; background: var(--bg3); border: 1px solid var(--border2); border-radius: 14px; padding: 12px 14px; font-size: 13.5px; line-height: 1.5; color: var(--text); z-index: 8; box-shadow: var(--shadow-strong); animation: slideUpFade 0.2s ease; cursor: pointer; white-space: pre-wrap; max-height: 50dvh; overflow-y: auto; }
     #ephemeral.hidden { display: none; }
 
     /* ── Input bar ── */
@@ -99,7 +147,7 @@
     #toast { position: absolute; bottom: 76px; left: 50%; transform: translateX(-50%); background: var(--bg4); border: 1px solid var(--border2); border-radius: 20px; padding: 8px 18px; font-size: 13px; color: var(--text); white-space: nowrap; z-index: 20; animation: toastIn 0.2s ease; pointer-events: none; max-width: 86%; overflow: hidden; text-overflow: ellipsis; }
 
     /* ── Notifications overlay ── */
-    .overlay { position: absolute; inset: 0; background: rgba(0,0,0,0.55); z-index: 15; display: flex; flex-direction: column; justify-content: flex-end; animation: fadeIn 0.15s ease; }
+    .overlay { position: absolute; inset: 0; background: var(--overlay-bg); z-index: 15; display: flex; flex-direction: column; justify-content: flex-end; animation: fadeIn 0.15s ease; }
     .overlay.hidden { display: none; }
     .panel { background: var(--bg2); border-top: 1px solid var(--border2); border-radius: 20px 20px 0 0; padding-bottom: max(20px, env(safe-area-inset-bottom)); animation: slideUp 0.25s ease; max-height: 75dvh; display: flex; flex-direction: column; }
     .panel-head { display: flex; align-items: center; justify-content: space-between; padding: 16px 20px 12px; }
@@ -162,7 +210,7 @@
     .row.bot { justify-content: flex-start; }
     .avatar-sm { font-size: 14px; background: var(--bg3); border-radius: 9px; width: 28px; height: 28px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
     .bubble { max-width: 78%; padding: 9px 13px; border-radius: 16px; }
-    .bubble.user { background: var(--accent); border-bottom-right-radius: 4px; }
+    .bubble.user { background: var(--accent); color: var(--on-accent); border-bottom-right-radius: 4px; }
     .bubble.bot { background: var(--bg3); border: 1px solid var(--border2); border-bottom-left-radius: 4px; }
     .bubble-text { font-size: 14px; line-height: 1.55; white-space: pre-wrap; }
     .typing { padding: 12px 14px; }
@@ -537,7 +585,7 @@
     card.onclick = openBudget;
     const remaining = formatEur(b.remaining_eur);
     const primary = el("div", "card-primary", `Restant : ${remaining}`);
-    if (b.remaining_eur < 0) primary.style.color = "#ff453a";
+    if (b.remaining_eur < 0) primary.style.color = "var(--red)";
     card.appendChild(primary);
     const savedLine = `Épargné cette année : ${formatEur(b.saved_this_year_eur)}`;
     card.appendChild(el("div", "card-secondary", savedLine));
@@ -549,7 +597,7 @@
           ? "1 récurrente à pointer"
           : `${b.pending_recurring_count} récurrentes à pointer`
       );
-      if (b.has_overdue) meta.style.color = "#ff453a";
+      if (b.has_overdue) meta.style.color = "var(--red)";
       card.appendChild(meta);
     }
     if (b.envelopes && b.envelopes.length > 0) {
@@ -577,26 +625,19 @@
       "envelope-amounts",
       `${formatEur(env.spent_eur)} / ${formatEur(env.allocated_eur)}`
     );
-    if (env.is_overrun) amounts.style.color = "#ff453a";
+    if (env.is_overrun) amounts.classList.add("envelope-amount-overrun");
     top.appendChild(label);
     top.appendChild(amounts);
     row.appendChild(top);
 
-    // Progress bar : bg gris, fill jusqu'au % consommé (capé à 100). En cas
-    // de dépassement, on remplit à 100% en rouge.
+    // Progress bar : bg gris (var --track-bg, adapté light/dark), fill jusqu'au
+    // % consommé (capé à 100). En cas de dépassement, on remplit à 100% en rouge.
     const ratio = env.allocated_eur > 0
       ? Math.min(1, env.spent_eur / env.allocated_eur)
       : 0;
     const track = el("div", "envelope-track");
-    track.style.height = "4px";
-    track.style.borderRadius = "2px";
-    track.style.background = "rgba(255,255,255,0.1)";
-    track.style.marginTop = "2px";
-    track.style.overflow = "hidden";
-    const fill = el("div", "envelope-fill");
+    const fill = el("div", "envelope-fill" + (env.is_overrun ? " overrun" : ""));
     fill.style.width = `${ratio * 100}%`;
-    fill.style.height = "100%";
-    fill.style.background = env.is_overrun ? "#ff453a" : "#30d158";
     track.appendChild(fill);
     row.appendChild(track);
     return row;
