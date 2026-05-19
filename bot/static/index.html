@@ -492,14 +492,23 @@
   // vide sous la composer bar. visualViewport remonte la vraie hauteur
   // utilisable (et s'ajuste quand le clavier s'ouvre/se ferme).
   function setupAppHeight() {
-    const update = () => {
+    // Mesure unique au boot : la viewport disponible (= sans clavier).
+    // On ne ré-écoute PAS les resize / visualViewport.resize : sur iOS,
+    // ces events se déclenchent aussi à l'ouverture du clavier, ce qui
+    // ferait chuter --app-h et écraserait le #app en haut de l'écran.
+    // En gardant la valeur initiale, iOS translate automatiquement le
+    // visual viewport pour amener l'input au-dessus du clavier.
+    const measure = () => {
       const h = window.visualViewport?.height || window.innerHeight;
       document.documentElement.style.setProperty("--app-h", `${h}px`);
     };
-    update();
-    window.addEventListener("resize", update);
-    window.addEventListener("orientationchange", update);
-    window.visualViewport?.addEventListener("resize", update);
+    measure();
+    // Seul l'orientationchange justifie une nouvelle mesure : c'est un
+    // vrai changement de viewport, indépendant du clavier.
+    window.addEventListener("orientationchange", () => {
+      // Petit délai pour laisser iOS finir sa rotation avant de mesurer.
+      setTimeout(measure, 150);
+    });
   }
 
   function renderGreeting() {
