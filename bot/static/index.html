@@ -582,9 +582,10 @@
     card.onclick = openEvents;
     card.appendChild(makeHead("📅", "Prochain évènement · " + e.calendar_name));
     const start = new Date(e.start);
-    const dayLabel = sameDay(start, new Date())
-      ? `Aujourd'hui ${formatHM(start)}`
-      : `${formatRelativeDay(start)} ${formatHM(start)}`;
+    const end = new Date(e.end);
+    const allDay = isAllDayEvent(start, end);
+    const dayWord = sameDay(start, new Date()) ? "Aujourd'hui" : formatRelativeDay(start);
+    const dayLabel = allDay ? dayWord : `${dayWord} ${formatHM(start)}`;
     card.appendChild(el("div", "card-primary", `${dayLabel} — ${e.title}`));
     if (e.location) card.appendChild(el("div", "card-secondary", e.location));
     return card;
@@ -1165,10 +1166,13 @@
     }
 
     // Regrouper par date locale (YYYY-MM-DD).
+    // toISOString() est en UTC : un all-day Paris (ex. 22 mai 00:00 +02:00)
+    // remonte au 21 mai 22:00Z et serait groupé la veille. On lit les
+    // composantes locales pour rester sur le bon jour côté utilisateur.
     const groups = new Map();
     events.forEach(e => {
       const d = new Date(e.start);
-      const key = d.toISOString().slice(0, 10);  // sera regroupé par jour UTC ; acceptable
+      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
       if (!groups.has(key)) groups.set(key, []);
       groups.get(key).push(e);
     });
@@ -1186,11 +1190,23 @@
     const item = el("div", "event-item");
     const start = new Date(e.start);
     const end = new Date(e.end);
-    item.appendChild(el("div", "event-time", `${formatHM(start)} – ${formatHM(end)}`));
+    const timeLabel = isAllDayEvent(start, end)
+      ? "Toute la journée"
+      : `${formatHM(start)} – ${formatHM(end)}`;
+    item.appendChild(el("div", "event-time", timeLabel));
     item.appendChild(el("div", "event-title", e.title));
     if (e.location) item.appendChild(el("div", "event-location", `📍 ${e.location}`));
     item.appendChild(el("div", "event-calendar", e.calendar_name));
     return item;
+  }
+
+  function isAllDayEvent(start, end) {
+    // All-day iCloud : DTSTART/DTEND alignés sur minuit local, durée
+    // multiple de 24 h (cas d'un jour : 24 h ; cas multi-jours : 48 h, …).
+    if (start.getHours() !== 0 || start.getMinutes() !== 0 || start.getSeconds() !== 0) return false;
+    if (end.getHours() !== 0 || end.getMinutes() !== 0 || end.getSeconds() !== 0) return false;
+    const diffMs = end.getTime() - start.getTime();
+    return diffMs > 0 && diffMs % 86400000 === 0;
   }
 
   // ── Markdown view (réutilisé pour la card Actu) ────────────────────────
