@@ -157,6 +157,47 @@ async def test_list_savings_for_year_only_returns_saving_tick(
     assert all(r.kind == "saving_tick" for r in rows)
 
 
+async def test_list_between_inclusive_bounds_and_ascending(
+    manager: ExpenseManager,
+) -> None:
+    # Hors borne basse (la veille du `start`)
+    await manager.add_punctual(
+        amount_cents=100, label="Trop tôt", category=None, occurred_on=date(2026, 4, 30)
+    )
+    # Pile la borne basse
+    await manager.add_income(amount_cents=250000, label="Salaire mai", occurred_on=date(2026, 5, 1))
+    # Au milieu
+    await manager.add_punctual(
+        amount_cents=2700,
+        label="Pharmacie",
+        category="santé",
+        occurred_on=date(2026, 5, 10),
+    )
+    # Pile la borne haute (doit être inclus, à la différence de list_for_month)
+    await manager.tick_recurring(
+        recurring_key="loyer",
+        label="Loyer",
+        amount_cents=80000,
+        kind="expense",
+        occurred_on=date(2026, 5, 31),
+    )
+    # Hors borne haute (le lendemain)
+    await manager.add_punctual(
+        amount_cents=999, label="Trop tard", category=None, occurred_on=date(2026, 6, 1)
+    )
+
+    rows = await manager.list_between(date(2026, 5, 1), date(2026, 5, 31))
+    assert [r.label for r in rows] == ["Salaire mai", "Pharmacie", "Loyer"]
+
+
+async def test_list_between_empty_when_no_match(manager: ExpenseManager) -> None:
+    await manager.add_punctual(
+        amount_cents=100, label="Mai", category=None, occurred_on=date(2026, 5, 10)
+    )
+    rows = await manager.list_between(date(2026, 6, 1), date(2026, 6, 30))
+    assert rows == []
+
+
 def test_clamp_day_to_month_caps_february() -> None:
     assert clamp_day_to_month(31, date(2026, 2, 1)) == 28
     assert clamp_day_to_month(31, date(2024, 2, 1)) == 29  # année bissextile

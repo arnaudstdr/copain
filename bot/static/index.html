@@ -99,6 +99,11 @@
     .header-btn { position: relative; width: 36px; height: 36px; border-radius: 50%; background: var(--bg3); border: 1px solid var(--border2); color: var(--text2); cursor: pointer; display: flex; align-items: center; justify-content: center; flex-shrink: 0; transition: transform 0.1s, background 0.15s; }
     .header-btn:active { transform: scale(0.92); }
     .header-btn:hover { background: var(--bg4); }
+    /* Bouton texte dans le header (action contextuelle d'une vue markdown). */
+    .header-action-btn { margin-left: auto; padding: 7px 14px; border-radius: 18px; background: var(--bg3); border: 1px solid var(--border2); color: var(--text); font-size: 13px; font-weight: 500; cursor: pointer; flex-shrink: 0; transition: transform 0.1s, background 0.15s; }
+    .header-action-btn:active { transform: scale(0.96); }
+    .header-action-btn:hover { background: var(--bg4); }
+    .header-action-btn.hidden { display: none; }
     .badge { position: absolute; top: -3px; right: -3px; background: var(--red); color: #fff; font-size: 9px; font-weight: 700; min-width: 16px; height: 16px; padding: 0 4px; border-radius: 8px; display: flex; align-items: center; justify-content: center; }
 
     /* ── Dashboard feed ── */
@@ -396,6 +401,7 @@
         <div class="greeting-name" id="markdown-title">—</div>
         <div class="greeting-date" id="markdown-subtitle">—</div>
       </div>
+      <button class="header-action-btn hidden" id="markdown-action-btn" type="button"></button>
     </header>
     <div class="markdown-body" id="markdown-body"></div>
   </div>
@@ -717,9 +723,44 @@
       const res = await fetch(`${API_BASE}/budget`, { headers: { "X-API-Key": API_KEY } });
       if (!res.ok) throw new Error(`${res.status}`);
       const data = await res.json();
-      openMarkdownView("Budget du mois", renderBudgetMarkdown(data), null);
+      openMarkdownView(
+        "Budget du mois",
+        renderBudgetMarkdown(data),
+        null,
+        { label: "Exporter CSV", onClick: () => exportExpensesCsv(data.month) }
+      );
     } catch (e) {
       showToast("Impossible de charger le budget");
+    }
+  }
+
+  async function exportExpensesCsv(monthIso) {
+    // monthIso = "2026-05-01" — on couvre le mois entier.
+    const start = monthIso;
+    const monthDate = new Date(monthIso + "T00:00:00");
+    const lastDay = new Date(monthDate.getFullYear(), monthDate.getMonth() + 1, 0);
+    const yyyy = lastDay.getFullYear();
+    const mm = String(lastDay.getMonth() + 1).padStart(2, "0");
+    const dd = String(lastDay.getDate()).padStart(2, "0");
+    const end = `${yyyy}-${mm}-${dd}`;
+    try {
+      const res = await fetch(
+        `${API_BASE}/expenses/export.csv?from=${start}&to=${end}`,
+        { headers: { "X-API-Key": API_KEY } }
+      );
+      if (!res.ok) throw new Error(`${res.status}`);
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `copain-depenses-${start}_${end}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+      showToast("Export CSV téléchargé");
+    } catch (e) {
+      showToast("Export CSV impossible");
     }
   }
 
@@ -1215,11 +1256,12 @@
   }
 
   // ── Markdown view (réutilisé pour la card Actu) ────────────────────────
-  function openMarkdownView(title, text, subtitle) {
+  function openMarkdownView(title, text, subtitle, action) {
     const view = document.getElementById("markdown-view");
     const body = document.getElementById("markdown-body");
     const titleEl = document.getElementById("markdown-title");
     const subtitleEl = document.getElementById("markdown-subtitle");
+    const actionBtn = document.getElementById("markdown-action-btn");
     titleEl.textContent = title || "";
     if (subtitle) {
       // Accepte soit un timestamp ISO, soit un texte libre.
@@ -1229,6 +1271,16 @@
         : d.toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long" });
     } else {
       subtitleEl.textContent = "";
+    }
+    // Bouton d'action contextuel (ex: "Exporter CSV" depuis la card Budget).
+    if (action && action.label && typeof action.onClick === "function") {
+      actionBtn.textContent = action.label;
+      actionBtn.onclick = action.onClick;
+      actionBtn.classList.remove("hidden");
+    } else {
+      actionBtn.textContent = "";
+      actionBtn.onclick = null;
+      actionBtn.classList.add("hidden");
     }
     body.innerHTML = renderMarkdown(text || "");
     view.classList.remove("hidden");

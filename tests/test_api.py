@@ -588,6 +588,96 @@ async def test_delete_task_requires_api_key(client: AsyncClient) -> None:
     assert response.status_code == 403
 
 
+# --- /expenses/export.csv -----------------------------------------------
+
+
+async def test_expenses_export_csv_requires_api_key(client: AsyncClient) -> None:
+    response = await client.get("/expenses/export.csv?from=2026-05-01&to=2026-05-31")
+    assert response.status_code == 403
+
+
+async def test_expenses_export_csv_returns_attachment_with_bom_and_header(
+    client: AsyncClient, state: AppState
+) -> None:
+    from datetime import date
+
+    from bot.finance.models import Expense
+
+    rows = [
+        Expense(
+            kind="income",
+            amount_cents=250000,
+            label="Salaire mai",
+            category=None,
+            recurring_key=None,
+            occurred_on=date(2026, 5, 1),
+        ),
+        Expense(
+            kind="punctual",
+            amount_cents=2750,
+            label="Pharmacie",
+            category="santé",
+            recurring_key=None,
+            occurred_on=date(2026, 5, 18),
+        ),
+    ]
+    state.deps.expenses.list_between = AsyncMock(return_value=rows)
+
+    response = await client.get(
+        "/expenses/export.csv?from=2026-05-01&to=2026-05-31",
+        headers={"X-API-Key": API_KEY},
+    )
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/csv")
+    disposition = response.headers["content-disposition"]
+    assert "attachment" in disposition
+    assert "copain-depenses-2026-05-01_2026-05-31.csv" in disposition
+
+    body = response.content.decode("utf-8")
+    assert body.startswith("﻿")  # BOM UTF-8
+    lines = body.removeprefix("﻿").splitlines()
+    assert lines[0] == "date;type;libelle;categorie;recurring_key;montant_eur"
+    assert "01/05/2026;income;Salaire mai;;;2500,00" in lines
+    assert "18/05/2026;punctual;Pharmacie;santé;;-27,50" in lines
+
+    state.deps.expenses.list_between.assert_awaited_once_with(date(2026, 5, 1), date(2026, 5, 31))
+
+
+async def test_expenses_export_csv_rejects_invalid_dates(
+    client: AsyncClient, state: AppState
+) -> None:
+    state.deps.expenses.list_between = AsyncMock(return_value=[])
+    response = await client.get(
+        "/expenses/export.csv?from=pas-une-date&to=2026-05-31",
+        headers={"X-API-Key": API_KEY},
+    )
+    assert response.status_code == 400
+
+
+async def test_expenses_export_csv_rejects_inverted_range(
+    client: AsyncClient, state: AppState
+) -> None:
+    state.deps.expenses.list_between = AsyncMock(return_value=[])
+    response = await client.get(
+        "/expenses/export.csv?from=2026-06-01&to=2026-05-01",
+        headers={"X-API-Key": API_KEY},
+    )
+    assert response.status_code == 400
+
+
+async def test_expenses_export_csv_empty_returns_header_only(
+    client: AsyncClient, state: AppState
+) -> None:
+    state.deps.expenses.list_between = AsyncMock(return_value=[])
+    response = await client.get(
+        "/expenses/export.csv?from=2026-05-01&to=2026-05-31",
+        headers={"X-API-Key": API_KEY},
+    )
+    assert response.status_code == 200
+    body = response.content.decode("utf-8").removeprefix("﻿")
+    assert body.splitlines() == ["date;type;libelle;categorie;recurring_key;montant_eur"]
+
+
 # --- /weather/forecast et /events ----------------------------------------
 
 

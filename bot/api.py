@@ -22,17 +22,18 @@ import pathlib
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from typing import TYPE_CHECKING, Literal
 from zoneinfo import ZoneInfo
 
-from fastapi import Depends, FastAPI, Header, HTTPException, Request, status
+from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request, status
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from bot.dashboard import DashboardSnapshot, build_dashboard
+from bot.finance.csv_export import build_expenses_csv
 from bot.llm.client import LLMError, LLMTimeoutError
 from bot.llm.parser import Meta
 from bot.logging_conf import get_logger
@@ -810,6 +811,48 @@ def create_app(state: AppState) -> FastAPI:
             transactions=transactions,
             pending=pending,
             envelopes=envelopes_detail,
+        )
+
+    @app.get(
+        "/expenses/export.csv",
+        response_class=Response,
+        dependencies=[Depends(verify_api_key)],
+        include_in_schema=False,
+    )
+    async def export_expenses_csv(
+        deps: BotDeps = Depends(get_deps),
+        from_: str = Query(..., alias="from", description="Date de début (YYYY-MM-DD, inclusif)"),
+        to: str = Query(..., description="Date de fin (YYYY-MM-DD, inclusif)"),
+    ) -> Response:
+        """Exporte les écritures budgétaires (`expenses`) entre `from` et `to`.
+
+        Format CSV pensé pour s'ouvrir directement dans Numbers/Excel locale
+        FR : séparateur `;`, virgule décimale, dates `JJ/MM/AAAA`, UTF-8 avec
+        BOM. Les 4 kinds sont inclus, distinguables via la colonne `type`.
+        Le montant est signé (`income` positif, autres négatifs) pour
+        autoriser une `SOMME` directe côté tableur.
+        """
+        try:
+            start = date.fromisoformat(from_)
+            end = date.fromisoformat(to)
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=400,
+                detail="Dates invalides (attendu YYYY-MM-DD)",
+            ) from exc
+        if start > end:
+            raise HTTPException(
+                status_code=400,
+                detail="`from` doit être <= `to`",
+            )
+
+        rows = await deps.expenses.list_between(start, end)
+        body = build_expenses_csv(rows)
+        filename = f"copain-depenses-{start.isoformat()}_{end.isoformat()}.csv"
+        return Response(
+            content=body.encode("utf-8"),
+            media_type="text/csv; charset=utf-8",
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
         )
 
     @app.get(

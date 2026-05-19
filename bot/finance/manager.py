@@ -139,6 +139,22 @@ class ExpenseManager:
             result = await session.execute(stmt)
             return result.scalars().all()  # type: ignore[no-any-return, unused-ignore]
 
+    async def list_between(self, start: date, end: date) -> Sequence[Expense]:
+        """Toutes les écritures entre `start` et `end` (bornes incluses).
+
+        Ordre ascendant (du plus ancien au plus récent) : c'est l'ordre
+        attendu dans un export tableur, à l'inverse de `list_for_month` qui
+        privilégie l'affichage "ce qui vient de se passer en premier".
+        """
+        async with self._sessionmaker() as session:
+            stmt = (
+                select(Expense)
+                .where(and_(Expense.occurred_on >= start, Expense.occurred_on <= end))
+                .order_by(Expense.occurred_on.asc(), Expense.id.asc())
+            )
+            result = await session.execute(stmt)
+            return result.scalars().all()  # type: ignore[no-any-return, unused-ignore]
+
     async def list_savings_for_year(self, year: int) -> Sequence[Expense]:
         """Tous les ticks d'épargne (kind=saving_tick) de l'année."""
         start, end = _year_bounds(year)

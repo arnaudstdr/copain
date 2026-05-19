@@ -115,8 +115,11 @@ les tâches.
 - **Import initial depuis le .numbers** : script one-shot qui parse le
   fichier (via export CSV depuis Numbers) et bulk-insert dans la DB.
   Pas un endpoint, juste `python -m bot.expenses.import_csv <file>`.
-- **Export mensuel** : `GET /expenses/export.csv?month=YYYY-MM` pour
-  garder une copie hors-bot si besoin.
+- ~~**Export mensuel** : `GET /expenses/export.csv?month=YYYY-MM` pour
+  garder une copie hors-bot si besoin.~~ → Livré sous forme
+  `GET /expenses/export.csv?from=YYYY-MM-DD&to=YYYY-MM-DD` (plage libre,
+  format Numbers/Excel FR) + bouton « Exporter CSV » dans la vue Budget
+  de la PWA.
 
 Effort total : moyen. C'est du CRUD + intent LLM + UI, pas de
 complexité technique. Le plus délicat sera de bien calibrer le prompt

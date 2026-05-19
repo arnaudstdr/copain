@@ -213,6 +213,7 @@ Missing or invalid → 403 with a warning logged (source IP included).
 | GET    | `/dashboard`       | —                                                                 | `{ "weather": …, "next_event": …, "today_tasks": […], "unread_notifications": int }`                    |
 | GET    | `/news/latest`     | —                                                                 | `{ "markdown": str, "fetched_at": str }`                                                                |
 | GET    | `/thoughts`        | `?since=<ISO>&limit=<int>` (optionnels)                           | `{ "thoughts": [ { "id": int, "content": str, "kind": str\|null, "created_at": str } ] }`              |
+| GET    | `/expenses/export.csv` | `?from=YYYY-MM-DD&to=YYYY-MM-DD` (bornes incluses)             | CSV FR (sep `;`, virgule décimale, UTF-8 BOM, dates `JJ/MM/AAAA`) en `attachment`                       |
 | POST   | `/event/location`  | `{ "event": "arrived"\|"left", "place": str, "lat"?, "lon"?, "at"? }` | `{ "recorded": bool, "current_place": str \| null }`                                                |
 
 Quick smoke test:
