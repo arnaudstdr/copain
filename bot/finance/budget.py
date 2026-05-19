@@ -11,7 +11,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import date
 
-from bot.finance.config import FinanceConfig, RecurringItem, RecurringKind
+from bot.finance.config import EnvelopeItem, FinanceConfig, RecurringItem, RecurringKind
 from bot.finance.manager import clamp_day_to_month
 from bot.finance.models import Expense
 
@@ -29,6 +29,26 @@ class PendingRecurring:
 
 
 @dataclass(frozen=True, slots=True)
+class EnvelopeStatus:
+    """État courant d'une enveloppe budgétaire mensuelle."""
+
+    category: str
+    label: str
+    allocated_cents: int
+    spent_cents: int  # somme des ponctuelles avec cette catégorie ce mois
+    overrun_cents: int  # max(0, spent - allocated)
+
+    @property
+    def remaining_cents(self) -> int:
+        """Reste dans l'enveloppe (peut être négatif en cas de dépassement)."""
+        return self.allocated_cents - self.spent_cents
+
+    @property
+    def is_overrun(self) -> bool:
+        return self.spent_cents > self.allocated_cents
+
+
+@dataclass(frozen=True, slots=True)
 class BudgetSummary:
     """État agrégé exposé par la card Budget du dashboard."""
 
@@ -39,19 +59,55 @@ class BudgetSummary:
     saved_this_month_cents: int  # somme des kind=saving_tick du mois
     pending_recurring: tuple[PendingRecurring, ...]
     saved_this_year_cents: int  # cumul kind=saving_tick depuis le 1er janvier
+    envelopes: tuple[EnvelopeStatus, ...] = ()
 
     @property
     def pending_total_cents(self) -> int:
         return sum(p.amount_cents for p in self.pending_recurring)
 
     @property
+    def envelopes_allocated_cents(self) -> int:
+        return sum(e.allocated_cents for e in self.envelopes)
+
+    @property
+    def envelopes_spent_in_cents(self) -> int:
+        """Ce qui a déjà été consommé dans les enveloppes (capé à l'allocation)."""
+        return sum(min(e.spent_cents, e.allocated_cents) for e in self.envelopes)
+
+    @property
+    def envelopes_overrun_cents(self) -> int:
+        return sum(e.overrun_cents for e in self.envelopes)
+
+    @property
     def remaining_cents(self) -> int:
-        """Restant previsionnel = revenu - tout ce qui sort (reel + pending)."""
+        """Restant previsionnel.
+
+        Les ponctuelles déjà passées sous une enveloppe NE comptent PAS une
+        deuxième fois (elles puisent dans l'enveloppe, pas dans le restant).
+        En revanche, le débordement (overrun) vient bien grignoter le
+        restant — sinon on mentirait à l'utilisateur.
+
+        = revenu
+          - punctual_hors_enveloppes
+          - recurring_tick
+          - saving_tick
+          - pending récurrentes
+          - allocated total des enveloppes
+          - overrun total
+        """
+        # Tout l'argent puisé dans les enveloppes (cumul réel des ponctuelles
+        # matchées par catégorie). Ce montant a déjà été "soustrait" via
+        # l'allocation + l'overrun ; on l'enlève de spent_punctual_cents pour
+        # ne pas le compter deux fois.
+        punctual_in_envelopes = sum(e.spent_cents for e in self.envelopes)
+        punctual_hors_envelopes = self.spent_punctual_cents - punctual_in_envelopes
         out = (
-            self.spent_punctual_cents
+            punctual_hors_envelopes
             + self.spent_recurring_cents
             + self.saved_this_month_cents
             + self.pending_total_cents
+            + self.envelopes_allocated_cents
+            + self.envelopes_overrun_cents
         )
         return self.income_cents - out
 
@@ -62,6 +118,10 @@ class BudgetSummary:
     @property
     def has_overdue(self) -> bool:
         return any(p.is_overdue for p in self.pending_recurring)
+
+    @property
+    def has_envelope_overrun(self) -> bool:
+        return any(e.is_overrun for e in self.envelopes)
 
 
 def compute_budget(
@@ -86,6 +146,7 @@ def compute_budget(
     }
 
     pending = tuple(_pending_for_month(config.recurring, ticked_keys, today))
+    envelopes = tuple(_envelopes_status(config.envelopes, month_expenses))
 
     saved_this_year = sum(e.amount_cents for e in year_savings if e.kind == "saving_tick")
 
@@ -97,7 +158,43 @@ def compute_budget(
         saved_this_month_cents=saved_this_month,
         pending_recurring=pending,
         saved_this_year_cents=saved_this_year,
+        envelopes=envelopes,
     )
+
+
+def _envelopes_status(
+    envelopes: Sequence[EnvelopeItem],
+    month_expenses: Sequence[Expense],
+) -> list[EnvelopeStatus]:
+    """Pour chaque enveloppe, calcule le montant consommé par les ponctuelles.
+
+    Le matching `category` est insensible à la casse et aux espaces, pour
+    encaisser les variations du LLM ("Essence" vs "essence").
+    """
+    if not envelopes:
+        return []
+    spent_by_category: dict[str, int] = {}
+    for e in month_expenses:
+        if e.kind != "punctual" or not e.category:
+            continue
+        key = e.category.strip().lower()
+        spent_by_category[key] = spent_by_category.get(key, 0) + e.amount_cents
+
+    out: list[EnvelopeStatus] = []
+    for env in envelopes:
+        key = env.category.strip().lower()
+        spent = spent_by_category.get(key, 0)
+        overrun = max(0, spent - env.amount_cents)
+        out.append(
+            EnvelopeStatus(
+                category=env.category,
+                label=env.label,
+                allocated_cents=env.amount_cents,
+                spent_cents=spent,
+                overrun_cents=overrun,
+            )
+        )
+    return out
 
 
 def _pending_for_month(

@@ -87,3 +87,16 @@ finances:
     # - { key: loyer,    label: "Loyer appartement", amount: 800,    day: 5,  kind: expense, category: logement }
     # - { key: netflix,  label: "Netflix",           amount: 17.99,  day: 12, kind: expense, category: abonnement }
     # - { key: pel,      label: "Versement PEL",     amount: 200,    day: 5,  kind: saving }
+
+  # Enveloppes budgétaires : enveloppes mensuelles allouées à une catégorie
+  # de dépenses (essence, courses, sorties, …). Le montant alloué est déduit
+  # du restant prévisionnel dès le 1er du mois, et les dépenses ponctuelles
+  # avec cette `category` viennent puiser dedans (visible dans la card
+  # Budget). En cas de dépassement, le surplus grignote le restant et
+  # s'affiche en rouge.
+  #
+  # `category` doit matcher (insensible à la casse) la catégorie que le LLM
+  # met sur les ponctuelles ("j'ai dépensé 60€ d'essence" → category=essence).
+  envelopes:
+    # - { category: essence, label: "Essence",  amount: 200 }
+    # - { category: courses, label: "Courses",  amount: 600 }

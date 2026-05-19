@@ -548,7 +548,54 @@
       if (b.has_overdue) meta.style.color = "#ff453a";
       card.appendChild(meta);
     }
+    if (b.envelopes && b.envelopes.length > 0) {
+      const wrap = el("div", "budget-envelopes");
+      wrap.style.marginTop = "8px";
+      for (const env of b.envelopes) {
+        wrap.appendChild(envelopeRow(env));
+      }
+      card.appendChild(wrap);
+    }
     return card;
+  }
+
+  function envelopeRow(env) {
+    const row = el("div", "envelope-row");
+    row.style.fontSize = "0.85em";
+    row.style.marginTop = "4px";
+
+    const top = el("div", "envelope-line");
+    top.style.display = "flex";
+    top.style.justifyContent = "space-between";
+    const label = el("span", "envelope-label", env.label);
+    const amounts = el(
+      "span",
+      "envelope-amounts",
+      `${formatEur(env.spent_eur)} / ${formatEur(env.allocated_eur)}`
+    );
+    if (env.is_overrun) amounts.style.color = "#ff453a";
+    top.appendChild(label);
+    top.appendChild(amounts);
+    row.appendChild(top);
+
+    // Progress bar : bg gris, fill jusqu'au % consommé (capé à 100). En cas
+    // de dépassement, on remplit à 100% en rouge.
+    const ratio = env.allocated_eur > 0
+      ? Math.min(1, env.spent_eur / env.allocated_eur)
+      : 0;
+    const track = el("div", "envelope-track");
+    track.style.height = "4px";
+    track.style.borderRadius = "2px";
+    track.style.background = "rgba(255,255,255,0.1)";
+    track.style.marginTop = "2px";
+    track.style.overflow = "hidden";
+    const fill = el("div", "envelope-fill");
+    fill.style.width = `${ratio * 100}%`;
+    fill.style.height = "100%";
+    fill.style.background = env.is_overrun ? "#ff453a" : "#30d158";
+    track.appendChild(fill);
+    row.appendChild(track);
+    return row;
   }
 
   function formatEur(amount) {
@@ -582,6 +629,18 @@
     lines.push(`- Épargne ce mois : ${formatEur(b.saved_this_month_eur)}`);
     lines.push(`- Épargné cette année : ${formatEur(b.saved_this_year_eur)}`);
     lines.push("");
+    if (b.envelopes && b.envelopes.length > 0) {
+      lines.push("### Enveloppes");
+      for (const env of b.envelopes) {
+        const overrun = env.is_overrun
+          ? ` ⚠ dépassement de ${formatEur(env.overrun_eur)}`
+          : "";
+        lines.push(
+          `- **${env.label}** : ${formatEur(env.spent_eur)} / ${formatEur(env.allocated_eur)}${overrun}`
+        );
+      }
+      lines.push("");
+    }
     if (b.pending && b.pending.length > 0) {
       lines.push(`### À pointer (${b.pending.length})`);
       for (const p of b.pending) {

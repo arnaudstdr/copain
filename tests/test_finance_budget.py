@@ -5,12 +5,25 @@ from __future__ import annotations
 from datetime import date
 
 from bot.finance.budget import compute_budget
-from bot.finance.config import FinanceConfig, RecurringItem
+from bot.finance.config import EnvelopeItem, FinanceConfig, RecurringItem
 from bot.finance.models import Expense
 
 
-def _config(*items: RecurringItem) -> FinanceConfig:
-    return FinanceConfig(currency="EUR", recurring=items)
+def _config(
+    *items: RecurringItem,
+    envelopes: tuple[EnvelopeItem, ...] = (),
+) -> FinanceConfig:
+    return FinanceConfig(currency="EUR", recurring=items, envelopes=envelopes)
+
+
+def _punctual_cat(cents: int, category: str, day: int = 10) -> Expense:
+    return Expense(
+        kind="punctual",
+        amount_cents=cents,
+        label="Achat",
+        category=category,
+        occurred_on=date(2026, 5, day),
+    )
 
 
 def _income(cents: int, day: int = 5, month: int = 5) -> Expense:
@@ -184,3 +197,124 @@ def test_month_field_is_first_of_month() -> None:
         today=date(2026, 5, 18),
     )
     assert summary.month == date(2026, 5, 1)
+
+
+# --- Envelopes ----------------------------------------------------------
+
+
+def test_envelope_empty_when_no_spending() -> None:
+    cfg = _config(envelopes=(EnvelopeItem("essence", "Essence", 20000),))
+    summary = compute_budget(
+        config=cfg,
+        month_expenses=[_income(250000)],
+        year_savings=[],
+        today=date(2026, 5, 18),
+    )
+    assert len(summary.envelopes) == 1
+    env = summary.envelopes[0]
+    assert env.spent_cents == 0
+    assert env.remaining_cents == 20000
+    assert not env.is_overrun
+    # Allocated (200€) déduit du restant.
+    assert summary.remaining_cents == 250000 - 20000
+
+
+def test_envelope_partial_spending_does_not_double_count() -> None:
+    """Une ponctuelle essence puise dans l'enveloppe, pas dans le restant."""
+    cfg = _config(envelopes=(EnvelopeItem("essence", "Essence", 20000),))
+    summary = compute_budget(
+        config=cfg,
+        month_expenses=[_income(250000), _punctual_cat(8000, "essence")],
+        year_savings=[],
+        today=date(2026, 5, 18),
+    )
+    env = summary.envelopes[0]
+    assert env.spent_cents == 8000
+    assert env.remaining_cents == 12000
+    # Restant inchangé par rapport au cas zéro dépense : on déduit toujours
+    # les 200€ alloués, et la ponctuelle n'y vient pas en plus.
+    assert summary.remaining_cents == 250000 - 20000
+
+
+def test_envelope_overrun_grignote_le_restant() -> None:
+    """230€ d'essence pour 200€ alloués → 30€ d'overrun déduits du restant."""
+    cfg = _config(envelopes=(EnvelopeItem("essence", "Essence", 20000),))
+    summary = compute_budget(
+        config=cfg,
+        month_expenses=[_income(250000), _punctual_cat(23000, "essence")],
+        year_savings=[],
+        today=date(2026, 5, 18),
+    )
+    env = summary.envelopes[0]
+    assert env.spent_cents == 23000
+    assert env.remaining_cents == -3000  # dépassement
+    assert env.overrun_cents == 3000
+    assert env.is_overrun
+    assert summary.has_envelope_overrun
+    # Restant = revenu - allocated (200) - overrun (30) = 230€ "consommés"
+    assert summary.remaining_cents == 250000 - 20000 - 3000
+
+
+def test_envelope_category_matching_case_insensitive() -> None:
+    cfg = _config(envelopes=(EnvelopeItem("essence", "Essence", 20000),))
+    summary = compute_budget(
+        config=cfg,
+        month_expenses=[_income(250000), _punctual_cat(5000, "Essence")],
+        year_savings=[],
+        today=date(2026, 5, 18),
+    )
+    assert summary.envelopes[0].spent_cents == 5000
+
+
+def test_punctual_outside_envelope_counts_in_remaining() -> None:
+    """Une ponctuelle hors enveloppe doit bien baisser le restant."""
+    cfg = _config(envelopes=(EnvelopeItem("essence", "Essence", 20000),))
+    summary = compute_budget(
+        config=cfg,
+        month_expenses=[
+            _income(250000),
+            _punctual_cat(5000, "essence"),  # puise dans l'enveloppe
+            _punctual_cat(2700, "pharmacie"),  # vient bien sur le restant
+        ],
+        year_savings=[],
+        today=date(2026, 5, 18),
+    )
+    # Restant = revenu - allocated essence - pharmacie
+    assert summary.remaining_cents == 250000 - 20000 - 2700
+
+
+def test_two_envelopes_aggregates() -> None:
+    cfg = _config(
+        envelopes=(
+            EnvelopeItem("essence", "Essence", 20000),
+            EnvelopeItem("courses", "Courses", 60000),
+        )
+    )
+    summary = compute_budget(
+        config=cfg,
+        month_expenses=[
+            _income(250000),
+            _punctual_cat(8000, "essence"),
+            _punctual_cat(15000, "courses"),
+        ],
+        year_savings=[],
+        today=date(2026, 5, 18),
+    )
+    assert len(summary.envelopes) == 2
+    assert summary.envelopes_allocated_cents == 80000
+    assert summary.envelopes_overrun_cents == 0
+    # Restant = revenu - 800€ alloués - 0 overrun (les ponctuelles sont dans les enveloppes)
+    assert summary.remaining_cents == 250000 - 80000
+
+
+def test_no_envelope_remaining_matches_legacy_formula() -> None:
+    """Invariant : sans envelope, le restant doit être identique au calcul historique."""
+    cfg = _config()
+    summary = compute_budget(
+        config=cfg,
+        month_expenses=[_income(250000), _punctual(2700)],
+        year_savings=[],
+        today=date(2026, 5, 18),
+    )
+    assert summary.envelopes == ()
+    assert summary.remaining_cents == 250000 - 2700

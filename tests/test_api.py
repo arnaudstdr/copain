@@ -849,6 +849,49 @@ async def test_budget_returns_empty_state_when_yaml_missing(
     assert body["pending"] == []
 
 
+async def test_budget_returns_envelopes_with_overrun_flag(
+    client: AsyncClient, state: AppState
+) -> None:
+    from datetime import date as _date
+
+    from bot.finance.models import Expense
+    from bot.profile import UserProfile
+
+    state.deps.profile = UserProfile(
+        raw_yaml="",
+        is_loaded=True,
+        data={
+            "finances": {
+                "envelopes": [
+                    {"category": "essence", "label": "Essence", "amount": 200},
+                ],
+            }
+        },
+    )
+    over = Expense(
+        kind="punctual",
+        amount_cents=23000,
+        label="Essence Total",
+        category="essence",
+        recurring_key=None,
+        occurred_on=_date(2026, 5, 10),
+    )
+    over.id = 7
+    state.deps.expenses.list_for_month = AsyncMock(return_value=[over])
+    state.deps.expenses.list_savings_for_year = AsyncMock(return_value=[])
+
+    response = await client.get("/budget", headers={"X-API-Key": API_KEY})
+    assert response.status_code == 200
+    body = response.json()
+    assert len(body["envelopes"]) == 1
+    env = body["envelopes"][0]
+    assert env["category"] == "essence"
+    assert env["allocated_eur"] == 200.0
+    assert env["spent_eur"] == 230.0
+    assert env["overrun_eur"] == 30.0
+    assert env["is_overrun"] is True
+
+
 async def test_budget_returns_summary_with_transactions(
     client: AsyncClient, state: AppState
 ) -> None:

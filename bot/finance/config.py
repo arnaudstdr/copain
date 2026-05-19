@@ -40,15 +40,31 @@ class RecurringItem:
 
 
 @dataclass(frozen=True, slots=True)
+class EnvelopeItem:
+    """Une enveloppe budgétaire mensuelle (ex: 200€ d'essence par mois).
+
+    Contrairement à une récurrente, l'enveloppe n'est PAS pointée à un jour
+    précis : son montant est déduit du restant prévisionnel dès le 1er du
+    mois, et les dépenses ponctuelles ayant cette `category` puisent dedans
+    au lieu de venir baisser le restant une seconde fois.
+    """
+
+    category: str  # slug exact (matche `Expense.category`)
+    label: str
+    amount_cents: int
+
+
+@dataclass(frozen=True, slots=True)
 class FinanceConfig:
     """Configuration finance chargée depuis le profil YAML."""
 
     currency: str
     recurring: tuple[RecurringItem, ...]
+    envelopes: tuple[EnvelopeItem, ...] = ()
 
     @classmethod
     def empty(cls) -> FinanceConfig:
-        return cls(currency="EUR", recurring=())
+        return cls(currency="EUR", recurring=(), envelopes=())
 
     def find(self, key: str) -> RecurringItem | None:
         for item in self.recurring:
@@ -56,9 +72,16 @@ class FinanceConfig:
                 return item
         return None
 
+    def find_envelope(self, category: str) -> EnvelopeItem | None:
+        target = category.strip().lower()
+        for env in self.envelopes:
+            if env.category.strip().lower() == target:
+                return env
+        return None
+
     @property
     def is_configured(self) -> bool:
-        return bool(self.recurring)
+        return bool(self.recurring) or bool(self.envelopes)
 
 
 def extract_finance_config(profile_data: dict[str, Any]) -> FinanceConfig:
@@ -82,7 +105,16 @@ def extract_finance_config(profile_data: dict[str, Any]) -> FinanceConfig:
 
     items = tuple(_iter_valid_items(raw_recurring))
     _check_unique_keys(items)
-    return FinanceConfig(currency=currency, recurring=items)
+
+    raw_envelopes = section.get("envelopes") or []
+    if not isinstance(raw_envelopes, list):
+        log.warning("finance_config_envelopes_invalid", type=type(raw_envelopes).__name__)
+        envelopes: tuple[EnvelopeItem, ...] = ()
+    else:
+        envelopes = tuple(_iter_valid_envelopes(raw_envelopes))
+        _check_unique_envelope_categories(envelopes)
+
+    return FinanceConfig(currency=currency, recurring=items, envelopes=envelopes)
 
 
 def _iter_valid_items(raw: list[Any]) -> Iterable[RecurringItem]:
@@ -144,4 +176,45 @@ def _check_unique_keys(items: tuple[RecurringItem, ...]) -> None:
     if duplicates:
         raise FinanceConfigError(
             f"clé(s) dupliquée(s) dans finances.recurring : {sorted(set(duplicates))}"
+        )
+
+
+def _iter_valid_envelopes(raw: list[Any]) -> Iterable[EnvelopeItem]:
+    for idx, raw_item in enumerate(raw):
+        env = _parse_envelope(raw_item, idx)
+        if env is not None:
+            yield env
+
+
+def _parse_envelope(raw: Any, idx: int) -> EnvelopeItem | None:
+    if not isinstance(raw, dict):
+        log.warning("finance_envelope_item_not_dict", index=idx)
+        return None
+    category = str(raw.get("category") or "").strip()
+    if not category:
+        log.warning("finance_envelope_missing_category", index=idx, raw=str(raw)[:120])
+        return None
+    label = str(raw.get("label") or category).strip()
+    raw_amount = raw.get("amount")
+    if not isinstance(raw_amount, int | float) or raw_amount <= 0:
+        log.warning("finance_envelope_invalid_amount", index=idx, category=category, raw=raw_amount)
+        return None
+    return EnvelopeItem(
+        category=category,
+        label=label,
+        amount_cents=round(float(raw_amount) * 100),
+    )
+
+
+def _check_unique_envelope_categories(items: tuple[EnvelopeItem, ...]) -> None:
+    seen: set[str] = set()
+    duplicates: list[str] = []
+    for item in items:
+        key = item.category.strip().lower()
+        if key in seen:
+            duplicates.append(item.category)
+        seen.add(key)
+    if duplicates:
+        raise FinanceConfigError(
+            f"catégorie(s) dupliquée(s) dans finances.envelopes : {sorted(set(duplicates))}"
         )

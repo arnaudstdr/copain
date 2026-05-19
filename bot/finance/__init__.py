@@ -16,6 +16,7 @@ dans le YAML. Le pointage (« le loyer est passé ») crée une ligne
 from __future__ import annotations
 
 from bot.finance.config import (
+    EnvelopeItem,
     FinanceConfig,
     RecurringItem,
     RecurringKind,
@@ -26,6 +27,7 @@ from bot.finance.models import EXPENSE_KINDS, Expense, ExpenseKind
 
 __all__ = [
     "EXPENSE_KINDS",
+    "EnvelopeItem",
     "Expense",
     "ExpenseKind",
     "ExpenseManager",

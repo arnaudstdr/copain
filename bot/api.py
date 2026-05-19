@@ -106,6 +106,15 @@ class TaskCard(BaseModel):
     due_at: str | None
 
 
+class BudgetEnvelopeCard(BaseModel):
+    category: str
+    label: str
+    allocated_eur: float
+    spent_eur: float
+    remaining_eur: float  # peut être négatif si dépassement
+    is_overrun: bool
+
+
 class BudgetCard(BaseModel):
     month: str  # ISO date du 1er du mois (YYYY-MM-DD)
     income_eur: float
@@ -114,6 +123,8 @@ class BudgetCard(BaseModel):
     saved_this_year_eur: float
     pending_recurring_count: int
     has_overdue: bool
+    envelopes: list[BudgetEnvelopeCard] = Field(default_factory=list)
+    has_envelope_overrun: bool = False
 
 
 class DashboardResponse(BaseModel):
@@ -199,6 +210,16 @@ class BudgetPendingItem(BaseModel):
     is_overdue: bool
 
 
+class BudgetEnvelopeDetail(BaseModel):
+    category: str
+    label: str
+    allocated_eur: float
+    spent_eur: float
+    remaining_eur: float
+    overrun_eur: float
+    is_overrun: bool
+
+
 class BudgetMonthDetail(BaseModel):
     month: str  # ISO date du 1er du mois
     currency: str
@@ -210,6 +231,7 @@ class BudgetMonthDetail(BaseModel):
     remaining_eur: float
     transactions: list[BudgetTransaction]
     pending: list[BudgetPendingItem]
+    envelopes: list[BudgetEnvelopeDetail] = Field(default_factory=list)
 
 
 # --- Weather / Events detail schemas ---------------------------------------
@@ -763,6 +785,18 @@ def create_app(state: AppState) -> FastAPI:
             )
             for p in summary.pending_recurring
         ]
+        envelopes_detail = [
+            BudgetEnvelopeDetail(
+                category=env.category,
+                label=env.label,
+                allocated_eur=env.allocated_cents / 100,
+                spent_eur=env.spent_cents / 100,
+                remaining_eur=env.remaining_cents / 100,
+                overrun_eur=env.overrun_cents / 100,
+                is_overrun=env.is_overrun,
+            )
+            for env in summary.envelopes
+        ]
         return BudgetMonthDetail(
             month=summary.month.isoformat(),
             currency=cfg.currency,
@@ -774,6 +808,7 @@ def create_app(state: AppState) -> FastAPI:
             remaining_eur=summary.remaining_cents / 100,
             transactions=transactions,
             pending=pending,
+            envelopes=envelopes_detail,
         )
 
     @app.get(
@@ -938,6 +973,18 @@ def _snapshot_to_response(snap: DashboardSnapshot) -> DashboardResponse:
             saved_this_year_eur=b.saved_this_year_cents / 100,
             pending_recurring_count=b.pending_recurring_count,
             has_overdue=b.has_overdue,
+            envelopes=[
+                BudgetEnvelopeCard(
+                    category=env.category,
+                    label=env.label,
+                    allocated_eur=env.allocated_cents / 100,
+                    spent_eur=env.spent_cents / 100,
+                    remaining_eur=env.remaining_cents / 100,
+                    is_overrun=env.is_overrun,
+                )
+                for env in b.envelopes
+            ],
+            has_envelope_overrun=b.has_envelope_overrun,
         )
     return DashboardResponse(
         weather=weather,
