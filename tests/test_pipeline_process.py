@@ -827,3 +827,63 @@ async def test_process_expense_negative_amount_silently_skipped(deps: BotDeps) -
     )
     await process_message("dépense 0€", deps=deps)
     deps.expenses.add_punctual.assert_not_awaited()
+
+
+def _profile_with_pel() -> UserProfile:
+    return UserProfile(
+        raw_yaml="",
+        is_loaded=True,
+        data={
+            "finances": {
+                "recurring": [
+                    {
+                        "key": "pel",
+                        "label": "Versement PEL",
+                        "amount": 15,
+                        "day": 5,
+                        "kind": "saving",
+                    }
+                ]
+            }
+        },
+    )
+
+
+async def test_process_expense_tick_recurring_amount_null_uses_yaml_default(
+    deps: BotDeps,
+) -> None:
+    """Sans amount, on retombe sur le montant indicatif du YAML."""
+    deps.profile = _profile_with_pel()
+    deps.llm.call = AsyncMock(
+        return_value=_meta_block(
+            intent="expense",
+            expense_action="tick_recurring",
+            expense_amount=None,
+            expense_label="Versement PEL",
+            expense_recurring_key="pel",
+        )
+    )
+    await process_message("j'ai versé le PEL", deps=deps)
+    deps.expenses.tick_recurring.assert_awaited_once()
+    kwargs = deps.expenses.tick_recurring.await_args.kwargs
+    assert kwargs["amount_cents"] == 1500  # 15€ du YAML
+
+
+async def test_process_expense_tick_recurring_amount_override_replaces_yaml(
+    deps: BotDeps,
+) -> None:
+    """Avec un amount explicite, on l'utilise au lieu du YAML (placement variable)."""
+    deps.profile = _profile_with_pel()
+    deps.llm.call = AsyncMock(
+        return_value=_meta_block(
+            intent="expense",
+            expense_action="tick_recurring",
+            expense_amount=11,
+            expense_label="Versement PEL",
+            expense_recurring_key="pel",
+        )
+    )
+    await process_message("j'ai versé 11€ sur le PEL", deps=deps)
+    deps.expenses.tick_recurring.assert_awaited_once()
+    kwargs = deps.expenses.tick_recurring.await_args.kwargs
+    assert kwargs["amount_cents"] == 1100  # override LLM

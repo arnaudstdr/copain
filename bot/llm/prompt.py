@@ -171,6 +171,17 @@ Règles pour intent :
                                          NE remplis PAS recurring_key.
              amount est TOUJOURS positif et en euros (le code convertit en
              centimes côté pipeline).
+             CAS PARTICULIER pour action=tick_recurring : amount est
+             optionnel.
+             * Si l'utilisateur ne précise PAS de montant (« le loyer est
+               passé », « j'ai payé Netflix »), laisse amount à null — le
+               code prend le montant indicatif déclaré dans la liste.
+             * Si l'utilisateur précise EXPLICITEMENT un montant différent
+               (« j'ai versé 11€ sur le PEL », « loyer 805€ ce mois »),
+               mets ce montant dans amount. Utile pour les placements
+               variables (PEL, assurance vie) ou pour absorber un
+               ajustement ponctuel.
+             Pour spend et income, amount est OBLIGATOIRE.
 - "answer" → tout le reste, réponse directe
 
 Si l'utilisateur envoie une image (avec ou sans légende), analyse-la visuellement :
@@ -285,12 +296,19 @@ Réponse attendue :
 ✓ Saisi.
 <meta>{{"intent":"expense","store_memory":false,"memory_content":null,"task":{{"content":null,"due_str":null}},"feed":{{"action":null,"name":null,"url":null}},"event":{{"action":null,"title":null,"start_str":null,"end_str":null,"location":null,"description":null,"range_str":null,"calendar_name":null}},"fuel":{{"fuel_type":null,"radius_km":null,"location":null}},"weather":{{"location":null,"when":null}},"depot":{{"content":null,"kind":null}},"expense":{{"action":"income","amount":2500,"label":"salaire","category":null,"recurring_key":null,"when":null}},"search_query":null}}</meta>
 
-Exemple 16 (pointage d'une récurrente connue) :
+Exemple 16 (pointage d'une récurrente connue, sans montant) :
 Utilisateur : « le loyer est passé »
 Hypothèse : la liste « Récurrentes en attente ce mois » contient « loyer (Loyer appartement, 800€, prévu le 5) ».
 Réponse attendue :
 Noté.
-<meta>{{"intent":"expense","store_memory":false,"memory_content":null,"task":{{"content":null,"due_str":null}},"feed":{{"action":null,"name":null,"url":null}},"event":{{"action":null,"title":null,"start_str":null,"end_str":null,"location":null,"description":null,"range_str":null,"calendar_name":null}},"fuel":{{"fuel_type":null,"radius_km":null,"location":null}},"weather":{{"location":null,"when":null}},"depot":{{"content":null,"kind":null}},"expense":{{"action":"tick_recurring","amount":800,"label":"Loyer appartement","category":null,"recurring_key":"loyer","when":null}},"search_query":null}}</meta>
+<meta>{{"intent":"expense","store_memory":false,"memory_content":null,"task":{{"content":null,"due_str":null}},"feed":{{"action":null,"name":null,"url":null}},"event":{{"action":null,"title":null,"start_str":null,"end_str":null,"location":null,"description":null,"range_str":null,"calendar_name":null}},"fuel":{{"fuel_type":null,"radius_km":null,"location":null}},"weather":{{"location":null,"when":null}},"depot":{{"content":null,"kind":null}},"expense":{{"action":"tick_recurring","amount":null,"label":"Loyer appartement","category":null,"recurring_key":"loyer","when":null}},"search_query":null}}</meta>
+
+Exemple 17 (pointage d'un placement avec montant variable) :
+Utilisateur : « j'ai versé 11€ sur le PEL ce mois »
+Hypothèse : la liste contient « pel (Versement PEL, 15€, prévu le 5) ».
+Réponse attendue :
+Noté.
+<meta>{{"intent":"expense","store_memory":false,"memory_content":null,"task":{{"content":null,"due_str":null}},"feed":{{"action":null,"name":null,"url":null}},"event":{{"action":null,"title":null,"start_str":null,"end_str":null,"location":null,"description":null,"range_str":null,"calendar_name":null}},"fuel":{{"fuel_type":null,"radius_km":null,"location":null}},"weather":{{"location":null,"when":null}},"depot":{{"content":null,"kind":null}},"expense":{{"action":"tick_recurring","amount":11,"label":"Versement PEL","category":null,"recurring_key":"pel","when":null}},"search_query":null}}</meta>
 
 {profile_section}{location_section}{pending_recurring_section}--- Contexte mémoire (notes et conversations passées pertinentes) ---
 {memory_context}

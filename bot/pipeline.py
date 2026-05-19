@@ -278,18 +278,16 @@ async def _handle_expense_side_effect(meta: Meta, deps: BotDeps) -> None:
     if action is None:
         return
 
-    amount_eur = em["amount"]
-    if amount_eur is None or amount_eur <= 0:
-        log.warning("expense_skipped_invalid_amount", action=action, amount=amount_eur)
-        return
-    amount_cents = round(amount_eur * 100)
-
     when = _parse_when_to_date(em["when"], deps.settings.timezone)
     label = em["label"] or "Saisie"
+    override_cents = _euros_to_cents(em["amount"])
 
     if action == "spend":
+        if override_cents is None:
+            log.warning("expense_skipped_invalid_amount", action=action, amount=em["amount"])
+            return
         expense = await deps.expenses.add_punctual(
-            amount_cents=amount_cents,
+            amount_cents=override_cents,
             label=label,
             category=em["category"],
             occurred_on=when,
@@ -297,21 +295,24 @@ async def _handle_expense_side_effect(meta: Meta, deps: BotDeps) -> None:
         log.info(
             "expense_spend_recorded",
             expense_id=expense.id,
-            amount_cents=amount_cents,
+            amount_cents=override_cents,
             label=label,
         )
         return
 
     if action == "income":
+        if override_cents is None:
+            log.warning("expense_skipped_invalid_amount", action=action, amount=em["amount"])
+            return
         expense = await deps.expenses.add_income(
-            amount_cents=amount_cents,
+            amount_cents=override_cents,
             label=label,
             occurred_on=when,
         )
         log.info(
             "expense_income_recorded",
             expense_id=expense.id,
-            amount_cents=amount_cents,
+            amount_cents=override_cents,
             label=label,
         )
         return
@@ -337,10 +338,16 @@ async def _handle_expense_side_effect(meta: Meta, deps: BotDeps) -> None:
         if already:
             log.info("expense_tick_duplicate_ignored", key=item.key, month=when.replace(day=1))
             return
+        # Montant : par défaut on prend l'amount du YAML (source de vérité
+        # pour un loyer fixe). Si l'utilisateur précise un autre montant
+        # ("j'ai versé 11€ sur le PEL"), le LLM le met dans `expense.amount`
+        # et on l'utilise comme override. Couvre les placements variables
+        # autant que les ponctuelles qui dérapent d'un mois sur l'autre.
+        amount_cents = override_cents if override_cents is not None else item.amount_cents
         expense = await deps.expenses.tick_recurring(
             recurring_key=item.key,
             label=item.label,
-            amount_cents=item.amount_cents,
+            amount_cents=amount_cents,
             kind=item.kind,
             occurred_on=when,
             category=item.category,
@@ -350,7 +357,21 @@ async def _handle_expense_side_effect(meta: Meta, deps: BotDeps) -> None:
             expense_id=expense.id,
             key=item.key,
             kind=item.kind,
+            amount_cents=amount_cents,
+            override=override_cents is not None,
         )
+
+
+def _euros_to_cents(amount_eur: float | None) -> int | None:
+    """Convertit un montant en euros (float) vers des centimes (int).
+
+    Retourne `None` si l'entrée est invalide (négative, nulle ou absente) —
+    laisse l'appelant décider quoi faire (skip pour spend/income, fallback
+    YAML pour tick_recurring).
+    """
+    if amount_eur is None or amount_eur <= 0:
+        return None
+    return round(amount_eur * 100)
 
 
 async def _safe_pending_recurring(deps: BotDeps) -> Sequence[PendingRecurring]:
