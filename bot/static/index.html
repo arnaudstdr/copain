@@ -118,7 +118,14 @@
     @keyframes flash { 0% { background: var(--bg2); } 30% { background: var(--flash-bg); } 100% { background: var(--bg2); } }
 
     .card-head { display: flex; align-items: center; gap: 10px; }
-    .card-icon { width: 28px; height: 28px; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 15px; background: var(--bg3); flex-shrink: 0; }
+    .card-icon { width: 28px; height: 28px; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 15px; background: var(--bg3); flex-shrink: 0; color: var(--text2); }
+    .card-icon .lucide { width: 16px; height: 16px; }
+
+    /* ── Icônes Lucide ── */
+    .lucide { display: inline-block; vertical-align: -2px; flex-shrink: 0; }
+    .lucide-inline { width: 14px; height: 14px; vertical-align: -2px; }
+    .lucide-text { width: 1em; height: 1em; vertical-align: -0.15em; margin-right: 0.35em; }
+    .lucide-warn { color: var(--red); }
     .card-label { font-size: 11.5px; color: var(--text3); text-transform: uppercase; letter-spacing: 0.5px; font-weight: 500; }
     .card-primary { font-size: 16px; font-weight: 600; letter-spacing: -0.2px; }
     .card-secondary { font-size: 13px; color: var(--text2); margin-top: 2px; }
@@ -170,6 +177,8 @@
 
     /* ── Toast ── */
     #toast { position: absolute; bottom: 76px; left: 50%; transform: translateX(-50%); background: var(--bg4); border: 1px solid var(--border2); border-radius: 20px; padding: 8px 18px; font-size: 13px; color: var(--text); white-space: nowrap; z-index: 20; animation: toastIn 0.2s ease; pointer-events: none; max-width: 86%; overflow: hidden; text-overflow: ellipsis; }
+    .toast-content { display: inline-flex; align-items: center; gap: 6px; }
+    .toast-content .lucide { color: var(--green); }
 
     /* ── Notifications overlay ── */
     .overlay { position: absolute; inset: 0; background: var(--overlay-bg); z-index: 15; display: flex; flex-direction: column; justify-content: flex-end; animation: fadeIn 0.15s ease; }
@@ -190,12 +199,14 @@
     .weather-hourly-strip::-webkit-scrollbar { display: none; }
     .weather-hour { flex-shrink: 0; background: var(--bg3); border: 1px solid var(--border2); border-radius: 12px; padding: 10px 12px; min-width: 72px; display: flex; flex-direction: column; align-items: center; gap: 3px; }
     .weather-hour-time { font-size: 11px; color: var(--text3); }
-    .weather-hour-icon { font-size: 18px; }
+    .weather-hour-icon { display: flex; align-items: center; justify-content: center; color: var(--text); }
+    .weather-hour-icon .lucide { width: 20px; height: 20px; }
     .weather-hour-temp { font-size: 14px; font-weight: 600; }
     .weather-hour-precip { font-size: 10px; color: var(--blue); }
     .weather-day { display: flex; align-items: center; gap: 12px; background: var(--bg3); border: 1px solid var(--border2); border-radius: 12px; padding: 11px 13px; flex-shrink: 0; }
     .weather-day-label { width: 64px; font-size: 13px; font-weight: 500; flex-shrink: 0; text-transform: capitalize; }
-    .weather-day-icon { font-size: 18px; flex-shrink: 0; }
+    .weather-day-icon { display: flex; align-items: center; justify-content: center; flex-shrink: 0; color: var(--text); }
+    .weather-day-icon .lucide { width: 20px; height: 20px; }
     .weather-day-desc { flex: 1; font-size: 12.5px; color: var(--text2); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .weather-day-temps { font-size: 13px; font-weight: 500; white-space: nowrap; }
     .weather-day-precip { font-size: 11px; color: var(--blue); margin-left: 8px; white-space: nowrap; }
@@ -206,7 +217,8 @@
     .event-item { background: var(--bg3); border: 1px solid var(--border2); border-radius: 12px; padding: 10px 13px; display: flex; flex-direction: column; gap: 3px; flex-shrink: 0; }
     .event-time { font-size: 12px; color: var(--text3); }
     .event-title { font-size: 13.5px; font-weight: 500; }
-    .event-location { font-size: 11.5px; color: var(--text2); }
+    .event-location { font-size: 11.5px; color: var(--text2); display: flex; align-items: center; gap: 4px; }
+    .event-location .lucide { width: 12px; height: 12px; flex-shrink: 0; }
     .event-calendar { font-size: 10.5px; color: var(--text3); font-style: italic; align-self: flex-end; }
 
     /* ── Tasks overlay ── */
@@ -308,7 +320,9 @@
     <div id="preview-bar" class="hidden">
       <div class="preview-wrap">
         <img class="preview-img" id="preview-img" src="" alt="" />
-        <button class="remove-btn" onclick="removeAttachment()">✕</button>
+        <button class="remove-btn" onclick="removeAttachment()" aria-label="Retirer la photo">
+          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+        </button>
       </div>
       <span class="preview-label">Photo jointe</span>
     </div>
@@ -341,8 +355,10 @@
   <div id="notif-overlay" class="overlay hidden" onclick="if(event.target===this)closeNotifs()">
     <div class="panel">
       <div class="panel-head">
-        <span class="panel-title">🔔 Notifications</span>
-        <button class="close-btn" onclick="closeNotifs()">✕</button>
+        <span class="panel-title"><svg class="lucide lucide-bell lucide-text" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg>Notifications</span>
+        <button class="close-btn" onclick="closeNotifs()" aria-label="Fermer">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+        </button>
       </div>
       <div class="panel-list" id="notif-list">
         <div class="panel-empty">Chargement…</div>
@@ -354,8 +370,10 @@
   <div id="tasks-overlay" class="overlay hidden" onclick="if(event.target===this)closeTasks()">
     <div class="panel">
       <div class="panel-head">
-        <span class="panel-title">✅ Tâches en cours</span>
-        <button class="close-btn" onclick="closeTasks()">✕</button>
+        <span class="panel-title"><svg class="lucide lucide-list-checks lucide-text" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m3 17 2 2 4-4"/><path d="m3 7 2 2 4-4"/><path d="M13 6h8"/><path d="M13 12h8"/><path d="M13 18h8"/></svg>Tâches en cours</span>
+        <button class="close-btn" onclick="closeTasks()" aria-label="Fermer">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+        </button>
       </div>
       <div class="panel-list" id="tasks-list">
         <div class="panel-empty">Chargement…</div>
@@ -367,8 +385,10 @@
   <div id="weather-overlay" class="overlay hidden" onclick="if(event.target===this)closeWeather()">
     <div class="panel">
       <div class="panel-head">
-        <span class="panel-title" id="weather-title">🌤 Météo</span>
-        <button class="close-btn" onclick="closeWeather()">✕</button>
+        <span class="panel-title" id="weather-title"><svg class="lucide lucide-cloud-sun lucide-text" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="M20 12h2"/><path d="m19.07 4.93-1.41 1.41"/><path d="M15.947 12.65a4 4 0 0 0-5.925-4.128"/><path d="M13 22H7a5 5 0 1 1 4.9-6H13a3 3 0 0 1 0 6Z"/></svg>Météo</span>
+        <button class="close-btn" onclick="closeWeather()" aria-label="Fermer">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+        </button>
       </div>
       <div class="panel-list" id="weather-list">
         <div class="panel-empty">Chargement…</div>
@@ -380,8 +400,10 @@
   <div id="events-overlay" class="overlay hidden" onclick="if(event.target===this)closeEvents()">
     <div class="panel">
       <div class="panel-head">
-        <span class="panel-title">📅 Évènements à venir</span>
-        <button class="close-btn" onclick="closeEvents()">✕</button>
+        <span class="panel-title"><svg class="lucide lucide-calendar lucide-text" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 2v4"/><path d="M16 2v4"/><rect width="18" height="18" x="3" y="4" rx="2"/><path d="M3 10h18"/></svg>Évènements à venir</span>
+        <button class="close-btn" onclick="closeEvents()" aria-label="Fermer">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+        </button>
       </div>
       <div class="panel-list" id="events-list">
         <div class="panel-empty">Chargement…</div>
@@ -427,7 +449,9 @@
       <div id="chat-preview-bar" class="hidden">
         <div class="preview-wrap">
           <img class="preview-img" id="chat-preview-img" src="" alt="" />
-          <button class="remove-btn" onclick="removeChatAttachment()">✕</button>
+          <button class="remove-btn" onclick="removeChatAttachment()" aria-label="Retirer la photo">
+            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+          </button>
         </div>
         <span class="preview-label">Photo jointe</span>
       </div>
@@ -566,13 +590,13 @@
     const card = el("div", "card");
     if (!w) {
       card.classList.add("empty");
-      card.appendChild(makeHead("🌤", "Météo"));
+      card.appendChild(makeHead("cloud-sun", "Météo"));
       card.appendChild(el("div", "card-primary", "Indisponible"));
       return card;
     }
     card.classList.add("tappable");
     card.onclick = openWeather;
-    card.appendChild(makeHead("🌤", "Météo · " + w.city));
+    card.appendChild(makeHead("cloud-sun", "Météo · " + w.city));
     const tempLine = `${Math.round(w.temp_current)}° · ${w.description}`;
     card.appendChild(el("div", "card-primary", tempLine));
     const detail = `min ${Math.round(w.temp_min)}° / max ${Math.round(w.temp_max)}°`
@@ -585,7 +609,7 @@
     const card = el("div", "card");
     if (!e) {
       card.classList.add("empty");
-      card.appendChild(makeHead("📅", "Prochain évènement"));
+      card.appendChild(makeHead("calendar", "Prochain évènement"));
       card.appendChild(el("div", "card-primary", "Rien à venir"));
       card.classList.add("tappable");
       card.onclick = openEvents;
@@ -593,7 +617,7 @@
     }
     card.classList.add("tappable");
     card.onclick = openEvents;
-    card.appendChild(makeHead("📅", "Prochain évènement · " + e.calendar_name));
+    card.appendChild(makeHead("calendar", "Prochain évènement · " + e.calendar_name));
     const start = new Date(e.start);
     const end = new Date(e.end);
     const allDay = isAllDayEvent(start, end);
@@ -609,14 +633,14 @@
     card.onclick = openTasks;
     if (!tasks || tasks.length === 0) {
       card.classList.add("empty");
-      card.appendChild(makeHead("✅", "Tâches du jour"));
+      card.appendChild(makeHead("list-checks", "Tâches du jour"));
       card.appendChild(el("div", "card-primary", "Aucune tâche aujourd'hui"));
       card.appendChild(el("div", "card-secondary", "Tape pour voir toutes les tâches"));
       appendOverdueLine(card, overdueCount);
       return card;
     }
     const label = tasks.length === 1 ? "1 tâche aujourd'hui" : `${tasks.length} tâches aujourd'hui`;
-    card.appendChild(makeHead("✅", label));
+    card.appendChild(makeHead("list-checks", label));
     // Première tâche en focus
     const t = tasks[0];
     const suffix = t.due_at ? ` · ${formatHM(new Date(t.due_at))}` : "";
@@ -643,7 +667,7 @@
 
   function budgetCard(b) {
     const card = el("div", "card");
-    card.appendChild(makeHead("💰", "Budget"));
+    card.appendChild(makeHead("wallet", "Budget"));
     if (!b) {
       card.classList.add("empty");
       card.appendChild(el("div", "card-primary", "Non configuré"));
@@ -782,7 +806,7 @@
       lines.push("### Enveloppes");
       for (const env of b.envelopes) {
         const overrun = env.is_overrun
-          ? ` ⚠ dépassement de ${formatEur(env.overrun_eur)}`
+          ? ` {{lucide:alert-triangle}} dépassement de ${formatEur(env.overrun_eur)}`
           : "";
         lines.push(
           `- **${env.label}** : ${formatEur(env.spent_eur)} / ${formatEur(env.allocated_eur)}${overrun}`
@@ -793,7 +817,7 @@
     if (b.pending && b.pending.length > 0) {
       lines.push(`### À pointer (${b.pending.length})`);
       for (const p of b.pending) {
-        const overdue = p.is_overdue ? " ⚠ en retard" : "";
+        const overdue = p.is_overdue ? " {{lucide:alert-triangle}} en retard" : "";
         const kind = p.kind === "saving" ? " (épargne)" : "";
         lines.push(`- **${p.label}** ${formatEur(p.amount_eur)}, prévu le ${p.day}${kind}${overdue}`);
       }
@@ -817,7 +841,7 @@
   function newsCard() {
     const card = el("div", "card tappable");
     card.onclick = openNews;
-    card.appendChild(makeHead("📰", "Actu"));
+    card.appendChild(makeHead("newspaper", "Actu"));
     if (newsState.loading) {
       card.appendChild(el("div", "card-primary", "Chargement…"));
       card.appendChild(el("div", "card-meta", "Curation des dernières 24h"));
@@ -908,7 +932,7 @@
         : await callText(text);
       handleAskResponse(body, text);
     } catch (e) {
-      showEphemeral("⚠️ Impossible de joindre Copain. Vérifie Tailscale.", true);
+      showEphemeral("Impossible de joindre Copain. Vérifie Tailscale.", true);
     } finally {
       setLoading(false);
     }
@@ -929,14 +953,19 @@
   }
 
   function actionToast(intent) {
+    let label;
     switch (intent) {
-      case "task":   return "✓ Tâche ajoutée";
-      case "event":  return "✓ Évènement créé";
-      case "feed":   return "✓ Flux mis à jour";
-      case "memory": return "✓ Noté en mémoire";
-      case "expense":return "✓ Saisie enregistrée";
-      default:       return "✓ Fait";
+      case "task":   label = "Tâche ajoutée"; break;
+      case "event":  label = "Évènement créé"; break;
+      case "feed":   label = "Flux mis à jour"; break;
+      case "memory": label = "Noté en mémoire"; break;
+      case "expense":label = "Saisie enregistrée"; break;
+      default:       label = "Fait";
     }
+    const wrap = el("span", "toast-content");
+    wrap.appendChild(lucideNode("check", 14));
+    wrap.appendChild(document.createTextNode(label));
+    return wrap;
   }
 
   function flashCards(names) {
@@ -975,7 +1004,13 @@
   // ── Bulle éphémère ────────────────────────────────────────────────────────
   function showEphemeral(text, isError) {
     const e = document.getElementById("ephemeral");
-    e.textContent = text;
+    e.textContent = "";
+    if (isError) {
+      e.appendChild(lucideNode("alert-triangle", 16, "lucide-warn"));
+      e.appendChild(document.createTextNode(" " + text));
+    } else {
+      e.appendChild(document.createTextNode(text));
+    }
     e.classList.remove("hidden");
     e.style.borderColor = isError ? "var(--red)" : "var(--border2)";
     clearTimeout(ephemeralTimer);
@@ -1111,7 +1146,10 @@
       });
       if (!res.ok) throw new Error(`${res.status}`);
       const data = await res.json();
-      document.getElementById("weather-title").textContent = `🌤 Météo · ${data.city}`;
+      const titleEl = document.getElementById("weather-title");
+      titleEl.textContent = "";
+      titleEl.appendChild(lucideNode("cloud-sun", undefined, "lucide-text"));
+      titleEl.appendChild(document.createTextNode(`Météo · ${data.city}`));
       renderWeather(data);
     } catch (e) {
       list.innerHTML = '<div class="panel-empty">Impossible de charger</div>';
@@ -1145,7 +1183,9 @@
     const cell = el("div", "weather-hour");
     const time = new Date(h.time);
     cell.appendChild(el("div", "weather-hour-time", formatHM(time)));
-    cell.appendChild(el("div", "weather-hour-icon", weatherEmoji(h.description)));
+    const iconWrap = el("div", "weather-hour-icon");
+    iconWrap.appendChild(lucideNode(weatherIconName(h.description), 20));
+    cell.appendChild(iconWrap);
     cell.appendChild(el("div", "weather-hour-temp", `${Math.round(h.temp_c)}°`));
     if (h.precipitation_probability_pct >= 30 || h.precipitation_mm > 0.1) {
       const txt = h.precipitation_mm > 0.1
@@ -1160,7 +1200,9 @@
     const row = el("div", "weather-day");
     const date = new Date(d.date);
     row.appendChild(el("div", "weather-day-label", formatRelativeDay(date)));
-    row.appendChild(el("div", "weather-day-icon", weatherEmoji(d.description)));
+    const iconWrap = el("div", "weather-day-icon");
+    iconWrap.appendChild(lucideNode(weatherIconName(d.description), 20));
+    row.appendChild(iconWrap);
     row.appendChild(el("div", "weather-day-desc", d.description));
     row.appendChild(el("div", "weather-day-temps", `${Math.round(d.temp_min)}° / ${Math.round(d.temp_max)}°`));
     if (d.precipitation_mm > 0.1) {
@@ -1169,17 +1211,16 @@
     return row;
   }
 
-  function weatherEmoji(description) {
+  function weatherIconName(description) {
     const d = (description || "").toLowerCase();
-    if (d.includes("orage")) return "⛈️";
-    if (d.includes("neige") || d.includes("verglaç")) return "❄️";
-    if (d.includes("pluie") || d.includes("averse")) return "🌧";
-    if (d.includes("bruine")) return "🌦";
-    if (d.includes("brouillard")) return "🌫";
-    if (d.includes("couvert")) return "☁️";
-    if (d.includes("partiel")) return "⛅️";
-    if (d.includes("plutôt dégagé")) return "🌤";
-    return "☀️";
+    if (d.includes("orage")) return "cloud-lightning";
+    if (d.includes("neige") || d.includes("verglaç")) return "snowflake";
+    if (d.includes("pluie") || d.includes("averse")) return "cloud-rain";
+    if (d.includes("bruine")) return "cloud-drizzle";
+    if (d.includes("brouillard")) return "cloud-fog";
+    if (d.includes("couvert")) return "cloud";
+    if (d.includes("partiel") || d.includes("plutôt dégagé")) return "cloud-sun";
+    return "sun";
   }
 
   // ── Évènements (overlay) ─────────────────────────────────────────────────
@@ -1241,7 +1282,12 @@
       : `${formatHM(start)} – ${formatHM(end)}`;
     item.appendChild(el("div", "event-time", timeLabel));
     item.appendChild(el("div", "event-title", e.title));
-    if (e.location) item.appendChild(el("div", "event-location", `📍 ${e.location}`));
+    if (e.location) {
+      const loc = el("div", "event-location");
+      loc.appendChild(lucideNode("map-pin", 12));
+      loc.appendChild(document.createTextNode(e.location));
+      item.appendChild(loc);
+    }
     item.appendChild(el("div", "event-calendar", e.calendar_name));
     return item;
   }
@@ -1355,7 +1401,8 @@
       out.push(`<p>${line}</p>`);
     }
     flushList();
-    return out.join("");
+    // Expansion des placeholders d'icônes ({{lucide:name}}) après rendu.
+    return out.join("").replace(/\{\{lucide:([a-z-]+)\}\}/g, (_m, name) => lucideSvg(name, 14, "lucide-warn"));
   }
 
   function inlineMd(s) {
@@ -1537,20 +1584,26 @@
     feed.innerHTML = "";
     if (chatHistory.length === 0) {
       const row = el("div", "row bot");
-      row.appendChild(el("div", "avatar-sm", "🤝"));
+      const avatar = el("div", "avatar-sm");
+      avatar.appendChild(lucideNode("bot", 16));
+      row.appendChild(avatar);
       const bubble = el("div", "bubble bot");
       bubble.appendChild(el("span", "bubble-text", "On peut discuter ici sans que ça pollue ton dashboard. Vas-y."));
       row.appendChild(bubble);
       feed.appendChild(row);
       return;
     }
-    chatHistory.forEach(m => feed.appendChild(makeChatRow(m.role, m.text, m.imgSrc)));
+    chatHistory.forEach(m => feed.appendChild(makeChatRow(m.role, m.text, m.imgSrc, m.error)));
     feed.scrollTop = feed.scrollHeight;
   }
-  function makeChatRow(role, text, imgSrc) {
+  function makeChatRow(role, text, imgSrc, error) {
     const row = el("div", `row ${role === "user" ? "user" : "bot"}`);
-    if (role !== "user") row.appendChild(el("div", "avatar-sm", "🤝"));
-    const bubble = el("div", `bubble ${role === "user" ? "user" : "bot"}`);
+    if (role !== "user") {
+      const avatar = el("div", "avatar-sm");
+      avatar.appendChild(lucideNode("bot", 16));
+      row.appendChild(avatar);
+    }
+    const bubble = el("div", `bubble ${role === "user" ? "user" : "bot"}${error ? " error" : ""}`);
     if (imgSrc) {
       const img = document.createElement("img");
       img.src = imgSrc;
@@ -1559,7 +1612,11 @@
       bubble.appendChild(img);
     }
     if (text) {
-      bubble.appendChild(el("span", "bubble-text", text));
+      const span = el("span", "bubble-text");
+      if (error) span.appendChild(lucideNode("alert-triangle", 14, "lucide-warn"));
+      if (error) span.appendChild(document.createTextNode(" "));
+      span.appendChild(document.createTextNode(text));
+      bubble.appendChild(span);
     }
     row.appendChild(bubble);
     return row;
@@ -1611,7 +1668,9 @@
     const feed = document.getElementById("chat-feed");
     const typing = el("div", "row bot typing-row");
     typing.id = "chat-typing";
-    typing.appendChild(el("div", "avatar-sm", "🤝"));
+    const typingAvatar = el("div", "avatar-sm");
+    typingAvatar.appendChild(lucideNode("bot", 16));
+    typing.appendChild(typingAvatar);
     const tb = el("div", "bubble bot typing");
     tb.innerHTML = '<span class="dot"></span><span class="dot"></span><span class="dot"></span>';
     typing.appendChild(tb); feed.appendChild(typing); feed.scrollTop = feed.scrollHeight;
@@ -1622,7 +1681,7 @@
       // On rafraîchit le dashboard en arrière-plan si l'action a modifié quelque chose.
       if (body.refresh_cards && body.refresh_cards.length > 0) loadDashboard();
     } catch (e) {
-      chatHistory.push({ role: "assistant", text: "⚠️ Impossible de joindre Copain." });
+      chatHistory.push({ role: "assistant", text: "Impossible de joindre Copain.", error: true });
     } finally {
       setLoading(false, "chat");
       document.getElementById("chat-typing")?.remove();
@@ -1640,15 +1699,59 @@
       .replace(/'/g, "&#39;");
   }
 
-  function el(tag, cls, text) {
+  function el(tag, cls, content) {
     const n = document.createElement(tag);
     if (cls) n.className = cls;
-    if (text !== undefined) n.textContent = text;
+    if (content !== undefined && content !== null) {
+      if (content instanceof Node) n.appendChild(content);
+      else n.textContent = content;
+    }
     return n;
   }
-  function makeHead(icon, label) {
+
+  // ── Icônes Lucide ─────────────────────────────────────────────────────────
+  // Contenu SVG (path/circle/line/polyline) extrait de la lib Lucide. Chaque
+  // icône hérite de currentColor pour s'aligner sur la couleur de texte du
+  // conteneur (ex. .card-icon → var(--text2)). Le viewBox est fixe 24×24.
+  const LUCIDE_ICONS = {
+    "x": '<path d="M18 6 6 18"/><path d="m6 6 12 12"/>',
+    "check": '<polyline points="20 6 9 17 4 12"/>',
+    "bell": '<path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/>',
+    "list-checks": '<path d="m3 17 2 2 4-4"/><path d="m3 7 2 2 4-4"/><path d="M13 6h8"/><path d="M13 12h8"/><path d="M13 18h8"/>',
+    "calendar": '<path d="M8 2v4"/><path d="M16 2v4"/><rect width="18" height="18" x="3" y="4" rx="2"/><path d="M3 10h18"/>',
+    "wallet": '<path d="M19 7V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-2"/><path d="M3 5v14a2 2 0 0 0 2 2h16v-5"/><path d="M18 12a2 2 0 0 0 0 4h4v-4Z"/>',
+    "newspaper": '<path d="M4 22h16a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2H8a2 2 0 0 0-2 2v16a2 2 0 0 1-2 2Zm0 0a2 2 0 0 1-2-2v-9c0-1.1.9-2 2-2h2"/><path d="M18 14h-8"/><path d="M15 18h-5"/><path d="M10 6h8v4h-8V6Z"/>',
+    "alert-triangle": '<path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><path d="M12 9v4"/><path d="M12 17h.01"/>',
+    "map-pin": '<path d="M20 10c0 7-8 13-8 13s-8-6-8-13a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/>',
+    "bot": '<path d="M12 8V4H8"/><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2"/><path d="M20 14h2"/><path d="M15 13v2"/><path d="M9 13v2"/>',
+    "cloud-sun": '<path d="M12 2v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="M20 12h2"/><path d="m19.07 4.93-1.41 1.41"/><path d="M15.947 12.65a4 4 0 0 0-5.925-4.128"/><path d="M13 22H7a5 5 0 1 1 4.9-6H13a3 3 0 0 1 0 6Z"/>',
+    "cloud-lightning": '<path d="M6 16.326A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 .5 8.973"/><path d="m13 12-3 5h4l-3 5"/>',
+    "snowflake": '<line x1="2" x2="22" y1="12" y2="12"/><line x1="12" x2="12" y1="2" y2="22"/><path d="m20 16-4-4 4-4"/><path d="m4 8 4 4-4 4"/><path d="m16 4-4 4-4-4"/><path d="m8 20 4-4 4 4"/>',
+    "cloud-rain": '<path d="M4 14.899A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 2.5 8.242"/><path d="M16 14v6"/><path d="M8 14v6"/><path d="M12 16v6"/>',
+    "cloud-drizzle": '<path d="M4 14.899A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 2.5 8.242"/><path d="M8 19v1"/><path d="M8 14v1"/><path d="M16 19v1"/><path d="M16 14v1"/><path d="M12 21v1"/><path d="M12 16v1"/>',
+    "cloud-fog": '<path d="M4 14.899A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 2.5 8.242"/><path d="M16 17H7"/><path d="M17 21H9"/>',
+    "cloud": '<path d="M17.5 19a4.5 4.5 0 1 0-1.41-8.775 5.5 5.5 0 0 0-10.7 1.9A4.5 4.5 0 0 0 6.5 19Z"/>',
+    "sun": '<circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/>',
+  };
+  // Retourne une chaîne HTML SVG pour insertion via innerHTML.
+  function lucideSvg(name, size, extraClass) {
+    const inner = LUCIDE_ICONS[name];
+    if (!inner) return "";
+    const cls = "lucide lucide-" + name + (extraClass ? " " + extraClass : "");
+    const dim = size ? ` width="${size}" height="${size}"` : "";
+    return `<svg class="${cls}"${dim} viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${inner}</svg>`;
+  }
+  // Retourne un nœud DOM pour appendChild direct.
+  function lucideNode(name, size, extraClass) {
+    const wrap = document.createElement("span");
+    wrap.innerHTML = lucideSvg(name, size, extraClass);
+    return wrap.firstChild;
+  }
+  function makeHead(iconName, label) {
     const head = el("div", "card-head");
-    head.appendChild(el("div", "card-icon", icon));
+    const iconWrap = el("div", "card-icon");
+    iconWrap.appendChild(lucideNode(iconName, 16));
+    head.appendChild(iconWrap);
     head.appendChild(el("div", "card-label", label));
     return head;
   }
