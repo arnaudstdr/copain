@@ -32,11 +32,17 @@ def build_expenses_csv(rows: Sequence[Expense]) -> str:
 
     L'en-tête est toujours présent, même quand `rows` est vide, pour que
     l'utilisateur récupère un fichier exploitable plutôt qu'un blob nu.
+
+    Les écritures `shared=True` (compte joint) sont EXCLUES : par convention
+    elles sont hors gestion perso (cf. `compute_budget`), donc absentes de
+    l'export.
     """
     buf = io.StringIO()
     writer = csv.writer(buf, delimiter=";", quoting=csv.QUOTE_MINIMAL, lineterminator="\r\n")
     writer.writerow(_HEADER)
     for row in rows:
+        if row.shared:
+            continue
         writer.writerow(
             (
                 row.occurred_on.strftime("%d/%m/%Y"),

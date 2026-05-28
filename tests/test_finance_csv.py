@@ -16,6 +16,7 @@ def _make(
     occurred_on: date,
     category: str | None = None,
     recurring_key: str | None = None,
+    shared: bool = False,
 ) -> Expense:
     return Expense(
         kind=kind,
@@ -24,6 +25,7 @@ def _make(
         category=category,
         recurring_key=recurring_key,
         occurred_on=occurred_on,
+        shared=shared,
     )
 
 
@@ -112,3 +114,29 @@ def test_header_columns_order() -> None:
         "recurring_key",
         "montant_eur",
     ]
+
+
+def test_shared_rows_are_excluded() -> None:
+    """Les écritures `shared=True` (compte joint) sont hors gestion perso :
+    elles n'apparaissent pas dans le CSV d'export.
+    """
+    rows = [
+        _make(
+            kind="punctual",
+            amount_cents=2700,
+            label="Pharmacie",
+            category="santé",
+            occurred_on=date(2026, 5, 18),
+        ),
+        _make(
+            kind="punctual",
+            amount_cents=3000,
+            label="Lidl joint",
+            category="nourriture",
+            occurred_on=date(2026, 5, 18),
+            shared=True,
+        ),
+    ]
+    body = build_expenses_csv(rows).removeprefix("﻿")
+    assert "Pharmacie" in body
+    assert "Lidl joint" not in body

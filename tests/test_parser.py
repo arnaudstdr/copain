@@ -456,3 +456,56 @@ def test_extract_meta_expense_optional_in_old_format() -> None:
     _, meta = extract_meta(raw)
     assert meta["expense"]["action"] is None
     assert meta["expense"]["amount"] is None
+    assert meta["expense"]["shared"] is False
+
+
+def test_extract_meta_expense_shared_default_false_when_missing() -> None:
+    """Rétrocompat : un bloc expense sans champ shared → shared=False."""
+    raw = """<meta>{"intent":"expense","store_memory":false,"memory_content":null,
+"task":{"content":null,"due_str":null},
+"feed":{"action":null,"name":null,"url":null},
+"event":{"action":null,"title":null,"start_str":null,"end_str":null,
+"location":null,"description":null,"range_str":null,"calendar_name":null},
+"fuel":{"fuel_type":null,"radius_km":null,"location":null},
+"weather":{"location":null,"when":null},
+"depot":{"content":null,"kind":null},
+"expense":{"action":"spend","amount":27,"label":"pharmacie",
+"category":"santé","recurring_key":null,"when":null},
+"search_query":null}</meta>"""
+    _, meta = extract_meta(raw)
+    assert meta["expense"]["shared"] is False
+
+
+def test_extract_meta_expense_shared_true() -> None:
+    """shared=true bien extrait quand le LLM le précise."""
+    raw = """<meta>{"intent":"expense","store_memory":false,"memory_content":null,
+"task":{"content":null,"due_str":null},
+"feed":{"action":null,"name":null,"url":null},
+"event":{"action":null,"title":null,"start_str":null,"end_str":null,
+"location":null,"description":null,"range_str":null,"calendar_name":null},
+"fuel":{"fuel_type":null,"radius_km":null,"location":null},
+"weather":{"location":null,"when":null},
+"depot":{"content":null,"kind":null},
+"expense":{"action":"spend","amount":30,"label":"Lidl",
+"category":"nourriture","recurring_key":null,"when":null,"shared":true},
+"search_query":null}</meta>"""
+    _, meta = extract_meta(raw)
+    assert meta["expense"]["shared"] is True
+    assert meta["expense"]["category"] == "nourriture"
+
+
+def test_extract_meta_expense_shared_non_bool_rejected() -> None:
+    """Garde-fou : shared doit être un booléen, pas une chaîne ou un nombre."""
+    raw = """<meta>{"intent":"expense","store_memory":false,"memory_content":null,
+"task":{"content":null,"due_str":null},
+"feed":{"action":null,"name":null,"url":null},
+"event":{"action":null,"title":null,"start_str":null,"end_str":null,
+"location":null,"description":null,"range_str":null,"calendar_name":null},
+"fuel":{"fuel_type":null,"radius_km":null,"location":null},
+"weather":{"location":null,"when":null},
+"depot":{"content":null,"kind":null},
+"expense":{"action":"spend","amount":30,"label":"x",
+"category":null,"recurring_key":null,"when":null,"shared":"true"},
+"search_query":null}</meta>"""
+    with pytest.raises(MetaParseError, match=r"expense\.shared"):
+        extract_meta(raw)

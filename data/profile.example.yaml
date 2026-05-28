@@ -97,6 +97,21 @@ finances:
   #
   # `category` doit matcher (insensible à la casse) la catégorie que le LLM
   # met sur les ponctuelles ("j'ai dépensé 60€ d'essence" → category=essence).
+  #
+  # Champ optionnel `shared` (défaut: false) :
+  # - `shared: true` marque une enveloppe sur compte joint / hors gestion
+  #   perso (typiquement les courses payées en commun avec un conjoint).
+  #   L'enveloppe reste visible sur la card Budget pour le suivi, mais elle
+  #   est INVISIBLE dans le calcul du restant prévisionnel : ni l'allocation,
+  #   ni l'overrun, ni les ponctuelles `shared=true` ne grignotent ton
+  #   restant perso.
+  # - Le matching dépense ↔ enveloppe est croisé : une dépense `shared=true`
+  #   ne puise QUE dans une enveloppe `shared=true` (et vice-versa). Tu
+  #   peux donc avoir deux enveloppes `nourriture` (perso + joint) sans
+  #   collision.
+  # - Côté LLM : « on a dépensé 30€ chez Lidl sur le compte joint » →
+  #   shared=true ; « j'ai dépensé 15€ chez Lidl » → shared=false.
   envelopes:
-    # - { category: essence, label: "Essence",  amount: 200 }
-    # - { category: courses, label: "Courses",  amount: 600 }
+    # - { category: essence,    label: "Essence",                amount: 200 }
+    # - { category: courses,    label: "Courses",                amount: 600 }
+    # - { category: nourriture, label: "Courses (compte joint)", amount: 600, shared: true }

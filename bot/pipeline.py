@@ -88,6 +88,7 @@ _FALLBACK_META: Meta = {
         "category": None,
         "recurring_key": None,
         "when": None,
+        "shared": False,
     },
     "search_query": None,
 }
@@ -291,12 +292,14 @@ async def _handle_expense_side_effect(meta: Meta, deps: BotDeps) -> None:
             label=label,
             category=em["category"],
             occurred_on=when,
+            shared=em["shared"],
         )
         log.info(
             "expense_spend_recorded",
             expense_id=expense.id,
             amount_cents=override_cents,
             label=label,
+            shared=em["shared"],
         )
         return
 

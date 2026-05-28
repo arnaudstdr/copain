@@ -227,6 +227,38 @@ def test_find_envelope_is_case_insensitive() -> None:
     assert cfg.find_envelope("courses") is None
 
 
+def test_envelope_shared_default_false() -> None:
+    raw = {"finances": {"envelopes": [{"category": "essence", "amount": 200}]}}
+    cfg = extract_finance_config(raw)
+    assert cfg.envelopes[0].shared is False
+
+
+def test_envelope_shared_true_parsed() -> None:
+    raw = {
+        "finances": {
+            "envelopes": [
+                {"category": "nourriture", "amount": 600, "shared": True},
+            ]
+        }
+    }
+    cfg = extract_finance_config(raw)
+    assert cfg.envelopes[0].shared is True
+
+
+def test_envelope_shared_truthy_values_coerced_to_bool() -> None:
+    raw = {
+        "finances": {
+            "envelopes": [
+                {"category": "x", "amount": 100, "shared": 1},
+                {"category": "y", "amount": 100, "shared": 0},
+            ]
+        }
+    }
+    cfg = extract_finance_config(raw)
+    assert cfg.envelopes[0].shared is True
+    assert cfg.envelopes[1].shared is False
+
+
 def test_is_configured_true_with_envelopes_only() -> None:
     raw = {"finances": {"envelopes": [{"category": "essence", "amount": 200}]}}
     cfg = extract_finance_config(raw)

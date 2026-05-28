@@ -11,11 +11,14 @@ from collections.abc import Sequence
 from datetime import date
 from typing import Literal
 
-from sqlalchemy import and_, select
+from sqlalchemy import and_, select, text
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
 
 from bot.finance.models import Expense
+from bot.logging_conf import get_logger
 from bot.tasks.models import Base
+
+log = get_logger(__name__)
 
 
 def _month_bounds(month: date) -> tuple[date, date]:
@@ -43,6 +46,24 @@ class ExpenseManager:
     async def init_schema(self) -> None:
         async with self._engine.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)
+            await self._migrate_add_shared_column(conn)
+
+    @staticmethod
+    async def _migrate_add_shared_column(conn: object) -> None:
+        """Ajoute la colonne `shared` sur `expenses` si elle manque (SQLite only).
+
+        `Base.metadata.create_all` ne fait pas d'ADD COLUMN sur table existante.
+        Pour les installations qui pré-existent au flag `shared`, on inspecte
+        `PRAGMA table_info` et on ALTER TABLE de façon idempotente.
+        """
+        result = await conn.execute(text("PRAGMA table_info(expenses)"))  # type: ignore[attr-defined]
+        cols = {row[1] for row in result.fetchall()}
+        if "shared" in cols:
+            return
+        await conn.execute(  # type: ignore[attr-defined]
+            text("ALTER TABLE expenses ADD COLUMN shared BOOLEAN NOT NULL DEFAULT 0")
+        )
+        log.info("finance_expenses_migrated_add_shared_column")
 
     async def add_punctual(
         self,
@@ -51,14 +72,20 @@ class ExpenseManager:
         label: str,
         category: str | None,
         occurred_on: date,
+        shared: bool = False,
     ) -> Expense:
-        """Enregistre une dépense ponctuelle (kind=punctual)."""
+        """Enregistre une dépense ponctuelle (kind=punctual).
+
+        `shared=True` : dépense réalisée sur un compte joint, exclue du
+        restant prévisionnel perso (cf. `compute_budget`).
+        """
         expense = Expense(
             kind="punctual",
             amount_cents=amount_cents,
             label=label,
             category=category,
             occurred_on=occurred_on,
+            shared=shared,
         )
         return await self._persist(expense)
 

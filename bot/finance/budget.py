@@ -30,13 +30,18 @@ class PendingRecurring:
 
 @dataclass(frozen=True, slots=True)
 class EnvelopeStatus:
-    """État courant d'une enveloppe budgétaire mensuelle."""
+    """État courant d'une enveloppe budgétaire mensuelle.
+
+    `shared=True` : enveloppe sur compte joint, purement informative côté
+    dashboard. Elle ne grignote pas le restant prévisionnel perso.
+    """
 
     category: str
     label: str
     allocated_cents: int
     spent_cents: int  # somme des ponctuelles avec cette catégorie ce mois
     overrun_cents: int  # max(0, spent - allocated)
+    shared: bool = False
 
     @property
     def remaining_cents(self) -> int:
@@ -67,39 +72,46 @@ class BudgetSummary:
 
     @property
     def envelopes_allocated_cents(self) -> int:
-        return sum(e.allocated_cents for e in self.envelopes)
+        """Allocation totale des enveloppes PERSO (exclut les enveloppes shared)."""
+        return sum(e.allocated_cents for e in self.envelopes if not e.shared)
 
     @property
     def envelopes_spent_in_cents(self) -> int:
-        """Ce qui a déjà été consommé dans les enveloppes (capé à l'allocation)."""
-        return sum(min(e.spent_cents, e.allocated_cents) for e in self.envelopes)
+        """Ce qui a déjà été consommé dans les enveloppes perso (capé à l'allocation)."""
+        return sum(min(e.spent_cents, e.allocated_cents) for e in self.envelopes if not e.shared)
 
     @property
     def envelopes_overrun_cents(self) -> int:
-        return sum(e.overrun_cents for e in self.envelopes)
+        """Overrun cumulé des enveloppes PERSO (les shared n'impactent pas le restant)."""
+        return sum(e.overrun_cents for e in self.envelopes if not e.shared)
 
     @property
     def remaining_cents(self) -> int:
-        """Restant previsionnel.
+        """Restant previsionnel (uniquement périmètre perso).
 
-        Les ponctuelles déjà passées sous une enveloppe NE comptent PAS une
-        deuxième fois (elles puisent dans l'enveloppe, pas dans le restant).
-        En revanche, le débordement (overrun) vient bien grignoter le
-        restant — sinon on mentirait à l'utilisateur.
+        Les ponctuelles déjà passées sous une enveloppe PERSO NE comptent PAS
+        une deuxième fois (elles puisent dans l'enveloppe, pas dans le
+        restant). En revanche, le débordement (overrun) vient bien grignoter
+        le restant — sinon on mentirait à l'utilisateur.
+
+        Les dépenses `shared=True` (compte joint) sont déjà exclues de
+        `spent_punctual_cents` en amont (cf. `compute_budget`) ; les
+        enveloppes shared sont absentes des agrégats `envelopes_allocated_*`
+        et `envelopes_overrun_*` ci-dessus. Elles n'apparaissent donc nulle
+        part dans ce calcul.
 
         = revenu
-          - punctual_hors_enveloppes
+          - punctual_hors_enveloppes (perso uniquement)
           - recurring_tick
           - saving_tick
           - pending récurrentes
-          - allocated total des enveloppes
-          - overrun total
+          - allocated total des enveloppes perso
+          - overrun total des enveloppes perso
         """
-        # Tout l'argent puisé dans les enveloppes (cumul réel des ponctuelles
-        # matchées par catégorie). Ce montant a déjà été "soustrait" via
-        # l'allocation + l'overrun ; on l'enlève de spent_punctual_cents pour
-        # ne pas le compter deux fois.
-        punctual_in_envelopes = sum(e.spent_cents for e in self.envelopes)
+        # Ponctuelles consommées dans les enveloppes PERSO uniquement.
+        # Ce montant a déjà été "soustrait" via l'allocation + l'overrun ;
+        # on l'enlève de spent_punctual_cents pour ne pas le compter deux fois.
+        punctual_in_envelopes = sum(e.spent_cents for e in self.envelopes if not e.shared)
         punctual_hors_envelopes = self.spent_punctual_cents - punctual_in_envelopes
         out = (
             punctual_hors_envelopes
@@ -135,7 +147,12 @@ def compute_budget(
     month_start = today.replace(day=1)
 
     income_cents = sum(e.amount_cents for e in month_expenses if e.kind == "income")
-    spent_punctual = sum(e.amount_cents for e in month_expenses if e.kind == "punctual")
+    # Les ponctuelles `shared=True` (compte joint) sont hors-périmètre perso.
+    # Elles restent matchées par leur enveloppe shared via `_envelopes_status`
+    # pour l'affichage, mais n'entrent pas dans le restant prévisionnel.
+    spent_punctual = sum(
+        e.amount_cents for e in month_expenses if e.kind == "punctual" and not e.shared
+    )
     spent_recurring = sum(e.amount_cents for e in month_expenses if e.kind == "recurring_tick")
     saved_this_month = sum(e.amount_cents for e in month_expenses if e.kind == "saving_tick")
 
@@ -168,22 +185,27 @@ def _envelopes_status(
 ) -> list[EnvelopeStatus]:
     """Pour chaque enveloppe, calcule le montant consommé par les ponctuelles.
 
-    Le matching `category` est insensible à la casse et aux espaces, pour
-    encaisser les variations du LLM ("Essence" vs "essence").
+    Le matching croise deux dimensions :
+    - `category` (insensible à la casse et aux espaces, pour encaisser les
+      variations du LLM "Essence" vs "essence") ;
+    - `shared` : une enveloppe shared ne matche QUE les dépenses shared, et
+      inversement. Évite qu'une "course Lidl perso" pollue l'enveloppe joint
+      nourriture (et vice-versa).
     """
     if not envelopes:
         return []
-    spent_by_category: dict[str, int] = {}
+    # Clé : (category_lower, shared_flag) → cents consommés.
+    spent_by_bucket: dict[tuple[str, bool], int] = {}
     for e in month_expenses:
         if e.kind != "punctual" or not e.category:
             continue
-        key = e.category.strip().lower()
-        spent_by_category[key] = spent_by_category.get(key, 0) + e.amount_cents
+        bucket = (e.category.strip().lower(), bool(e.shared))
+        spent_by_bucket[bucket] = spent_by_bucket.get(bucket, 0) + e.amount_cents
 
     out: list[EnvelopeStatus] = []
     for env in envelopes:
-        key = env.category.strip().lower()
-        spent = spent_by_category.get(key, 0)
+        bucket = (env.category.strip().lower(), env.shared)
+        spent = spent_by_bucket.get(bucket, 0)
         overrun = max(0, spent - env.amount_cents)
         out.append(
             EnvelopeStatus(
@@ -192,6 +214,7 @@ def _envelopes_status(
                 allocated_cents=env.amount_cents,
                 spent_cents=spent,
                 overrun_cents=overrun,
+                shared=env.shared,
             )
         )
     return out

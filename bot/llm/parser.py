@@ -82,6 +82,7 @@ class ExpenseMeta(TypedDict):
     category: str | None  # libre, uniquement pour action=spend
     recurring_key: str | None  # uniquement pour action=tick_recurring
     when: str | None  # expression FR ("hier"), null = aujourd'hui
+    shared: bool  # True si payé sur un compte joint / hors gestion perso
 
 
 class Meta(TypedDict):
@@ -224,6 +225,7 @@ def _validate(data: Any) -> Meta:
         "category": None,
         "recurring_key": None,
         "when": None,
+        "shared": False,
     }
     if not isinstance(expense_raw, dict):
         raise MetaParseError("expense doit être un objet ou null")
@@ -233,6 +235,11 @@ def _validate(data: Any) -> Meta:
     expense_amount = _opt_float(expense_raw.get("amount"), "expense.amount")
     if expense_amount is not None and expense_amount < 0:
         raise MetaParseError("expense.amount doit être positif")
+    # `shared` est optionnel : default False si absent (rétro-compat avec
+    # les LLM qui n'ont pas encore le nouveau prompt).
+    raw_shared = expense_raw.get("shared", False)
+    if not isinstance(raw_shared, bool):
+        raise MetaParseError("expense.shared doit être un booléen")
     expense: ExpenseMeta = {
         "action": expense_action,
         "amount": expense_amount,
@@ -240,6 +247,7 @@ def _validate(data: Any) -> Meta:
         "category": _opt_str(expense_raw.get("category"), "expense.category"),
         "recurring_key": _opt_str(expense_raw.get("recurring_key"), "expense.recurring_key"),
         "when": _opt_str(expense_raw.get("when"), "expense.when"),
+        "shared": raw_shared,
     }
 
     search_query = _opt_str(data.get("search_query"), "search_query")

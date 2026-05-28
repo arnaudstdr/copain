@@ -114,6 +114,7 @@ class BudgetEnvelopeCard(BaseModel):
     spent_eur: float
     remaining_eur: float  # peut être négatif si dépassement
     is_overrun: bool
+    shared: bool = False  # True → compte joint, purement informatif
 
 
 class BudgetCard(BaseModel):
@@ -201,6 +202,7 @@ class BudgetTransaction(BaseModel):
     category: str | None
     recurring_key: str | None
     occurred_on: str  # ISO date
+    shared: bool = False  # True → compte joint, hors restant perso
 
 
 class BudgetPendingItem(BaseModel):
@@ -220,6 +222,7 @@ class BudgetEnvelopeDetail(BaseModel):
     remaining_eur: float
     overrun_eur: float
     is_overrun: bool
+    shared: bool = False  # True → compte joint, hors restant perso
 
 
 class BudgetMonthDetail(BaseModel):
@@ -773,6 +776,9 @@ def create_app(state: AppState) -> FastAPI:
                 category=e.category,
                 recurring_key=e.recurring_key,
                 occurred_on=e.occurred_on.isoformat(),
+                # bool(...) normalise un éventuel None (lignes pré-migration
+                # ou Expense construit en mémoire sans flush DB).
+                shared=bool(e.shared),
             )
             for e in month_rows
         ]
@@ -796,6 +802,7 @@ def create_app(state: AppState) -> FastAPI:
                 remaining_eur=env.remaining_cents / 100,
                 overrun_eur=env.overrun_cents / 100,
                 is_overrun=env.is_overrun,
+                shared=env.shared,
             )
             for env in summary.envelopes
         ]
@@ -1025,6 +1032,7 @@ def _snapshot_to_response(snap: DashboardSnapshot) -> DashboardResponse:
                     spent_eur=env.spent_cents / 100,
                     remaining_eur=env.remaining_cents / 100,
                     is_overrun=env.is_overrun,
+                    shared=env.shared,
                 )
                 for env in b.envelopes
             ],

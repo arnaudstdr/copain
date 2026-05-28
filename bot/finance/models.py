@@ -17,7 +17,7 @@ from __future__ import annotations
 from datetime import UTC, date, datetime
 from typing import Literal, get_args
 
-from sqlalchemy import Date, DateTime, Integer, String
+from sqlalchemy import Boolean, Date, DateTime, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column
 
 from bot.tasks.models import Base
@@ -46,13 +46,20 @@ class Expense(Base):
     category: Mapped[str | None] = mapped_column(String, nullable=True)
     # Date FONCTIONNELLE (mois de rattachement). Pas un timestamp.
     occurred_on: Mapped[date] = mapped_column(Date, nullable=False, index=True)
+    # True quand la ligne vient d'un compte joint / hors gestion perso :
+    # visible pour le suivi (enveloppe shared) mais exclue du restant
+    # prévisionnel et du CSV d'export perso.
+    shared: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="0", index=True
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=_utcnow
     )
 
     def __repr__(self) -> str:
         sign = "+" if self.kind == "income" else "-"
+        flag = " shared" if self.shared else ""
         return (
             f"Expense(id={self.id}, {self.kind}, {sign}{self.amount_cents}c, "
-            f"{self.label!r}, on={self.occurred_on})"
+            f"{self.label!r}, on={self.occurred_on}{flag})"
         )

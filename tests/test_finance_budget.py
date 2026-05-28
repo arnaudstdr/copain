@@ -16,13 +16,14 @@ def _config(
     return FinanceConfig(currency="EUR", recurring=items, envelopes=envelopes)
 
 
-def _punctual_cat(cents: int, category: str, day: int = 10) -> Expense:
+def _punctual_cat(cents: int, category: str, day: int = 10, shared: bool = False) -> Expense:
     return Expense(
         kind="punctual",
         amount_cents=cents,
         label="Achat",
         category=category,
         occurred_on=date(2026, 5, day),
+        shared=shared,
     )
 
 
@@ -318,3 +319,95 @@ def test_no_envelope_remaining_matches_legacy_formula() -> None:
     )
     assert summary.envelopes == ()
     assert summary.remaining_cents == 250000 - 2700
+
+
+def test_shared_envelope_does_not_affect_remaining() -> None:
+    """Une enveloppe shared est purement informative : ni allocation ni overrun
+    ne grignotent le restant prévisionnel perso."""
+    cfg = _config(envelopes=(EnvelopeItem("nourriture", "Courses joint", 60000, shared=True),))
+    summary = compute_budget(
+        config=cfg,
+        month_expenses=[
+            _income(250000),
+            _punctual_cat(15000, "nourriture", shared=True),
+        ],
+        year_savings=[],
+        today=date(2026, 5, 18),
+    )
+    # L'enveloppe est exposée pour le dashboard…
+    assert len(summary.envelopes) == 1
+    assert summary.envelopes[0].shared is True
+    assert summary.envelopes[0].spent_cents == 15000
+    # …mais elle est invisible des agrégats perso.
+    assert summary.envelopes_allocated_cents == 0
+    assert summary.envelopes_overrun_cents == 0
+    # Et la dépense shared est exclue de spent_punctual_cents.
+    assert summary.spent_punctual_cents == 0
+    # Donc remaining = revenu pur, rien d'autre.
+    assert summary.remaining_cents == 250000
+
+
+def test_shared_envelope_overrun_does_not_grignote_remaining() -> None:
+    """Même un dépassement sur une enveloppe shared n'impacte pas le restant perso."""
+    cfg = _config(envelopes=(EnvelopeItem("nourriture", "Courses joint", 60000, shared=True),))
+    summary = compute_budget(
+        config=cfg,
+        month_expenses=[
+            _income(250000),
+            _punctual_cat(80000, "nourriture", shared=True),
+        ],
+        year_savings=[],
+        today=date(2026, 5, 18),
+    )
+    assert summary.envelopes[0].is_overrun is True
+    assert summary.envelopes[0].overrun_cents == 20000
+    # Overrun shared = invisible côté perso.
+    assert summary.remaining_cents == 250000
+
+
+def test_shared_and_perso_envelopes_dont_cross_match() -> None:
+    """Deux enveloppes même catégorie (perso + shared) : chacune ne matche que
+    les dépenses de son périmètre."""
+    cfg = _config(
+        envelopes=(
+            EnvelopeItem("nourriture", "Courses perso", 20000, shared=False),
+            EnvelopeItem("nourriture", "Courses joint", 60000, shared=True),
+        )
+    )
+    summary = compute_budget(
+        config=cfg,
+        month_expenses=[
+            _income(250000),
+            _punctual_cat(8000, "nourriture", shared=False),  # Lidl perso
+            _punctual_cat(35000, "nourriture", shared=True),  # Lidl joint
+        ],
+        year_savings=[],
+        today=date(2026, 5, 18),
+    )
+    by_label = {e.label: e for e in summary.envelopes}
+    # Perso : 80€ Lidl perso uniquement
+    assert by_label["Courses perso"].spent_cents == 8000
+    assert by_label["Courses perso"].shared is False
+    # Joint : 350€ Lidl joint uniquement
+    assert by_label["Courses joint"].spent_cents == 35000
+    assert by_label["Courses joint"].shared is True
+    # Restant : revenu - 200€ alloués (perso) - 0 overrun.
+    # La dépense shared (350€) ne grignote pas.
+    assert summary.remaining_cents == 250000 - 20000
+
+
+def test_shared_expense_without_envelope_is_ignored_in_remaining() -> None:
+    """Cas limite : une dépense shared sans enveloppe correspondante reste
+    exclue du restant perso (on ne crée pas un faux poste à comptabiliser)."""
+    cfg = _config()
+    summary = compute_budget(
+        config=cfg,
+        month_expenses=[
+            _income(250000),
+            _punctual_cat(15000, "nourriture", shared=True),
+        ],
+        year_savings=[],
+        today=date(2026, 5, 18),
+    )
+    assert summary.spent_punctual_cents == 0
+    assert summary.remaining_cents == 250000

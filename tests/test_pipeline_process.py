@@ -45,6 +45,7 @@ def _meta_block(
     expense_category: str | None = None,
     expense_recurring_key: str | None = None,
     expense_when: str | None = None,
+    expense_shared: bool = False,
     search_query: str | None = None,
     response_text: str = "Réponse texte.",
 ) -> str:
@@ -87,6 +88,7 @@ def _meta_block(
             "category": expense_category,
             "recurring_key": expense_recurring_key,
             "when": expense_when,
+            "shared": expense_shared,
         },
         "search_query": search_query,
     }
@@ -706,8 +708,29 @@ async def test_process_expense_spend_calls_add_punctual(deps: BotDeps) -> None:
     assert kwargs["amount_cents"] == 2700
     assert kwargs["label"] == "pharmacie"
     assert kwargs["category"] == "santé"
+    assert kwargs["shared"] is False
     # Pas de store_memory générique sur une saisie expense.
     deps.memory.store.assert_not_called()
+
+
+async def test_process_expense_spend_propagates_shared_true(deps: BotDeps) -> None:
+    """Une dépense compte joint doit propager shared=True à add_punctual."""
+    deps.llm.call = AsyncMock(
+        return_value=_meta_block(
+            intent="expense",
+            expense_action="spend",
+            expense_amount=30,
+            expense_label="Lidl",
+            expense_category="nourriture",
+            expense_shared=True,
+            response_text="Noté.",
+        )
+    )
+    await process_message("on vient de dépenser 30€ chez Lidl sur le compte joint", deps=deps)
+    deps.expenses.add_punctual.assert_awaited_once()
+    kwargs = deps.expenses.add_punctual.await_args.kwargs
+    assert kwargs["shared"] is True
+    assert kwargs["category"] == "nourriture"
 
 
 async def test_process_expense_income_calls_add_income(deps: BotDeps) -> None:

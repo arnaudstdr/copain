@@ -47,11 +47,16 @@ class EnvelopeItem:
     précis : son montant est déduit du restant prévisionnel dès le 1er du
     mois, et les dépenses ponctuelles ayant cette `category` puisent dedans
     au lieu de venir baisser le restant une seconde fois.
+
+    `shared=True` marque une enveloppe sur compte joint (ou tout argent qui
+    n'entre pas dans la comptabilité perso) : elle reste visible pour le
+    suivi mais ne grignote ni l'allocation ni l'overrun le restant prévisionnel.
     """
 
     category: str  # slug exact (matche `Expense.category`)
     label: str
     amount_cents: int
+    shared: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -199,10 +204,12 @@ def _parse_envelope(raw: Any, idx: int) -> EnvelopeItem | None:
     if not isinstance(raw_amount, int | float) or raw_amount <= 0:
         log.warning("finance_envelope_invalid_amount", index=idx, category=category, raw=raw_amount)
         return None
+    shared = bool(raw.get("shared", False))
     return EnvelopeItem(
         category=category,
         label=label,
         amount_cents=round(float(raw_amount) * 100),
+        shared=shared,
     )
 
 

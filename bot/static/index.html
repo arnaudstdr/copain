@@ -139,6 +139,21 @@
     .envelope-fill { height: 100%; background: var(--green); transition: width 0.2s ease; }
     .envelope-fill.overrun { background: var(--red); }
     .envelope-amount-overrun { color: var(--red); }
+    /* Badge "compte joint" : enveloppe ou ligne hors gestion perso. */
+    .envelope-shared-badge {
+      display: inline-block;
+      font-size: 0.72em;
+      font-weight: 500;
+      padding: 1px 6px;
+      margin-left: 6px;
+      border-radius: 8px;
+      background: var(--bg3);
+      color: var(--text3);
+      border: 1px solid var(--border2);
+      vertical-align: middle;
+    }
+    .envelope-row.shared .envelope-label { color: var(--text2); }
+    .envelope-fill.shared { background: var(--text3); }
 
 
     /* ── Bulle de réponse éphémère ── */
@@ -705,31 +720,42 @@
   }
 
   function envelopeRow(env) {
-    const row = el("div", "envelope-row");
+    const row = el("div", "envelope-row" + (env.shared ? " shared" : ""));
     row.style.fontSize = "0.85em";
     row.style.marginTop = "4px";
 
     const top = el("div", "envelope-line");
     top.style.display = "flex";
     top.style.justifyContent = "space-between";
+    const labelWrap = el("span", "envelope-label-wrap");
     const label = el("span", "envelope-label", env.label);
+    labelWrap.appendChild(label);
+    if (env.shared) {
+      labelWrap.appendChild(el("span", "envelope-shared-badge", "compte joint"));
+    }
     const amounts = el(
       "span",
       "envelope-amounts",
       `${formatEur(env.spent_eur)} / ${formatEur(env.allocated_eur)}`
     );
     if (env.is_overrun) amounts.classList.add("envelope-amount-overrun");
-    top.appendChild(label);
+    top.appendChild(labelWrap);
     top.appendChild(amounts);
     row.appendChild(top);
 
     // Progress bar : bg gris (var --track-bg, adapté light/dark), fill jusqu'au
     // % consommé (capé à 100). En cas de dépassement, on remplit à 100% en rouge.
+    // Une enveloppe shared est grisée pour rappeler qu'elle est hors gestion perso.
     const ratio = env.allocated_eur > 0
       ? Math.min(1, env.spent_eur / env.allocated_eur)
       : 0;
     const track = el("div", "envelope-track");
-    const fill = el("div", "envelope-fill" + (env.is_overrun ? " overrun" : ""));
+    const fillClass = env.is_overrun
+      ? "envelope-fill overrun"
+      : env.shared
+        ? "envelope-fill shared"
+        : "envelope-fill";
+    const fill = el("div", fillClass);
     fill.style.width = `${ratio * 100}%`;
     track.appendChild(fill);
     row.appendChild(track);
@@ -808,8 +834,9 @@
         const overrun = env.is_overrun
           ? ` {{lucide:alert-triangle}} dépassement de ${formatEur(env.overrun_eur)}`
           : "";
+        const sharedTag = env.shared ? " _(compte joint)_" : "";
         lines.push(
-          `- **${env.label}** : ${formatEur(env.spent_eur)} / ${formatEur(env.allocated_eur)}${overrun}`
+          `- **${env.label}**${sharedTag} : ${formatEur(env.spent_eur)} / ${formatEur(env.allocated_eur)}${overrun}`
         );
       }
       lines.push("");
@@ -830,7 +857,8 @@
         const dayStr = d.toLocaleDateString("fr-FR", { day: "numeric", month: "short" });
         const sign = t.kind === "income" ? "+" : "−";
         const cat = t.category ? ` (${t.category})` : "";
-        lines.push(`- ${dayStr} — ${t.label}${cat} : ${sign}${formatEur(t.amount_eur)}`);
+        const sharedTag = t.shared ? " _(compte joint)_" : "";
+        lines.push(`- ${dayStr} — ${t.label}${cat}${sharedTag} : ${sign}${formatEur(t.amount_eur)}`);
       }
     } else {
       lines.push("_Aucune transaction enregistrée ce mois._");
