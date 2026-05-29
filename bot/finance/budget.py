@@ -7,12 +7,12 @@ un `BudgetSummary` consommable directement par le dashboard.
 
 from __future__ import annotations
 
+import calendar as _calendar
 from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import date
 
 from bot.finance.config import EnvelopeItem, FinanceConfig, RecurringItem, RecurringKind
-from bot.finance.manager import clamp_day_to_month
 from bot.finance.models import Expense
 
 
@@ -55,16 +55,24 @@ class EnvelopeStatus:
 
 @dataclass(frozen=True, slots=True)
 class BudgetSummary:
-    """État agrégé exposé par la card Budget du dashboard."""
+    """État agrégé exposé par la card Budget du dashboard.
 
-    month: date  # 1er du mois
+    `month` porte le **début du cycle budgétaire courant** (jour du salaire
+    reçu, ou 1er du mois civil en l'absence d'ancre). `cycle_end` est la
+    borne haute exclue : la prochaine ancre, ou une date sentinelle quand le
+    cycle est encore ouvert. Le nom `month` est conservé pour ne pas casser
+    l'API/le front existants — il signifie désormais « début de cycle ».
+    """
+
+    month: date  # début du cycle (= jour du salaire, ou 1er du mois en fallback)
     income_cents: int
     spent_punctual_cents: int
-    spent_recurring_cents: int  # somme des kind=recurring_tick du mois
-    saved_this_month_cents: int  # somme des kind=saving_tick du mois
+    spent_recurring_cents: int  # somme des kind=recurring_tick du cycle
+    saved_this_month_cents: int  # somme des kind=saving_tick du cycle
     pending_recurring: tuple[PendingRecurring, ...]
     saved_this_year_cents: int  # cumul kind=saving_tick depuis le 1er janvier
     envelopes: tuple[EnvelopeStatus, ...] = ()
+    cycle_end: date | None = None  # borne haute exclue du cycle (None = inconnue)
 
     @property
     def pending_total_cents(self) -> int:
@@ -142,9 +150,24 @@ def compute_budget(
     month_expenses: Sequence[Expense],
     year_savings: Sequence[Expense],
     today: date,
+    cycle_start: date | None = None,
+    cycle_end: date | None = None,
 ) -> BudgetSummary:
-    """Compose un `BudgetSummary` à partir des sources de données."""
-    month_start = today.replace(day=1)
+    """Compose un `BudgetSummary` à partir des sources de données.
+
+    `cycle_start` / `cycle_end` délimitent le cycle budgétaire courant
+    (bornes calculées par `ExpenseManager.current_cycle_bounds`). Quand ils
+    sont omis, on retombe sur le mois civil (1er → 1er du mois suivant) :
+    comportement historique, conservé pour la rétro-compatibilité.
+
+    `month_expenses` doit déjà être filtré sur la fenêtre du cycle (par
+    `list_for_cycle`) ; le nom est conservé pour limiter la diffusion du
+    changement.
+    """
+    if cycle_start is None:
+        cycle_start = today.replace(day=1)
+    if cycle_end is None:
+        cycle_end = _first_of_next_month(cycle_start)
 
     income_cents = sum(e.amount_cents for e in month_expenses if e.kind == "income")
     # Les ponctuelles `shared=True` (compte joint) sont hors-périmètre perso.
@@ -162,13 +185,13 @@ def compute_budget(
         if e.kind in {"recurring_tick", "saving_tick"} and e.recurring_key is not None
     }
 
-    pending = tuple(_pending_for_month(config.recurring, ticked_keys, today))
+    pending = tuple(_pending_for_cycle(config.recurring, ticked_keys, today, cycle_start))
     envelopes = tuple(_envelopes_status(config.envelopes, month_expenses))
 
     saved_this_year = sum(e.amount_cents for e in year_savings if e.kind == "saving_tick")
 
     return BudgetSummary(
-        month=month_start,
+        month=cycle_start,
         income_cents=income_cents,
         spent_punctual_cents=spent_punctual,
         spent_recurring_cents=spent_recurring,
@@ -176,7 +199,35 @@ def compute_budget(
         pending_recurring=pending,
         saved_this_year_cents=saved_this_year,
         envelopes=envelopes,
+        cycle_end=cycle_end,
     )
+
+
+def _first_of_next_month(d: date) -> date:
+    """1er du mois suivant le mois de `d` (borne haute exclue du mois civil)."""
+    first = d.replace(day=1)
+    if first.month == 12:
+        return first.replace(year=first.year + 1, month=1)
+    return first.replace(month=first.month + 1)
+
+
+def next_recurring_occurrence(day: int, on_or_after: date) -> date:
+    """Première date dont le jour-du-mois vaut `day` (capé), à partir de `on_or_after`.
+
+    Sert à projeter une récurrente déclarée « le 5 » dans la fenêtre du
+    cycle courant : si le cycle démarre le 28/04, le « 5 » tombe le 05/05.
+    """
+    last = _calendar.monthrange(on_or_after.year, on_or_after.month)[1]
+    candidate = on_or_after.replace(day=min(day, last))
+    if candidate >= on_or_after:
+        return candidate
+    # Le jour est déjà passé dans le mois de départ → mois suivant.
+    if on_or_after.month == 12:
+        year, month = on_or_after.year + 1, 1
+    else:
+        year, month = on_or_after.year, on_or_after.month + 1
+    last_next = _calendar.monthrange(year, month)[1]
+    return date(year, month, min(day, last_next))
 
 
 def _envelopes_status(
@@ -220,24 +271,32 @@ def _envelopes_status(
     return out
 
 
-def _pending_for_month(
+def _pending_for_cycle(
     recurring: Sequence[RecurringItem],
     ticked_keys: set[str],
     today: date,
+    cycle_start: date,
 ) -> list[PendingRecurring]:
+    """Récurrentes non pointées, avec leur échéance projetée dans le cycle.
+
+    L'échéance est la première occurrence du jour déclaré (`item.day`) à
+    partir du début du cycle. En l'absence d'ancre (cycle = mois civil
+    commençant le 1er), cette projection coïncide avec l'ancien
+    `clamp_day_to_month` et le critère `is_overdue` reste identique.
+    """
     pending: list[PendingRecurring] = []
     for item in recurring:
         if item.key in ticked_keys:
             continue
-        effective_day = clamp_day_to_month(item.day, today)
+        due = next_recurring_occurrence(item.day, cycle_start)
         pending.append(
             PendingRecurring(
                 key=item.key,
                 label=item.label,
                 amount_cents=item.amount_cents,
-                day=effective_day,
+                day=due.day,
                 kind=item.kind,
-                is_overdue=effective_day < today.day,
+                is_overdue=due < today,
             )
         )
     return pending

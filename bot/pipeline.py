@@ -89,6 +89,7 @@ _FALLBACK_META: Meta = {
         "recurring_key": None,
         "when": None,
         "shared": False,
+        "starts_cycle": False,
     },
     "search_query": None,
 }
@@ -304,8 +305,16 @@ async def _handle_expense_side_effect(meta: Meta, deps: BotDeps) -> None:
         return
 
     if action == "income":
+        # « salaire reçu » : ce jour ancre un nouveau cycle budgétaire, même
+        # si l'utilisateur n'a pas précisé de montant (« j'ai reçu mon
+        # salaire » sans chiffre). On démarre donc le cycle AVANT de tenter
+        # d'enregistrer le revenu.
+        if em["starts_cycle"]:
+            cycle = await deps.expenses.start_cycle(when)
+            log.info("budget_cycle_started", cycle_id=cycle.id, started_on=when.isoformat())
         if override_cents is None:
-            log.warning("expense_skipped_invalid_amount", action=action, amount=em["amount"])
+            if not em["starts_cycle"]:
+                log.warning("expense_skipped_invalid_amount", action=action, amount=em["amount"])
             return
         expense = await deps.expenses.add_income(
             amount_cents=override_cents,
@@ -317,6 +326,7 @@ async def _handle_expense_side_effect(meta: Meta, deps: BotDeps) -> None:
             expense_id=expense.id,
             amount_cents=override_cents,
             label=label,
+            starts_cycle=em["starts_cycle"],
         )
         return
 
@@ -337,9 +347,9 @@ async def _handle_expense_side_effect(meta: Meta, deps: BotDeps) -> None:
         if item is None:
             log.warning("expense_tick_unknown_key", key=key)
             return
-        already = await deps.expenses.is_recurring_ticked_this_month(item.key, when)
+        already = await deps.expenses.is_recurring_ticked_in_cycle(item.key, when)
         if already:
-            log.info("expense_tick_duplicate_ignored", key=item.key, month=when.replace(day=1))
+            log.info("expense_tick_duplicate_ignored", key=item.key)
             return
         # Montant : par défaut on prend l'amount du YAML (source de vérité
         # pour un loyer fixe). Si l'utilisateur précise un autre montant
@@ -394,12 +404,15 @@ async def _safe_pending_recurring(deps: BotDeps) -> Sequence[PendingRecurring]:
             return ()
         tz = ZoneInfo(deps.settings.timezone)
         today_d = datetime.now(tz).date()
-        month_rows = await deps.expenses.list_for_month(today_d.replace(day=1))
+        cycle_start, cycle_end = await deps.expenses.current_cycle_bounds(today_d)
+        cycle_rows = await deps.expenses.list_for_cycle(today_d)
         summary = compute_budget(
             config=cfg,
-            month_expenses=month_rows,
+            month_expenses=cycle_rows,
             year_savings=(),  # inutile pour les pending
             today=today_d,
+            cycle_start=cycle_start,
+            cycle_end=cycle_end,
         )
         return summary.pending_recurring
     except Exception as exc:

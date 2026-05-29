@@ -63,3 +63,29 @@ class Expense(Base):
             f"Expense(id={self.id}, {self.kind}, {sign}{self.amount_cents}c, "
             f"{self.label!r}, on={self.occurred_on}{flag})"
         )
+
+
+class BudgetCycle(Base):
+    """Ancre de cycle budgétaire : le jour où l'utilisateur a touché son salaire.
+
+    Le cycle budgétaire ne suit pas le mois civil mais la date réelle de
+    perception du salaire (parfois fin de mois, parfois début). Chaque
+    « salaire reçu » insère une ligne ici ; le cycle courant va de la
+    dernière ancre (incluse) à la suivante (exclue), ou reste ouvert.
+
+    Tant qu'aucune ancre n'existe (installation neuve, avant le premier
+    « salaire reçu »), le calcul retombe sur le mois civil — cf.
+    `ExpenseManager.current_cycle_bounds`.
+    """
+
+    __tablename__ = "budget_cycles"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    # Date FONCTIONNELLE de début de cycle (jour de perception du salaire).
+    started_on: Mapped[date] = mapped_column(Date, nullable=False, unique=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=_utcnow
+    )
+
+    def __repr__(self) -> str:
+        return f"BudgetCycle(id={self.id}, started_on={self.started_on})"

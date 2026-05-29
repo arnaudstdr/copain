@@ -46,6 +46,7 @@ def _meta_block(
     expense_recurring_key: str | None = None,
     expense_when: str | None = None,
     expense_shared: bool = False,
+    expense_starts_cycle: bool = False,
     search_query: str | None = None,
     response_text: str = "Réponse texte.",
 ) -> str:
@@ -89,6 +90,7 @@ def _meta_block(
             "recurring_key": expense_recurring_key,
             "when": expense_when,
             "shared": expense_shared,
+            "starts_cycle": expense_starts_cycle,
         },
         "search_query": search_query,
     }
@@ -134,8 +136,22 @@ def deps() -> BotDeps:
     expenses.add_punctual = AsyncMock(return_value=fake_expense)
     expenses.add_income = AsyncMock(return_value=fake_expense)
     expenses.tick_recurring = AsyncMock(return_value=fake_expense)
+    expenses.start_cycle = AsyncMock(return_value=fake_expense)
     expenses.list_for_month = AsyncMock(return_value=[])
+    expenses.list_for_cycle = AsyncMock(return_value=[])
     expenses.is_recurring_ticked_this_month = AsyncMock(return_value=False)
+    expenses.is_recurring_ticked_in_cycle = AsyncMock(return_value=False)
+    # Aucune ancre déclarée → bornes mois civil (fallback).
+    expenses.current_cycle_bounds = AsyncMock(
+        side_effect=lambda today: (
+            today.replace(day=1),
+            (
+                today.replace(year=today.year + 1, month=1, day=1)
+                if today.month == 12
+                else today.replace(month=today.month + 1, day=1)
+            ),
+        )
+    )
 
     scheduler = MagicMock()
     search = MagicMock()
@@ -748,6 +764,41 @@ async def test_process_expense_income_calls_add_income(deps: BotDeps) -> None:
     kwargs = deps.expenses.add_income.await_args.kwargs
     assert kwargs["amount_cents"] == 250000
     assert kwargs["label"] == "salaire mai"
+    # Sans starts_cycle, aucun cycle n'est démarré.
+    deps.expenses.start_cycle.assert_not_awaited()
+
+
+async def test_process_expense_salary_starts_cycle_and_records_income(deps: BotDeps) -> None:
+    deps.llm.call = AsyncMock(
+        return_value=_meta_block(
+            intent="expense",
+            expense_action="income",
+            expense_amount=2500,
+            expense_label="salaire",
+            expense_starts_cycle=True,
+            response_text="✓ Saisi.",
+        )
+    )
+    await process_message("salaire reçu 2500€", deps=deps)
+    deps.expenses.start_cycle.assert_awaited_once()
+    deps.expenses.add_income.assert_awaited_once()
+
+
+async def test_process_expense_salary_without_amount_starts_cycle_only(deps: BotDeps) -> None:
+    deps.llm.call = AsyncMock(
+        return_value=_meta_block(
+            intent="expense",
+            expense_action="income",
+            expense_amount=None,
+            expense_label="salaire",
+            expense_starts_cycle=True,
+            response_text="✓ Cycle démarré.",
+        )
+    )
+    await process_message("j'ai reçu mon salaire", deps=deps)
+    # Le cycle démarre même sans montant, mais aucun revenu n'est enregistré.
+    deps.expenses.start_cycle.assert_awaited_once()
+    deps.expenses.add_income.assert_not_awaited()
 
 
 async def test_process_expense_tick_recurring_unknown_key_is_noop(
@@ -822,7 +873,7 @@ async def test_process_expense_tick_already_ticked_skipped(deps: BotDeps) -> Non
         },
     )
     deps.profile = profile
-    deps.expenses.is_recurring_ticked_this_month = AsyncMock(return_value=True)
+    deps.expenses.is_recurring_ticked_in_cycle = AsyncMock(return_value=True)
     deps.llm.call = AsyncMock(
         return_value=_meta_block(
             intent="expense",

@@ -79,7 +79,8 @@ comme lieu par défaut.
     "category": "catégorie libre uniquement pour action=spend (ex: 'santé', 'transport', 'bouffe'), sinon null",
     "recurring_key": "clé d'une récurrente listée ci-dessous, UNIQUEMENT pour action=tick_recurring, sinon null",
     "when": "expression temporelle FR si précisée (ex: 'hier', 'le 5'), sinon null (= aujourd'hui)",
-    "shared": "true si la dépense vient d'un compte joint / d'un budget partagé ('compte joint', 'on a dépensé', 'à deux', 'compte commun'), sinon false. Default false."
+    "shared": "true si la dépense vient d'un compte joint / d'un budget partagé ('compte joint', 'on a dépensé', 'à deux', 'compte commun'), sinon false. Default false.",
+    "starts_cycle": "true UNIQUEMENT quand action=income ET que l'utilisateur signale la réception de son SALAIRE ('salaire reçu', 'mon salaire est tombé', 'j'ai été payé', 'paye reçue'). Ce jour devient le début du nouveau cycle budgétaire. false pour une prime, un remboursement ou tout autre revenu. Default false."
   }},
   "search_query": "requête de recherche si intent=search, sinon null"
 }}
@@ -159,6 +160,19 @@ Règles pour intent :
                                          "alimentation"…).
              * action="income"         → entrée d'argent (« mon salaire est
                                          tombé : 2500€ », « prime 500€ »).
+                                         CHAMP starts_cycle : mets true
+                                         UNIQUEMENT quand l'utilisateur
+                                         signale la réception de son SALAIRE
+                                         (« salaire reçu », « j'ai été payé »,
+                                         « ma paye est tombée »). Ce jour
+                                         devient le début du nouveau cycle
+                                         budgétaire (le salaire arrive parfois
+                                         fin de mois, parfois début). Pour une
+                                         prime, un remboursement ou un autre
+                                         revenu, starts_cycle=false. Le montant
+                                         (amount) reste optionnel pour un
+                                         salaire reçu : s'il n'est pas précisé,
+                                         le cycle démarre quand même.
              * action="tick_recurring" → pointage d'une dépense récurrente
                                          déjà configurée par l'utilisateur
                                          (« le loyer est passé », « j'ai
@@ -298,39 +312,45 @@ Exemple 14 (dépense ponctuelle) :
 Utilisateur : « j'ai dépensé 27€ à la pharmacie »
 Réponse attendue :
 Noté.
-<meta>{{"intent":"expense","store_memory":false,"memory_content":null,"task":{{"content":null,"due_str":null}},"feed":{{"action":null,"name":null,"url":null}},"event":{{"action":null,"title":null,"start_str":null,"end_str":null,"location":null,"description":null,"range_str":null,"calendar_name":null}},"fuel":{{"fuel_type":null,"radius_km":null,"location":null}},"weather":{{"location":null,"when":null}},"depot":{{"content":null,"kind":null}},"expense":{{"action":"spend","amount":27,"label":"pharmacie","category":"santé","recurring_key":null,"when":null,"shared":false}},"search_query":null}}</meta>
+<meta>{{"intent":"expense","store_memory":false,"memory_content":null,"task":{{"content":null,"due_str":null}},"feed":{{"action":null,"name":null,"url":null}},"event":{{"action":null,"title":null,"start_str":null,"end_str":null,"location":null,"description":null,"range_str":null,"calendar_name":null}},"fuel":{{"fuel_type":null,"radius_km":null,"location":null}},"weather":{{"location":null,"when":null}},"depot":{{"content":null,"kind":null}},"expense":{{"action":"spend","amount":27,"label":"pharmacie","category":"santé","recurring_key":null,"when":null,"shared":false,"starts_cycle":false}},"search_query":null}}</meta>
 
-Exemple 15 (revenu, ex: salaire) :
+Exemple 15 (salaire reçu — démarre un nouveau cycle budgétaire) :
 Utilisateur : « mon salaire est tombé : 2500€ »
 Réponse attendue :
 ✓ Saisi.
-<meta>{{"intent":"expense","store_memory":false,"memory_content":null,"task":{{"content":null,"due_str":null}},"feed":{{"action":null,"name":null,"url":null}},"event":{{"action":null,"title":null,"start_str":null,"end_str":null,"location":null,"description":null,"range_str":null,"calendar_name":null}},"fuel":{{"fuel_type":null,"radius_km":null,"location":null}},"weather":{{"location":null,"when":null}},"depot":{{"content":null,"kind":null}},"expense":{{"action":"income","amount":2500,"label":"salaire","category":null,"recurring_key":null,"when":null,"shared":false}},"search_query":null}}</meta>
+<meta>{{"intent":"expense","store_memory":false,"memory_content":null,"task":{{"content":null,"due_str":null}},"feed":{{"action":null,"name":null,"url":null}},"event":{{"action":null,"title":null,"start_str":null,"end_str":null,"location":null,"description":null,"range_str":null,"calendar_name":null}},"fuel":{{"fuel_type":null,"radius_km":null,"location":null}},"weather":{{"location":null,"when":null}},"depot":{{"content":null,"kind":null}},"expense":{{"action":"income","amount":2500,"label":"salaire","category":null,"recurring_key":null,"when":null,"shared":false,"starts_cycle":true}},"search_query":null}}</meta>
+
+Exemple 15bis (salaire reçu sans montant — démarre quand même le cycle) :
+Utilisateur : « j'ai reçu mon salaire »
+Réponse attendue :
+✓ Cycle démarré.
+<meta>{{"intent":"expense","store_memory":false,"memory_content":null,"task":{{"content":null,"due_str":null}},"feed":{{"action":null,"name":null,"url":null}},"event":{{"action":null,"title":null,"start_str":null,"end_str":null,"location":null,"description":null,"range_str":null,"calendar_name":null}},"fuel":{{"fuel_type":null,"radius_km":null,"location":null}},"weather":{{"location":null,"when":null}},"depot":{{"content":null,"kind":null}},"expense":{{"action":"income","amount":null,"label":"salaire","category":null,"recurring_key":null,"when":null,"shared":false,"starts_cycle":true}},"search_query":null}}</meta>
 
 Exemple 16 (pointage d'une récurrente connue, sans montant) :
 Utilisateur : « le loyer est passé »
 Hypothèse : la liste « Récurrentes en attente ce mois » contient « loyer (Loyer appartement, 800€, prévu le 5) ».
 Réponse attendue :
 Noté.
-<meta>{{"intent":"expense","store_memory":false,"memory_content":null,"task":{{"content":null,"due_str":null}},"feed":{{"action":null,"name":null,"url":null}},"event":{{"action":null,"title":null,"start_str":null,"end_str":null,"location":null,"description":null,"range_str":null,"calendar_name":null}},"fuel":{{"fuel_type":null,"radius_km":null,"location":null}},"weather":{{"location":null,"when":null}},"depot":{{"content":null,"kind":null}},"expense":{{"action":"tick_recurring","amount":null,"label":"Loyer appartement","category":null,"recurring_key":"loyer","when":null,"shared":false}},"search_query":null}}</meta>
+<meta>{{"intent":"expense","store_memory":false,"memory_content":null,"task":{{"content":null,"due_str":null}},"feed":{{"action":null,"name":null,"url":null}},"event":{{"action":null,"title":null,"start_str":null,"end_str":null,"location":null,"description":null,"range_str":null,"calendar_name":null}},"fuel":{{"fuel_type":null,"radius_km":null,"location":null}},"weather":{{"location":null,"when":null}},"depot":{{"content":null,"kind":null}},"expense":{{"action":"tick_recurring","amount":null,"label":"Loyer appartement","category":null,"recurring_key":"loyer","when":null,"shared":false,"starts_cycle":false}},"search_query":null}}</meta>
 
 Exemple 17 (pointage d'un placement avec montant variable) :
 Utilisateur : « j'ai versé 11€ sur le PEL ce mois »
 Hypothèse : la liste contient « pel (Versement PEL, 15€, prévu le 5) ».
 Réponse attendue :
 Noté.
-<meta>{{"intent":"expense","store_memory":false,"memory_content":null,"task":{{"content":null,"due_str":null}},"feed":{{"action":null,"name":null,"url":null}},"event":{{"action":null,"title":null,"start_str":null,"end_str":null,"location":null,"description":null,"range_str":null,"calendar_name":null}},"fuel":{{"fuel_type":null,"radius_km":null,"location":null}},"weather":{{"location":null,"when":null}},"depot":{{"content":null,"kind":null}},"expense":{{"action":"tick_recurring","amount":11,"label":"Versement PEL","category":null,"recurring_key":"pel","when":null,"shared":false}},"search_query":null}}</meta>
+<meta>{{"intent":"expense","store_memory":false,"memory_content":null,"task":{{"content":null,"due_str":null}},"feed":{{"action":null,"name":null,"url":null}},"event":{{"action":null,"title":null,"start_str":null,"end_str":null,"location":null,"description":null,"range_str":null,"calendar_name":null}},"fuel":{{"fuel_type":null,"radius_km":null,"location":null}},"weather":{{"location":null,"when":null}},"depot":{{"content":null,"kind":null}},"expense":{{"action":"tick_recurring","amount":11,"label":"Versement PEL","category":null,"recurring_key":"pel","when":null,"shared":false,"starts_cycle":false}},"search_query":null}}</meta>
 
 Exemple 18 (dépense sur compte joint — shared=true) :
 Utilisateur : « on vient de dépenser 30€ chez Lidl sur le compte joint »
 Réponse attendue :
 Noté.
-<meta>{{"intent":"expense","store_memory":false,"memory_content":null,"task":{{"content":null,"due_str":null}},"feed":{{"action":null,"name":null,"url":null}},"event":{{"action":null,"title":null,"start_str":null,"end_str":null,"location":null,"description":null,"range_str":null,"calendar_name":null}},"fuel":{{"fuel_type":null,"radius_km":null,"location":null}},"weather":{{"location":null,"when":null}},"depot":{{"content":null,"kind":null}},"expense":{{"action":"spend","amount":30,"label":"Lidl","category":"nourriture","recurring_key":null,"when":null,"shared":true}},"search_query":null}}</meta>
+<meta>{{"intent":"expense","store_memory":false,"memory_content":null,"task":{{"content":null,"due_str":null}},"feed":{{"action":null,"name":null,"url":null}},"event":{{"action":null,"title":null,"start_str":null,"end_str":null,"location":null,"description":null,"range_str":null,"calendar_name":null}},"fuel":{{"fuel_type":null,"radius_km":null,"location":null}},"weather":{{"location":null,"when":null}},"depot":{{"content":null,"kind":null}},"expense":{{"action":"spend","amount":30,"label":"Lidl","category":"nourriture","recurring_key":null,"when":null,"shared":true,"starts_cycle":false}},"search_query":null}}</meta>
 
 Exemple 19 (même magasin mais dépense perso — shared=false) :
 Utilisateur : « j'ai dépensé 15€ chez Lidl ce midi »
 Réponse attendue :
 Noté.
-<meta>{{"intent":"expense","store_memory":false,"memory_content":null,"task":{{"content":null,"due_str":null}},"feed":{{"action":null,"name":null,"url":null}},"event":{{"action":null,"title":null,"start_str":null,"end_str":null,"location":null,"description":null,"range_str":null,"calendar_name":null}},"fuel":{{"fuel_type":null,"radius_km":null,"location":null}},"weather":{{"location":null,"when":null}},"depot":{{"content":null,"kind":null}},"expense":{{"action":"spend","amount":15,"label":"Lidl","category":"nourriture","recurring_key":null,"when":null,"shared":false}},"search_query":null}}</meta>
+<meta>{{"intent":"expense","store_memory":false,"memory_content":null,"task":{{"content":null,"due_str":null}},"feed":{{"action":null,"name":null,"url":null}},"event":{{"action":null,"title":null,"start_str":null,"end_str":null,"location":null,"description":null,"range_str":null,"calendar_name":null}},"fuel":{{"fuel_type":null,"radius_km":null,"location":null}},"weather":{{"location":null,"when":null}},"depot":{{"content":null,"kind":null}},"expense":{{"action":"spend","amount":15,"label":"Lidl","category":"nourriture","recurring_key":null,"when":null,"shared":false,"starts_cycle":false}},"search_query":null}}</meta>
 
 {profile_section}{location_section}{pending_recurring_section}--- Contexte mémoire (notes et conversations passées pertinentes) ---
 {memory_context}

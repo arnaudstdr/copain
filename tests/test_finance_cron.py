@@ -17,13 +17,24 @@ def _profile(items: list[dict[str, object]]) -> UserProfile:
     )
 
 
+def _civil_bounds(today: date) -> tuple[date, date]:
+    """Bornes mois civil (= fallback du cycle quand aucune ancre n'existe)."""
+    start = today.replace(day=1)
+    if start.month == 12:
+        end = start.replace(year=start.year + 1, month=1)
+    else:
+        end = start.replace(month=start.month + 1)
+    return start, end
+
+
 def _build_job(
     *,
     profile: UserProfile,
     ticked: bool = False,
 ) -> tuple[FinanceReminderJob, MagicMock, MagicMock]:
     expenses = MagicMock()
-    expenses.is_recurring_ticked_this_month = AsyncMock(return_value=ticked)
+    expenses.is_recurring_ticked_in_cycle = AsyncMock(return_value=ticked)
+    expenses.current_cycle_bounds = AsyncMock(side_effect=_civil_bounds)
     notifications = MagicMock()
     notifications.add = AsyncMock()
     job = FinanceReminderJob(
@@ -117,7 +128,7 @@ async def test_run_continues_after_one_item_fails() -> None:
             raise RuntimeError("flaky")
         return False
 
-    expenses.is_recurring_ticked_this_month = AsyncMock(side_effect=maybe_raise)
+    expenses.is_recurring_ticked_in_cycle = AsyncMock(side_effect=maybe_raise)
     with _patch_today(date(2026, 5, 5)):
         await job.run()
     # Netflix doit avoir été notifié malgré la panne du loyer.

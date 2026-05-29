@@ -98,8 +98,21 @@ def _build_deps() -> BotDeps:
 
     expenses = MagicMock()
     expenses.list_for_month = AsyncMock(return_value=[])
+    expenses.list_for_cycle = AsyncMock(return_value=[])
     expenses.list_savings_for_year = AsyncMock(return_value=[])
     expenses.is_recurring_ticked_this_month = AsyncMock(return_value=False)
+    expenses.is_recurring_ticked_in_cycle = AsyncMock(return_value=False)
+    # Aucune ancre déclarée → bornes mois civil (fallback).
+    expenses.current_cycle_bounds = AsyncMock(
+        side_effect=lambda today: (
+            today.replace(day=1),
+            (
+                today.replace(year=today.year + 1, month=1, day=1)
+                if today.month == 12
+                else today.replace(month=today.month + 1, day=1)
+            ),
+        )
+    )
 
     return BotDeps(
         settings=settings,
@@ -928,7 +941,7 @@ async def test_budget_requires_api_key(client: AsyncClient) -> None:
 async def test_budget_returns_empty_state_when_yaml_missing(
     client: AsyncClient, state: AppState
 ) -> None:
-    state.deps.expenses.list_for_month = AsyncMock(return_value=[])
+    state.deps.expenses.list_for_cycle = AsyncMock(return_value=[])
     state.deps.expenses.list_savings_for_year = AsyncMock(return_value=[])
     response = await client.get("/budget", headers={"X-API-Key": API_KEY})
     assert response.status_code == 200
@@ -967,7 +980,7 @@ async def test_budget_returns_envelopes_with_overrun_flag(
         occurred_on=_date(2026, 5, 10),
     )
     over.id = 7
-    state.deps.expenses.list_for_month = AsyncMock(return_value=[over])
+    state.deps.expenses.list_for_cycle = AsyncMock(return_value=[over])
     state.deps.expenses.list_savings_for_year = AsyncMock(return_value=[])
 
     response = await client.get("/budget", headers={"X-API-Key": API_KEY})
@@ -1016,7 +1029,7 @@ async def test_budget_returns_summary_with_transactions(
         occurred_on=_date(2026, 5, 5),
     )
     income.id = 1
-    state.deps.expenses.list_for_month = AsyncMock(return_value=[income])
+    state.deps.expenses.list_for_cycle = AsyncMock(return_value=[income])
     state.deps.expenses.list_savings_for_year = AsyncMock(return_value=[])
     response = await client.get("/budget", headers={"X-API-Key": API_KEY})
     assert response.status_code == 200

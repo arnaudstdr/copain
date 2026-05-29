@@ -41,8 +41,21 @@ def deps() -> BotDeps:
 
     expenses = MagicMock()
     expenses.list_for_month = AsyncMock(return_value=[])
+    expenses.list_for_cycle = AsyncMock(return_value=[])
     expenses.list_savings_for_year = AsyncMock(return_value=[])
     expenses.is_recurring_ticked_this_month = AsyncMock(return_value=False)
+    expenses.is_recurring_ticked_in_cycle = AsyncMock(return_value=False)
+    # Aucune ancre déclarée → bornes mois civil (comportement fallback).
+    expenses.current_cycle_bounds = AsyncMock(
+        side_effect=lambda today: (
+            today.replace(day=1),
+            (
+                today.replace(year=today.year + 1, month=1, day=1)
+                if today.month == 12
+                else today.replace(month=today.month + 1, day=1)
+            ),
+        )
+    )
 
     return BotDeps(
         settings=settings,
@@ -357,7 +370,7 @@ async def test_build_dashboard_budget_is_none_when_manager_raises(
     deps: BotDeps, notifications_stub: MagicMock
 ) -> None:
     deps.profile = _profile_with_finance()
-    deps.expenses.list_for_month = AsyncMock(side_effect=RuntimeError("db down"))
+    deps.expenses.list_for_cycle = AsyncMock(side_effect=RuntimeError("db down"))
     deps.weather.get_today = AsyncMock(side_effect=WeatherError("x"))
     deps.calendar.is_connected = False
     deps.tasks.list_pending = AsyncMock(return_value=[])
@@ -372,7 +385,7 @@ async def test_build_dashboard_budget_present_when_configured(
     deps.weather.get_today = AsyncMock(side_effect=WeatherError("x"))
     deps.calendar.is_connected = False
     deps.tasks.list_pending = AsyncMock(return_value=[])
-    deps.expenses.list_for_month = AsyncMock(return_value=[])
+    deps.expenses.list_for_cycle = AsyncMock(return_value=[])
     deps.expenses.list_savings_for_year = AsyncMock(return_value=[])
     snap = await build_dashboard(deps, notifications_stub)
     assert snap.budget is not None

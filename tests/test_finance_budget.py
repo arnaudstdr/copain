@@ -411,3 +411,51 @@ def test_shared_expense_without_envelope_is_ignored_in_remaining() -> None:
     )
     assert summary.spent_punctual_cents == 0
     assert summary.remaining_cents == 250000
+
+
+# --- Cycle budgétaire (bornes ancrées salaire) ----------------------------
+
+
+def test_cycle_start_drives_summary_month_and_end() -> None:
+    cfg = _config(RecurringItem("loyer", "Loyer", 80000, 5, "expense"))
+    summary = compute_budget(
+        config=cfg,
+        month_expenses=[_income(250000, day=28, month=4)],
+        year_savings=[],
+        today=date(2026, 5, 3),
+        cycle_start=date(2026, 4, 28),
+        cycle_end=date(2026, 5, 30),
+    )
+    assert summary.month == date(2026, 4, 28)
+    assert summary.cycle_end == date(2026, 5, 30)
+
+
+def test_pending_due_date_projected_into_cycle() -> None:
+    cfg = _config(RecurringItem("loyer", "Loyer", 80000, 5, "expense"))
+    summary = compute_budget(
+        config=cfg,
+        month_expenses=[],
+        year_savings=[],
+        today=date(2026, 5, 3),
+        cycle_start=date(2026, 4, 28),
+        cycle_end=date(2026, 5, 30),
+    )
+    pending = summary.pending_recurring[0]
+    # « le 5 » à partir du 28/04 tombe le 05/05.
+    assert pending.day == 5
+    assert pending.is_overdue is False  # 03/05 < 05/05
+
+
+def test_pending_overdue_within_cycle() -> None:
+    cfg = _config(RecurringItem("loyer", "Loyer", 80000, 5, "expense"))
+    summary = compute_budget(
+        config=cfg,
+        month_expenses=[],
+        year_savings=[],
+        today=date(2026, 5, 10),
+        cycle_start=date(2026, 4, 28),
+        cycle_end=date(2026, 5, 30),
+    )
+    pending = summary.pending_recurring[0]
+    assert pending.day == 5
+    assert pending.is_overdue is True  # 10/05 > 05/05

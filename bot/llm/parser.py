@@ -83,6 +83,7 @@ class ExpenseMeta(TypedDict):
     recurring_key: str | None  # uniquement pour action=tick_recurring
     when: str | None  # expression FR ("hier"), null = aujourd'hui
     shared: bool  # True si payé sur un compte joint / hors gestion perso
+    starts_cycle: bool  # True quand action=income marque la réception du salaire
 
 
 class Meta(TypedDict):
@@ -226,6 +227,7 @@ def _validate(data: Any) -> Meta:
         "recurring_key": None,
         "when": None,
         "shared": False,
+        "starts_cycle": False,
     }
     if not isinstance(expense_raw, dict):
         raise MetaParseError("expense doit être un objet ou null")
@@ -240,6 +242,11 @@ def _validate(data: Any) -> Meta:
     raw_shared = expense_raw.get("shared", False)
     if not isinstance(raw_shared, bool):
         raise MetaParseError("expense.shared doit être un booléen")
+    # `starts_cycle` est optionnel : default False. True uniquement quand le
+    # LLM identifie un salaire reçu (qui réinitialise le cycle budgétaire).
+    raw_starts_cycle = expense_raw.get("starts_cycle", False)
+    if not isinstance(raw_starts_cycle, bool):
+        raise MetaParseError("expense.starts_cycle doit être un booléen")
     expense: ExpenseMeta = {
         "action": expense_action,
         "amount": expense_amount,
@@ -248,6 +255,7 @@ def _validate(data: Any) -> Meta:
         "recurring_key": _opt_str(expense_raw.get("recurring_key"), "expense.recurring_key"),
         "when": _opt_str(expense_raw.get("when"), "expense.when"),
         "shared": raw_shared,
+        "starts_cycle": raw_starts_cycle,
     }
 
     search_query = _opt_str(data.get("search_query"), "search_query")

@@ -203,3 +203,84 @@ def test_clamp_day_to_month_caps_february() -> None:
     assert clamp_day_to_month(31, date(2024, 2, 1)) == 29  # année bissextile
     assert clamp_day_to_month(31, date(2026, 4, 1)) == 30
     assert clamp_day_to_month(15, date(2026, 5, 1)) == 15
+
+
+# --- Cycles budgétaires (ancrage salaire) ---------------------------------
+
+
+async def test_cycle_bounds_falls_back_to_civil_month_when_no_anchor(
+    manager: ExpenseManager,
+) -> None:
+    start, end = await manager.current_cycle_bounds(date(2026, 5, 18))
+    assert start == date(2026, 5, 1)
+    assert end == date(2026, 6, 1)
+
+
+async def test_cycle_bounds_open_after_single_anchor(manager: ExpenseManager) -> None:
+    await manager.start_cycle(date(2026, 4, 28))
+    start, end = await manager.current_cycle_bounds(date(2026, 5, 18))
+    assert start == date(2026, 4, 28)
+    assert end == date(9999, 12, 31)  # cycle ouvert (pas de salaire suivant)
+
+
+async def test_cycle_bounds_window_between_two_anchors(manager: ExpenseManager) -> None:
+    await manager.start_cycle(date(2026, 4, 28))
+    await manager.start_cycle(date(2026, 5, 30))
+    # Aujourd'hui = 18/05 → on est dans le cycle ouvert le 28/04, borné par le 30/05.
+    start, end = await manager.current_cycle_bounds(date(2026, 5, 18))
+    assert start == date(2026, 4, 28)
+    assert end == date(2026, 5, 30)
+    # Aujourd'hui = 02/06 → on bascule dans le cycle ouvert le 30/05.
+    start2, end2 = await manager.current_cycle_bounds(date(2026, 6, 2))
+    assert start2 == date(2026, 5, 30)
+    assert end2 == date(9999, 12, 31)
+
+
+async def test_cycle_bounds_civil_fallback_when_today_precedes_first_anchor(
+    manager: ExpenseManager,
+) -> None:
+    await manager.start_cycle(date(2026, 5, 30))
+    start, end = await manager.current_cycle_bounds(date(2026, 5, 18))
+    assert start == date(2026, 5, 1)
+    assert end == date(2026, 6, 1)
+
+
+async def test_start_cycle_is_idempotent_on_same_date(manager: ExpenseManager) -> None:
+    first = await manager.start_cycle(date(2026, 4, 28))
+    second = await manager.start_cycle(date(2026, 4, 28))
+    assert first.id == second.id
+
+
+async def test_list_for_cycle_scopes_to_anchor_window(manager: ExpenseManager) -> None:
+    await manager.start_cycle(date(2026, 4, 28))
+    await manager.start_cycle(date(2026, 5, 30))
+    # Dans le cycle 28/04 → 30/05
+    await manager.add_income(amount_cents=250000, label="Salaire", occurred_on=date(2026, 4, 28))
+    await manager.add_punctual(
+        amount_cents=2700, label="Pharmacie", category=None, occurred_on=date(2026, 5, 10)
+    )
+    # Avant l'ancre (cycle précédent)
+    await manager.add_punctual(
+        amount_cents=1500, label="Vieux", category=None, occurred_on=date(2026, 4, 20)
+    )
+    # Dans le cycle suivant
+    await manager.add_punctual(
+        amount_cents=999, label="Futur", category=None, occurred_on=date(2026, 5, 31)
+    )
+    rows = await manager.list_for_cycle(date(2026, 5, 18))
+    assert {r.label for r in rows} == {"Salaire", "Pharmacie"}
+
+
+async def test_is_recurring_ticked_in_cycle_isolates_cycles(manager: ExpenseManager) -> None:
+    await manager.start_cycle(date(2026, 4, 28))
+    await manager.start_cycle(date(2026, 5, 30))
+    await manager.tick_recurring(
+        recurring_key="loyer",
+        label="Loyer",
+        amount_cents=80000,
+        kind="expense",
+        occurred_on=date(2026, 5, 5),  # dans le cycle 28/04 → 30/05
+    )
+    assert await manager.is_recurring_ticked_in_cycle("loyer", date(2026, 5, 18))
+    # Cycle suivant : pas encore pointé.
+    assert not await manager.is_recurring_ticked_in_cycle("loyer", date(2026, 6, 2))

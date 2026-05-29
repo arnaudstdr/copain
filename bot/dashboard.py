@@ -164,13 +164,16 @@ async def _safe_budget_summary(deps: BotDeps) -> BudgetSummary | None:
         if not cfg.is_configured:
             return None
         today_d = datetime.now(ZoneInfo(deps.settings.timezone)).date()
-        month_rows = await deps.expenses.list_for_month(today_d.replace(day=1))
+        cycle_start, cycle_end = await deps.expenses.current_cycle_bounds(today_d)
+        cycle_rows = await deps.expenses.list_for_cycle(today_d)
         year_savings = await deps.expenses.list_savings_for_year(today_d.year)
         return compute_budget(
             config=cfg,
-            month_expenses=month_rows,
+            month_expenses=cycle_rows,
             year_savings=year_savings,
             today=today_d,
+            cycle_start=cycle_start,
+            cycle_end=cycle_end,
         )
     except Exception as exc:
         log.warning("dashboard_budget_skipped", error=str(exc))

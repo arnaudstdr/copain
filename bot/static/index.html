@@ -774,25 +774,33 @@
       if (!res.ok) throw new Error(`${res.status}`);
       const data = await res.json();
       openMarkdownView(
-        "Budget du mois",
+        "Budget du cycle",
         renderBudgetMarkdown(data),
         null,
-        { label: "Exporter CSV", onClick: () => exportExpensesCsv(data.month) }
+        {
+          label: "Exporter CSV",
+          onClick: () => exportExpensesCsv(data.cycle_start || data.month, data.cycle_end),
+        }
       );
     } catch (e) {
       showToast("Impossible de charger le budget");
     }
   }
 
-  async function exportExpensesCsv(monthIso) {
-    // monthIso = "2026-05-01" — on couvre le mois entier.
-    const start = monthIso;
-    const monthDate = new Date(monthIso + "T00:00:00");
-    const lastDay = new Date(monthDate.getFullYear(), monthDate.getMonth() + 1, 0);
-    const yyyy = lastDay.getFullYear();
-    const mm = String(lastDay.getMonth() + 1).padStart(2, "0");
-    const dd = String(lastDay.getDate()).padStart(2, "0");
-    const end = `${yyyy}-${mm}-${dd}`;
+  async function exportExpensesCsv(startIso, endIso) {
+    // Bornes du cycle budgétaire courant (début = jour du salaire, fin =
+    // veille du prochain salaire ou aujourd'hui si le cycle est ouvert).
+    const start = startIso;
+    let end = endIso;
+    if (!end) {
+      // Fallback (réponse sans cycle_end) : fin du mois civil du début.
+      const startDate = new Date(start + "T00:00:00");
+      const lastDay = new Date(startDate.getFullYear(), startDate.getMonth() + 1, 0);
+      const yyyy = lastDay.getFullYear();
+      const mm = String(lastDay.getMonth() + 1).padStart(2, "0");
+      const dd = String(lastDay.getDate()).padStart(2, "0");
+      end = `${yyyy}-${mm}-${dd}`;
+    }
     try {
       const res = await fetch(
         `${API_BASE}/expenses/export.csv?from=${start}&to=${end}`,
@@ -816,16 +824,25 @@
 
   function renderBudgetMarkdown(b) {
     const lines = [];
-    const monthDate = new Date(b.month + "T00:00:00");
-    const monthLabel = monthDate.toLocaleDateString("fr-FR", { month: "long", year: "numeric" });
-    lines.push(`## ${monthLabel.charAt(0).toUpperCase() + monthLabel.slice(1)}`);
+    const startIso = b.cycle_start || b.month;
+    const fmtShort = (iso) =>
+      new Date(iso + "T00:00:00").toLocaleDateString("fr-FR", { day: "numeric", month: "long" });
+    if (b.cycle_end) {
+      lines.push(`## Cycle du ${fmtShort(startIso)} au ${fmtShort(b.cycle_end)}`);
+    } else {
+      const monthLabel = new Date(startIso + "T00:00:00").toLocaleDateString("fr-FR", {
+        month: "long",
+        year: "numeric",
+      });
+      lines.push(`## ${monthLabel.charAt(0).toUpperCase() + monthLabel.slice(1)}`);
+    }
     lines.push("");
     lines.push(`**Restant prévisionnel : ${formatEur(b.remaining_eur)}**`);
     lines.push("");
     lines.push(`- Revenu : ${formatEur(b.income_eur)}`);
     lines.push(`- Récurrentes pointées : ${formatEur(b.spent_recurring_eur)}`);
     lines.push(`- Ponctuelles : ${formatEur(b.spent_punctual_eur)}`);
-    lines.push(`- Épargne ce mois : ${formatEur(b.saved_this_month_eur)}`);
+    lines.push(`- Épargne ce cycle : ${formatEur(b.saved_this_month_eur)}`);
     lines.push(`- Épargné cette année : ${formatEur(b.saved_this_year_eur)}`);
     lines.push("");
     if (b.envelopes && b.envelopes.length > 0) {

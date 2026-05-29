@@ -396,6 +396,41 @@ def test_extract_meta_expense_income() -> None:
     assert meta["expense"]["action"] == "income"
     assert meta["expense"]["amount"] == 2500.0
     assert meta["expense"]["label"] == "salaire mai"
+    # Absent du JSON → défaut False (rétro-compat).
+    assert meta["expense"]["starts_cycle"] is False
+
+
+def test_extract_meta_expense_salary_starts_cycle() -> None:
+    raw = """<meta>{"intent":"expense","store_memory":false,"memory_content":null,
+"task":{"content":null,"due_str":null},
+"feed":{"action":null,"name":null,"url":null},
+"event":{"action":null,"title":null,"start_str":null,"end_str":null,
+"location":null,"description":null,"range_str":null,"calendar_name":null},
+"fuel":{"fuel_type":null,"radius_km":null,"location":null},
+"weather":{"location":null,"when":null},
+"depot":{"content":null,"kind":null},
+"expense":{"action":"income","amount":2500,"label":"salaire",
+"category":null,"recurring_key":null,"when":null,"shared":false,"starts_cycle":true},
+"search_query":null}</meta>"""
+    _, meta = extract_meta(raw)
+    assert meta["expense"]["action"] == "income"
+    assert meta["expense"]["starts_cycle"] is True
+
+
+def test_extract_meta_expense_starts_cycle_must_be_bool() -> None:
+    raw = """<meta>{"intent":"expense","store_memory":false,"memory_content":null,
+"task":{"content":null,"due_str":null},
+"feed":{"action":null,"name":null,"url":null},
+"event":{"action":null,"title":null,"start_str":null,"end_str":null,
+"location":null,"description":null,"range_str":null,"calendar_name":null},
+"fuel":{"fuel_type":null,"radius_km":null,"location":null},
+"weather":{"location":null,"when":null},
+"depot":{"content":null,"kind":null},
+"expense":{"action":"income","amount":2500,"label":"salaire",
+"category":null,"recurring_key":null,"when":null,"starts_cycle":"oui"},
+"search_query":null}</meta>"""
+    with pytest.raises(MetaParseError, match=r"expense\.starts_cycle"):
+        extract_meta(raw)
 
 
 def test_extract_meta_expense_tick_recurring() -> None:

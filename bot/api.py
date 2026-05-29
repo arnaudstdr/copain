@@ -226,7 +226,9 @@ class BudgetEnvelopeDetail(BaseModel):
 
 
 class BudgetMonthDetail(BaseModel):
-    month: str  # ISO date du 1er du mois
+    month: str  # ISO date du début de cycle (= jour du salaire, ou 1er du mois)
+    cycle_start: str  # ISO date — début du cycle budgétaire courant (inclus)
+    cycle_end: str  # ISO date — dernier jour du cycle (inclus ; aujourd'hui si ouvert)
     currency: str
     income_eur: float
     spent_punctual_eur: float
@@ -751,21 +753,32 @@ def create_app(state: AppState) -> FastAPI:
         "vide" avec `currency=EUR` et toutes les agrégations à 0 plutôt
         qu'une 404 : l'UI peut afficher un message d'aide vers le YAML.
         """
+        from datetime import timedelta
+
         from bot.finance.budget import compute_budget
         from bot.finance.config import extract_finance_config
+        from bot.finance.manager import OPEN_CYCLE_END
 
         tz = ZoneInfo(deps.settings.timezone)
         today_d = datetime.now(tz).date()
-        month_start = today_d.replace(day=1)
         cfg = extract_finance_config(deps.profile.data)
-        month_rows = await deps.expenses.list_for_month(month_start)
+        cycle_start, cycle_end = await deps.expenses.current_cycle_bounds(today_d)
+        month_rows = await deps.expenses.list_for_cycle(today_d)
         year_savings = await deps.expenses.list_savings_for_year(today_d.year)
         summary = compute_budget(
             config=cfg,
             month_expenses=month_rows,
             year_savings=year_savings,
             today=today_d,
+            cycle_start=cycle_start,
+            cycle_end=cycle_end,
         )
+        # Borne haute affichable / exportable (inclusive) : la veille de la
+        # prochaine ancre, ou aujourd'hui tant que le cycle est ouvert.
+        if cycle_end >= OPEN_CYCLE_END:
+            cycle_end_inclusive = max(cycle_start, today_d)
+        else:
+            cycle_end_inclusive = cycle_end - timedelta(days=1)
 
         transactions = [
             BudgetTransaction(
@@ -808,6 +821,8 @@ def create_app(state: AppState) -> FastAPI:
         ]
         return BudgetMonthDetail(
             month=summary.month.isoformat(),
+            cycle_start=cycle_start.isoformat(),
+            cycle_end=cycle_end_inclusive.isoformat(),
             currency=cfg.currency,
             income_eur=summary.income_cents / 100,
             spent_punctual_eur=summary.spent_punctual_cents / 100,

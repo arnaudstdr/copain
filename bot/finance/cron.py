@@ -18,11 +18,11 @@ n'interrompt pas la chaîne des notifs suivantes.
 
 from __future__ import annotations
 
-import calendar as _calendar
 from datetime import date, datetime
 from typing import TYPE_CHECKING
 from zoneinfo import ZoneInfo
 
+from bot.finance.budget import next_recurring_occurrence
 from bot.finance.config import RecurringItem, extract_finance_config
 from bot.logging_conf import get_logger
 
@@ -61,10 +61,11 @@ class FinanceReminderJob:
             return
 
         today = datetime.now(ZoneInfo(self._tz)).date()
+        cycle_start, _ = await self._expenses.current_cycle_bounds(today)
         pushed = 0
         for item in cfg.recurring:
             try:
-                if await self._maybe_push(item, today):
+                if await self._maybe_push(item, today, cycle_start):
                     pushed += 1
             except Exception as exc:
                 # Une notif ratée ne doit pas bloquer les suivantes.
@@ -75,41 +76,39 @@ class FinanceReminderJob:
                 )
         log.info("finance_cron_run", pushed=pushed, today=today.isoformat())
 
-    async def _maybe_push(self, item: RecurringItem, today: date) -> bool:
-        """Pousse la notif si la récurrente est due aujourd'hui (ou en retard)."""
-        effective_day = _clamp_day_to_month(item.day, today)
-        # Le rappel est envoyé à partir du jour prévu (et tous les jours
-        # suivants jusqu'au pointage). is_recurring_ticked_this_month
-        # garantit qu'on n'écrit pas plusieurs lignes.
-        if today.day < effective_day:
+    async def _maybe_push(self, item: RecurringItem, today: date, cycle_start: date) -> bool:
+        """Pousse la notif si la récurrente est due dans le cycle (ou en retard).
+
+        L'échéance est projetée dans le cycle courant (`next_recurring_occurrence`) :
+        une récurrente « le 5 » sur un cycle démarré le 28/04 est due le
+        05/05. Le rappel part à partir de l'échéance et tous les jours
+        suivants jusqu'au pointage ; `is_recurring_ticked_in_cycle` garantit
+        qu'on n'écrit pas plusieurs lignes.
+        """
+        due = next_recurring_occurrence(item.day, cycle_start)
+        if today < due:
             return False
-        if await self._expenses.is_recurring_ticked_this_month(item.key, today):
+        if await self._expenses.is_recurring_ticked_in_cycle(item.key, today):
             return False
 
-        text = _format_question(item, today)
+        text = _format_question(item, due, today)
         await self._notifications.add(
             text=text,
             title="💸 Récurrente",
             priority=0,
             sound="pushover",
         )
-        log.info("finance_reminder_pushed", key=item.key, day=effective_day)
+        log.info("finance_reminder_pushed", key=item.key, due=due.isoformat())
         return True
 
 
-def _clamp_day_to_month(day: int, month: date) -> int:
-    last = _calendar.monthrange(month.year, month.month)[1]
-    return min(day, last)
-
-
-def _format_question(item: RecurringItem, today: date) -> str:
-    effective_day = _clamp_day_to_month(item.day, today)
-    overdue = " (en retard)" if today.day > effective_day else ""
+def _format_question(item: RecurringItem, due: date, today: date) -> str:
+    overdue = " (en retard)" if today > due else ""
     amount = _format_amount_eur(item.amount_cents)
     verb = "versé" if item.kind == "saving" else "passé"
     return (
-        f"{item.label} ({amount}, prévu le {effective_day}){overdue} — "
-        f"déjà {verb} ce mois ? Réponds « {item.label.lower()} est {verb} » pour confirmer."
+        f"{item.label} ({amount}, prévu le {due.day}){overdue} — "
+        f"déjà {verb} ce cycle ? Réponds « {item.label.lower()} est {verb} » pour confirmer."
     )
 
 
