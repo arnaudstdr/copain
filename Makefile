@@ -27,13 +27,13 @@ format:
 typecheck:
 	$(VENV)/bin/mypy bot
 
-docker-build:
-	docker compose build
+build:
+	docker compose build --no-cache
 
-docker-up:
+up:
 	docker compose up -d
 
-docker-down:
+down:
 	docker compose down
 
 clean:
