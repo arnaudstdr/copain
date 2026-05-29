@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
-from bot.pipeline import _normalize_fr_time_words, _parse_due
+from datetime import datetime
+from zoneinfo import ZoneInfo
+
+from bot.pipeline import _normalize_fr_time_words, _parse_due, _parse_when_to_date
 
 
 def test_normalize_midi_and_minuit() -> None:
@@ -56,3 +59,21 @@ def test_parse_due_handles_hour_with_minutes() -> None:
     assert result is not None
     assert result.hour == 7
     assert result.minute == 30
+
+
+def test_parse_when_to_date_prefers_past() -> None:
+    """Une saisie financière ne doit jamais être projetée dans le futur.
+
+    Régression du bug d'ancre de cycle en 2027 : « le 29 » un 29 du mois
+    était poussé à l'année suivante par la préférence futur.
+    """
+    tz = ZoneInfo("Europe/Paris")
+    today = datetime.now(tz).date()
+    for day in (1, 5, 15, 28):
+        resolved = _parse_when_to_date(f"le {day}", "Europe/Paris")
+        assert resolved <= today
+
+
+def test_parse_when_to_date_defaults_to_today_when_empty() -> None:
+    tz = ZoneInfo("Europe/Paris")
+    assert _parse_when_to_date(None, "Europe/Paris") == datetime.now(tz).date()

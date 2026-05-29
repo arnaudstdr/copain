@@ -421,11 +421,17 @@ async def _safe_pending_recurring(deps: BotDeps) -> Sequence[PendingRecurring]:
 
 
 def _parse_when_to_date(when_str: str | None, tz_name: str) -> date:
-    """Parse une expression FR ('hier', 'le 5') en `date`, défaut = aujourd'hui."""
+    """Parse une expression FR ('hier', 'le 5') en `date`, défaut = aujourd'hui.
+
+    Préférence **passé** : une saisie financière (dépense, revenu, salaire,
+    pointage) décrit toujours un événement déjà survenu. Sans ça, une date
+    comme « le 29 » un 29 du mois serait poussée à l'année suivante par la
+    préférence futur (bug d'ancre de cycle en 2027).
+    """
     tz = ZoneInfo(tz_name)
     if not when_str:
         return datetime.now(tz).date()
-    parsed = _parse_due(when_str, tz_name)
+    parsed = _parse_due(when_str, tz_name, prefer="past")
     if parsed is None:
         return datetime.now(tz).date()
     return parsed.astimezone(tz).date()
@@ -871,12 +877,15 @@ def _parse_range(range_str: str | None, tz: ZoneInfo) -> tuple[datetime, datetim
     return start, start + timedelta(days=1)
 
 
-def _parse_due(due_str: str | None, tz_name: str) -> datetime | None:
+def _parse_due(due_str: str | None, tz_name: str, prefer: str = "future") -> datetime | None:
     """Parse une expression FR et retourne un datetime aware dans la timezone voulue.
 
     Sans `TIMEZONE` + `RETURN_AS_TIMEZONE_AWARE`, dateparser renvoie un datetime
     naïf, qu'APScheduler interprète en UTC → décalage en prod (le container est
     souvent en UTC).
+
+    `prefer` pilote `PREFER_DATES_FROM` : "future" pour les tâches/RDV (par
+    défaut), "past" pour les saisies financières (cf. `_parse_when_to_date`).
 
     dateparser FR ne reconnaît pas « midi » / « minuit » : on les pré-normalise.
     """
@@ -887,7 +896,7 @@ def _parse_due(due_str: str | None, tz_name: str) -> datetime | None:
         normalized,
         languages=["fr"],
         settings={
-            "PREFER_DATES_FROM": "future",
+            "PREFER_DATES_FROM": prefer,
             "TIMEZONE": tz_name,
             "RETURN_AS_TIMEZONE_AWARE": True,
         },
