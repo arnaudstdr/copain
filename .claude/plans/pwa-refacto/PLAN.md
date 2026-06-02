@@ -1,7 +1,7 @@
 # Plan : Refactoring de la PWA en fichiers séparés
 
 > **Réf :** [SPEC.md](./SPEC.md)
-> **Statut global :** in progress (steps 01-02 done)
+> **Statut global :** in progress (steps 01-03 done)
 
 ## Index des steps
 
@@ -9,7 +9,7 @@
 |----|---------------------------------------------------|---------|-----------|--------------------------------------------------------------------|
 | 01 | Extraire le CSS (styles/)                         | ✅ done | —         | [steps/01-extraire-css.md](./steps/01-extraire-css.md)             |
 | 02 | Basculer le JS en module ES6 (legacy.js + main.js)| ✅ done | 01        | [steps/02-bascule-modules.md](./steps/02-bascule-modules.md)       |
-| 03 | Extraire state.js, ui.js et api.js                | ⬜ todo | 02        | [steps/03-state-ui-api.md](./steps/03-state-ui-api.md)             |
+| 03 | Extraire state.js, ui.js et api.js                | ✅ done | 02        | [steps/03-state-ui-api.md](./steps/03-state-ui-api.md)             |
 | 04 | Extraire markdown.js et dashboard.js              | ⬜ todo | 03        | [steps/04-markdown-dashboard.md](./steps/04-markdown-dashboard.md) |
 | 05 | Extraire overlays.js, composer.js et chat.js      | ⬜ todo | 04        | [steps/05-overlays-composer-chat.md](./steps/05-overlays-composer-chat.md) |
 | 06 | Documentation et checklist iPhone complète        | ⬜ todo | 05        | [steps/06-doc-et-checklist.md](./steps/06-doc-et-checklist.md)     |

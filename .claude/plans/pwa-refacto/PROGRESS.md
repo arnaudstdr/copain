@@ -20,7 +20,14 @@
 
 ## Décisions d'archi raffinées
 
-- _(vide pour l'instant)_
+- **État partagé (state.js)** : exports nommés à bindings vivants pour les
+  lectures ; toute réassignation passe par un setter (`setLoadingFlag`,
+  `setAttachment`, …). Les objets mutés en place (`chatHistory`,
+  `newsState`) sont `const` sans setter. Les steps 04-05 doivent suivre ce
+  pattern (jamais de réassignation directe d'un binding importé).
+- **Cycle d'import temporaire `ui.js → legacy.js`** (renderMarkdown pour
+  showEphemeral) : bénin (fonctions hoistées). À résorber au step 04 en le
+  basculant vers `markdown.js` (cycle résiduel ui ↔ markdown accepté).
 
 ## Dette technique acceptée
 
@@ -56,7 +63,12 @@
 
 ### Step 03 — Extraire state.js, ui.js et api.js
 
-- _(à remplir à la fin du step)_
+- 3 modules créés (state 30 l., ui 138 l., api 65 l.) ; legacy.js
+  1 490 → 1 268 l. ; main.js prend le boot + `setupAppHeight`.
+- Timers toast/éphémère internes à ui.js (pas dans state.js).
+- `index.html` : `main.js?v=2` (CSS inchangés à v=1).
+- Validation : diff normalisé audité + smoke test import (DOM stubé) +
+  `node --check` (mode module) + 485 tests Python verts + ruff OK.
 
 ### Step 04 — Extraire markdown.js et dashboard.js
 
