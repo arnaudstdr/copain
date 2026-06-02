@@ -54,4 +54,47 @@ composer input/photo/micro, mode chat) ; `legacy.js` disparaît.
 
 ## Execution notes
 
-_(à remplir pendant le step)_
+**Fait :**
+
+- `js/overlays.js` (361 l.) : les 4 overlays (notifs, tâches, météo, évents)
+  avec renderers, `attachSwipe`, `completeTask`/`deleteTask`,
+  `formatTaskDue`, `weatherIconName`. `isAllDayEvent` reste dans `ui.js`
+  (déjà déplacé au step 04, partagé avec dashboard.js) — importé.
+- `js/composer.js` (146 l.) : `send`/`handleAskResponse`/`actionToast`,
+  photo (`handleFileChange`/`removeAttachment`), micro (les deux toggles +
+  `_toggleMic`), état des boutons d'envoi (`setLoading`, `canSend`,
+  `canChatSend`, `updateSendBtn`, `updateChatSendBtn`, `handleKey`,
+  `autoResize`).
+- `js/chat.js` (181 l.) : open/close, `renderChatFeed`/`makeChatRow`,
+  pièce jointe chat, `chatSend` (SSE live bubble), `handleChatKey`.
+  Importe `setLoading`/`autoResize`/`updateChatSendBtn` depuis composer.js
+  (sens unique, pas de cycle).
+- `js/main.js` (123 l.) : récupère `renderGreeting` (boot) et
+  `bindStaticHandlers` (câblage du DOM statique, déplacé tel quel avec
+  imports explicites). **`legacy.js` supprimé.**
+- `dashboard.js` : import `openWeather`/`openEvents`/`openTasks` basculé
+  de legacy.js vers overlays.js.
+- `index.html` : `main.js?v=4`.
+
+**Écarts par rapport au plan du step :**
+
+- `triggerAsk` **supprimé** (au lieu d'être déplacé) : code mort confirmé
+  (aucun appelant), repéré au step 04.
+- `recognition` reste **local à composer.js** (le step file suggérait
+  state.js) : les deux toggles micro vivant dans composer.js, aucun autre
+  module n'y accède — state.js reste réservé à l'état multi-modules.
+- Le cycle dashboard ↔ overlays **subsiste** (le PROGRESS du step 04
+  prévoyait « sans cycle ») : overlays.js a besoin de
+  `loadDashboard`/`renderBellBadge`. Même nature bénigne que ui ↔ markdown
+  (fonctions hoistées, appels au runtime).
+
+**Fichiers touchés :** `bot/static/js/{overlays,composer,chat}.js` (créés),
+`bot/static/js/legacy.js` (supprimé), `bot/static/js/main.js` (réécrit),
+`bot/static/js/dashboard.js` (import), `bot/static/index.html` (`?v=4`).
+
+**Validation :** diff normalisé (origine legacy+main vs nouveaux modules :
+seules les 5 lignes de triggerAsk diffèrent) + `node --check` mode module
+sur les 9 fichiers + smoke test import du graphe complet (DOM stubé,
+`bindStaticHandlers` exécuté) + 485 tests Python verts + ruff check/format
+OK. Checklist manuelle ciblée à dérouler (4 overlays + swipe + micro +
+photo + chat streamé).

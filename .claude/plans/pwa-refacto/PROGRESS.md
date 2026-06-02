@@ -32,8 +32,20 @@
   importent `openWeather`/`openEvents`/`openTasks` depuis `legacy.js`.
   À résorber au step 05 quand ces fonctions partent dans `overlays.js`
   (dashboard.js importera alors overlays.js, sans cycle).
+- **Correction (step 05)** : la prévision « sans cycle » ci-dessus était
+  fausse — overlays.js a besoin de `loadDashboard`/`renderBellBadge`. Le
+  cycle `dashboard ↔ overlays` est **accepté** (même nature bénigne que
+  ui ↔ markdown : fonctions hoistées, appels au runtime).
 - **`isAllDayEvent` vit dans `ui.js`** (helpers date, exporté) : partagé
   entre eventCard (dashboard.js) et makeEventItem (futur overlays.js).
+- **Convention de binding (step 05)** : le câblage du DOM **statique** est
+  centralisé dans `main.js` (`bindStaticHandlers`, imports explicites) ;
+  les listeners du DOM **dynamique** (cards, rows) restent dans les
+  renderers des modules.
+- **Helpers composer → chat à sens unique** : chat.js importe `setLoading`,
+  `autoResize`, `updateChatSendBtn` depuis composer.js, jamais l'inverse.
+  `recognition` (micro) est local à composer.js — state.js reste réservé à
+  l'état réellement multi-modules.
 
 ## Dette technique acceptée
 
@@ -89,7 +101,15 @@
 
 ### Step 05 — Extraire overlays.js, composer.js et chat.js
 
-- _(à remplir à la fin du step)_
+- 3 modules créés (overlays 361 l., composer 146 l., chat 181 l.) ;
+  **legacy.js supprimé** ; main.js récupère renderGreeting +
+  bindStaticHandlers (123 l.).
+- `triggerAsk` supprimé (code mort confirmé, repéré au step 04).
+- Cycle dashboard ↔ overlays accepté (correction de la prévision step 04) ;
+  helpers composer → chat à sens unique ; `recognition` local à composer.js.
+- `index.html` : `main.js?v=4`.
+- Validation : diff normalisé (seul triggerAsk diffère) + smoke test import
+  + `node --check` ×9 + 485 tests Python verts + ruff OK.
 
 ### Step 06 — Documentation et checklist iPhone complète
 

@@ -10,10 +10,10 @@ import {
   showToast,
 } from "./ui.js";
 import { openMarkdownView } from "./markdown.js";
-// Import temporaire depuis legacy.js : les overlays (openWeather, openEvents,
-// openTasks) déménagent dans overlays.js au step 05. Le cycle
-// dashboard ↔ legacy est bénin — fonctions hoistées, appelées au runtime.
-import { openWeather, openEvents, openTasks } from "./legacy.js";
+// Cycle d'import dashboard ↔ overlays accepté (cf. PROGRESS.md) : les cards
+// tappables ouvrent les overlays, et les overlays rafraîchissent le
+// dashboard à la fermeture. Bénin : fonctions hoistées, appelées au runtime.
+import { openWeather, openEvents, openTasks } from "./overlays.js";
 
 // ── Dashboard ─────────────────────────────────────────────────────────────
 export async function loadDashboard() {
