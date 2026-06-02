@@ -581,6 +581,17 @@ async def test_location_event_rejects_invalid_event_value(client: AsyncClient) -
     assert response.status_code == 422
 
 
+async def test_location_event_rejects_out_of_range_coords(client: AsyncClient) -> None:
+    """lat hors [-90, 90] ou lon hors [-180, 180] → 422."""
+    for coords in ({"lat": 91.0, "lon": 7.45}, {"lat": 48.26, "lon": -181.0}):
+        response = await client.post(
+            "/event/location",
+            headers={"X-API-Key": API_KEY},
+            json={"event": "arrived", "place": "home", **coords},
+        )
+        assert response.status_code == 422
+
+
 async def test_location_event_records_and_returns_current_place(
     client: AsyncClient, state: AppState
 ) -> None:

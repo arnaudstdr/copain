@@ -144,8 +144,8 @@ class DashboardResponse(BaseModel):
 class LocationEventRequest(BaseModel):
     event: Literal["arrived", "left"]
     place: str = Field(min_length=1, max_length=50)
-    lat: float | None = None
-    lon: float | None = None
+    lat: float | None = Field(default=None, ge=-90, le=90)
+    lon: float | None = Field(default=None, ge=-180, le=180)
     at: str | None = Field(
         default=None,
         description="Timestamp ISO 8601 du moment réel de la transition côté iPhone. "
