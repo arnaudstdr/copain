@@ -129,10 +129,15 @@ class _RouteOutcome:
       résumé à partir de ces résultats (variante streamée ou non) ;
     - sinon `replacement` porte l'éventuel texte final d'un handler Python
       (None = l'intro du LLM reste le texte final).
+
+    `loop_size` est orthogonal aux deux branches : taille de la boucle de
+    rumination rejointe par un dépôt (None sinon), suffixée à l'accusé par
+    template (décision D3 — jamais par second appel LLM).
     """
 
     search_results: list[SearchResult] | None = None
     replacement: str | None = None
+    loop_size: int | None = None
 
 
 async def process_message(
@@ -172,6 +177,8 @@ async def process_message(
         text = await deps.llm.call_with_search(user_text, outcome.search_results)
     elif outcome.replacement is not None:
         text = outcome.replacement
+    if outcome.loop_size is not None:
+        text += _loop_suffix(outcome.loop_size)
 
     history_user = user_text if user_text else "(image envoyée)"
     if images:
@@ -240,6 +247,11 @@ async def process_message_stream(
     elif outcome.replacement is not None:
         text = outcome.replacement
         yield {"type": "replace", "text": text}
+    if outcome.loop_size is not None:
+        # Suffixe boucle : frame delta supplémentaire après l'accusé (D3).
+        suffix = _loop_suffix(outcome.loop_size)
+        text += suffix
+        yield {"type": "delta", "text": suffix}
 
     _record_history(deps, user_text, text)
 
@@ -267,13 +279,18 @@ async def _route_and_apply(user_text: str, meta: Meta, deps: BotDeps, intro: str
     l'orchestrateur produire le résumé via le second appel LLM ; pour les
     autres intents, délègue aux handlers Python qui peuvent remplacer l'intro.
     """
-    await apply_side_effects(user_text, meta, deps)
+    effects = await apply_side_effects(user_text, meta, deps)
     if meta["intent"] == "search" and meta["search_query"]:
         results = await deps.search.search(meta["search_query"])
         log.info("search_performed", query=meta["search_query"], hits=len(results))
-        return _RouteOutcome(search_results=results)
+        return _RouteOutcome(search_results=results, loop_size=effects.loop_size)
     replacement = await run_intent_handler(user_text, meta, deps, intro=intro)
-    return _RouteOutcome(replacement=replacement)
+    return _RouteOutcome(replacement=replacement, loop_size=effects.loop_size)
+
+
+def _loop_suffix(loop_size: int) -> str:
+    """Suffixe template de l'accusé quand le dépôt rejoint une boucle (≥ 3 membres)."""
+    return f" — {loop_size}e fois que ça revient."
 
 
 def _record_history(deps: BotDeps, user_entry: str, assistant_text: str) -> None:

@@ -294,6 +294,7 @@ _REFRESH_BY_INTENT: dict[str, list[str]] = {
     "task": ["today_tasks", "unread_notifications"],
     "event": ["next_event"],
     "expense": ["budget"],
+    "depot": ["foryou"],
 }
 
 
@@ -304,6 +305,7 @@ def _refresh_cards_for(meta: Meta) -> list[str]:
       la card notifications peut aussi changer (on rafraîchit les deux).
     - `intent=event` avec `action=create` → la card prochain évent change.
       `action=list` n'altère rien (lecture pure).
+    - `intent=depot` → la card « Pour toi » peut gagner un candidat (boucle).
     - Autres intents → aucune card concernée, retour vide.
     """
     if meta["intent"] == "event":

@@ -8,12 +8,14 @@ de réponse vient ensuite. `BotDeps` n'est importé que sous TYPE_CHECKING
 
 from __future__ import annotations
 
-from datetime import datetime
+from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING
 from zoneinfo import ZoneInfo
 
 from bot.logging_conf import get_logger
 from bot.pipeline.dates import parse_due, parse_when_to_date
+from bot.thoughts.restitution import LOOP_WINDOW_DAYS, is_loop
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -21,26 +23,39 @@ if TYPE_CHECKING:
     from bot.finance.budget import PendingRecurring
     from bot.llm.parser import Meta
     from bot.pipeline.core import BotDeps
+    from bot.thoughts.models import Thought
 
 log = get_logger(__name__)
+
+
+@dataclass(frozen=True, slots=True)
+class SideEffectsOutcome:
+    """Issue des side effects, consommée par les orchestrateurs de `core`.
+
+    - `loop_size` : taille de la boucle de rumination que le dépôt vient de
+      rejoindre (nouveau dépôt inclus), ou None si pas de boucle / pas un
+      dépôt. Sert à suffixer l'accusé par template (décision D3 du SPEC).
+    """
+
+    loop_size: int | None = None
 
 
 async def apply_side_effects(
     user_text: str,
     meta: Meta,
     deps: BotDeps,
-) -> None:
+) -> SideEffectsOutcome:
     # Cas saisie financière : revenu, dépense ponctuelle ou pointage d'une
     # récurrente connue. On NE déclenche pas non plus le store_memory
     # générique (la valeur d'usage est dans la table `expenses`, pas dans
     # la mémoire sémantique).
     if meta["intent"] == "expense" and meta["expense"]["action"]:
         await handle_expense_side_effect(meta, deps)
-        return
+        return SideEffectsOutcome()
 
     # Cas dépôt cognitif : on persiste dans la table `thoughts` (listing
     # chronologique, état) et on indexe en parallèle dans ChromaDB avec
-    # le tag `kind=depot` (préparation à la future détection de boucles).
+    # le tag `kind=depot` (détection de boucles ci-dessous).
     # On NE déclenche PAS le store_memory générique sur ce chemin : un
     # dépôt n'est pas un fait stable à apprendre sur l'utilisateur.
     if meta["intent"] == "depot" and meta["depot"]["content"]:
@@ -54,6 +69,7 @@ async def apply_side_effects(
             kind=thought.kind,
             preview=thought.content[:80],
         )
+        loop_size: int | None = None
         try:
             await deps.memory.store_depot(
                 content=thought.content,
@@ -62,8 +78,11 @@ async def apply_side_effects(
             )
         except Exception as exc:
             # SQLite est la source de vérité, ChromaDB est best-effort.
+            # Sans indexation, pas de recherche de similarité possible.
             log.warning("depot_chroma_indexing_failed", error=str(exc))
-        return
+        else:
+            loop_size = await _detect_depot_loop(thought, deps)
+        return SideEffectsOutcome(loop_size=loop_size)
 
     if meta["store_memory"] and meta["memory_content"]:
         await deps.memory.store(
@@ -86,6 +105,48 @@ async def apply_side_effects(
                 due_at=due_dt,
                 content=task.content,
             )
+    return SideEffectsOutcome()
+
+
+async def _detect_depot_loop(thought: Thought, deps: BotDeps) -> int | None:
+    """Détecte si le dépôt fraîchement indexé rejoint une boucle de rumination.
+
+    Fail-soft intégral : aucune exception de la similarité ChromaDB ou du
+    rechargement SQLite ne doit casser l'accusé de réception. La vérité
+    d'état (existence, `created_at`) est SQLite : un match ChromaDB dont le
+    `thought_id` n'y figure plus est un orphelin, ignoré avec un log debug.
+    """
+    try:
+        matches = await deps.memory.find_similar_depots(
+            thought.content,
+            top_k=8,
+            max_distance=deps.settings.foryou_similarity_max_distance,
+        )
+        if not matches:
+            return None
+        now = datetime.now(UTC)
+        # Dates SQLite naïves UTC : borne `since` naïve pour la requête,
+        # réattache UTC sur les `created_at` pour la fenêtre d'`is_loop`.
+        since = (now - timedelta(days=LOOP_WINDOW_DAYS)).replace(tzinfo=None)
+        neighbours = await deps.thoughts.list_since(since)
+        member_created_ats = {
+            t.id: t.created_at.replace(tzinfo=UTC) for t in neighbours if t.id != thought.id
+        }
+        for match in matches:
+            if match.thought_id != thought.id and match.thought_id not in member_created_ats:
+                log.debug("depot_match_orphan_sqlite", thought_id=match.thought_id)
+        loop_size = is_loop(
+            matches,
+            new_thought_id=thought.id,
+            member_created_ats=member_created_ats,
+            now=now,
+        )
+        if loop_size is not None:
+            log.info("depot_loop_detected", thought_id=thought.id, loop_size=loop_size)
+        return loop_size
+    except Exception as exc:
+        log.warning("depot_loop_detection_failed", error=str(exc))
+        return None
 
 
 async def handle_expense_side_effect(meta: Meta, deps: BotDeps) -> None:
