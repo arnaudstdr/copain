@@ -2,8 +2,8 @@
 
 API publique du package — les consommateurs (`bot.api`, `bot.main`,
 `bot.dashboard`, tests) importent depuis `bot.pipeline` directement.
-Le détail vit dans les sous-modules (`core`, `dates`, `handlers`, et à
-venir : `side_effects` — cf. .claude/plans/pipeline-refacto/SPEC.md).
+Le détail vit dans les sous-modules (`core`, `dates`, `handlers`,
+`side_effects`).
 """
 
 from bot.pipeline.core import (
