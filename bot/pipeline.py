@@ -8,6 +8,7 @@ consommée par `GET /notifications` côté client iOS.
 
 from __future__ import annotations
 
+import calendar as _calendar
 import re
 from collections import deque
 from collections.abc import AsyncIterator, Sequence
@@ -537,14 +538,27 @@ def _parse_when_to_date(when_str: str | None, tz_name: str) -> date:
     pointage) décrit toujours un événement déjà survenu. Sans ça, une date
     comme « le 29 » un 29 du mois serait poussée à l'année suivante par la
     préférence futur (bug d'ancre de cycle en 2027).
+
+    dateparser (1.4) ignore `PREFER_DATES_FROM="past"` pour les expressions
+    jour-du-mois (« le 5 » résout toujours au 5 du mois courant, même futur) :
+    on recule donc manuellement d'un mois toute date résolue dans le futur,
+    en clampant le jour à la fin du mois cible (« le 31 » → 30/04, etc.).
     """
     tz = ZoneInfo(tz_name)
+    today = datetime.now(tz).date()
     if not when_str:
-        return datetime.now(tz).date()
+        return today
     parsed = _parse_due(when_str, tz_name, prefer="past")
     if parsed is None:
-        return datetime.now(tz).date()
-    return parsed.astimezone(tz).date()
+        return today
+    resolved = parsed.astimezone(tz).date()
+    if resolved > today:
+        year, month = (
+            (resolved.year, resolved.month - 1) if resolved.month > 1 else (resolved.year - 1, 12)
+        )
+        last_day = _calendar.monthrange(year, month)[1]
+        resolved = date(year, month, min(resolved.day, last_day))
+    return resolved
 
 
 async def _handle_feed(user_text: str, meta: Meta, deps: BotDeps, intro: str) -> str:

@@ -74,6 +74,23 @@ def test_parse_when_to_date_prefers_past() -> None:
         assert resolved <= today
 
 
+def test_parse_when_to_date_keeps_requested_day_in_previous_month() -> None:
+    """« le N » résolu dans le futur recule d'un mois en conservant le jour.
+
+    dateparser ignore PREFER_DATES_FROM="past" pour les jours du mois : le
+    recul est fait manuellement par `_parse_when_to_date`. Le jour demandé
+    doit être conservé (modulo clamp fin de mois) et la date rester à moins
+    d'un mois dans le passé.
+    """
+    tz = ZoneInfo("Europe/Paris")
+    today = datetime.now(tz).date()
+    for day in (1, 5, 15, 28):
+        resolved = _parse_when_to_date(f"le {day}", "Europe/Paris")
+        assert resolved <= today
+        assert resolved.day == day
+        assert (today - resolved).days < 32
+
+
 def test_parse_when_to_date_defaults_to_today_when_empty() -> None:
     tz = ZoneInfo("Europe/Paris")
     assert _parse_when_to_date(None, "Europe/Paris") == datetime.now(tz).date()
