@@ -28,7 +28,6 @@ from typing import TYPE_CHECKING, Literal
 from zoneinfo import ZoneInfo
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request, status
-from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
@@ -388,13 +387,12 @@ def create_app(state: AppState) -> FastAPI:
     )
     app.state.copain = state
 
-    app.add_middleware(
-        CORSMiddleware,
-        allow_origins=["*"],
-        allow_methods=["*"],
-        allow_headers=["*"],
-    )
-
+    # Pas de middleware CORS, volontairement : la PWA est servie par cette
+    # même app (`API_BASE = ""` → appels same-origin) et les clients non
+    # navigateur (Shortcuts iOS, Siri) ne sont pas soumis à CORS. Un wildcard
+    # `allow_origins=["*"]` permettrait à n'importe quelle page web ouverte
+    # sur un appareil du Tailnet de lire `GET /config` (et donc l'API key)
+    # via un fetch cross-origin.
     app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
     @app.get("/", response_class=FileResponse, include_in_schema=False)
