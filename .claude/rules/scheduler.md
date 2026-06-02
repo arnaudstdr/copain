@@ -1,11 +1,11 @@
 ---
 paths:
   - "bot/tasks/scheduler.py"
-  - "bot/briefing/**"
+  - "bot/finance/cron.py"
   - "bot/proactivity/**"
 ---
 
-# Scheduler, briefing and proactivity
+# Scheduler, finance reminder and proactivity
 
 ## APScheduler — two jobstores
 
@@ -19,9 +19,10 @@ paths:
   primitives. Jobs persisted before the Pushover migration use default empty
   values for token/user (= no push, silent backwards compat).
 - **`memory` (MemoryJobStore)** — recurring jobs whose function is a
-  non-serialisable closure (e.g. briefing, proactivity tick). They are
-  re-scheduled at startup via:
-  - `add_cron_job(job_id, func, hour, minute)` for daily cron jobs (briefing).
+  non-serialisable closure (e.g. finance reminder, proactivity tick). They
+  are re-scheduled at startup via:
+  - `add_cron_job(job_id, func, hour, minute)` for daily cron jobs
+    (finance reminder).
   - `add_interval_job(job_id, func, minutes)` for "every N minutes" jobs
     (proactivity tick).
 
@@ -33,17 +34,21 @@ closures into `default` — they will fail to re-hydrate after a restart.
 An `EVENT_JOB_ERROR` listener (`_on_job_error`) logs any job exception
 (`job_error job_id=… error=…`) and forwards it to Sentry via
 `sentry_setup.capture_exception(exc, source="apscheduler", job_id=…)`.
-Covers reminders, briefing, proactivity tick — no wrapping `try/except`
-needed in the job bodies.
+Covers reminders, finance reminder, proactivity tick — no wrapping
+`try/except` needed in the job bodies.
 
-## Briefing
+## Finance reminder
 
-`BriefingService.send_daily` runs as a cron job at `BRIEFING_HOUR:BRIEFING_MINUTE`
-and aggregates: local weather (Open-Meteo), today's tasks, today's events
-(iCloud), top 5 RSS summaries. The final string is enqueued via
-`NotificationStore.add(text, title="☀️ Briefing du jour", priority=0, sound="morning")`.
-The closure is registered in the `memory` jobstore at startup
-(`bot/main.py::_build_state`).
+`FinanceReminderJob.run` (`bot/finance/cron.py`) runs as a daily cron job
+at `FINANCE_REMINDER_HOUR:FINANCE_REMINDER_MINUTE`. For each recurring item
+of the YAML profile due in the current budget cycle and not yet ticked
+(`is_recurring_ticked_in_cycle`), it enqueues a question via
+`NotificationStore.add(..., title="💸 Récurrente")`. The closure is
+registered in the `memory` jobstore at startup (`bot/main.py`).
+
+The historical morning briefing (`BriefingService`) was intentionally
+removed (no unsolicited pushes); `bot/weather/` only hosts the Open-Meteo
+client today.
 
 ## NotificationStore — double canal
 
@@ -72,7 +77,7 @@ Pushover priorities used:
 - Rain alert: `priority=0`, `sound="rain"`, `title="🌧️ Alerte pluie"`
 - Event reminder: `priority=1` (bypasses silent mode), `sound="magic"`, `title="📅 Rappel RDV"`
 - Task reminder: `priority=1`, `sound="pushover"`, `title="Rappel"`
-- Briefing: `priority=0`, `sound="morning"`, `title="☀️ Briefing du jour"`
+- Finance reminder: `priority=0`, `sound="pushover"`, `title="💸 Récurrente"`
 
 Five safeguards to preserve when editing `tick` or the rules:
 

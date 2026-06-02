@@ -19,6 +19,7 @@ copain/
 ├── Makefile                     # install/run/test/lint/typecheck/docker-*
 ├── requirements.txt
 ├── requirements-dev.txt
+├── requirements.lock            # pip freeze de référence (traçabilité)
 ├── pyproject.toml               # ruff + mypy + pytest config
 ├── .pre-commit-config.yaml
 │
@@ -26,7 +27,9 @@ copain/
 │   ├── __init__.py
 │   ├── main.py                  # entrypoint: build deps + launch uvicorn
 │   ├── api.py                   # FastAPI app + endpoints + verify_api_key dep
-│   ├── pipeline.py              # process_message + _handle_* (transport-agnostic)
+│   ├── pipeline.py              # process_message(+_stream) + _handle_* (transport-agnostic)
+│   ├── dashboard.py             # build_dashboard() : agrégation cards PWA
+│   ├── profile.py               # UserProfile : chargement YAML data/profile.yaml
 │   ├── config.py                # Settings dataclass + load_settings()
 │   ├── logging_conf.py          # structlog setup
 │   ├── sentry_setup.py          # opt-in Sentry init + capture_exception helper
@@ -64,50 +67,58 @@ copain/
 │   │   ├── models.py            # CalendarEvent dataclass
 │   │   └── client.py            # ICloudCalendarClient (connect + fuzzy match)
 │   │
-│   ├── briefing/
-│   │   ├── weather.py           # OpenMeteoClient + HourlyPrecipitation + FR codes
-│   │   └── service.py           # BriefingService (aggregates + cron)
+│   ├── weather/
+│   │   └── client.py            # OpenMeteoClient + HourlyPrecipitation + FR codes
 │   │
 │   ├── fuel/
 │   │   ├── models.py            # FuelType + FuelStation + GeoPoint + FR synonyms
 │   │   ├── client.py            # FuelClient (data.economie.gouv.fr ODS v2.1)
 │   │   └── geocoding.py         # NominatimClient (OSM FR + in-memory cache)
 │   │
+│   ├── finance/
+│   │   ├── models.py            # Expense + BudgetCycle (shares Base with tasks)
+│   │   ├── manager.py           # ExpenseManager (add_* + tick_recurring_once + cycles)
+│   │   ├── budget.py            # compute_budget + PendingRecurring (pure)
+│   │   ├── config.py            # FinanceConfig : récurrentes lues du YAML profil
+│   │   ├── csv_export.py        # build_expenses_csv (locale FR)
+│   │   └── cron.py              # FinanceReminderJob (rappel quotidien récurrentes)
+│   │
+│   ├── thoughts/
+│   │   ├── models.py            # Thought (intent depot — shares Base with tasks)
+│   │   └── manager.py           # ThoughtManager (create / list_recent / list_since)
+│   │
+│   ├── locations/
+│   │   ├── models.py            # LocationEvent (shares Base with tasks)
+│   │   ├── store.py             # LocationEventStore (record_event + current location)
+│   │   └── presence.py          # dérivation de la position courante
+│   │
+│   ├── news/
+│   │   └── client.py            # NewsCurator (SearXNG news + curation LLM)
+│   │
+│   ├── static/                  # PWA vanilla JS (index.html servi à /)
+│   │
 │   └── proactivity/
 │       ├── models.py            # NotificationLog (shares Base with tasks)
 │       ├── rules.py             # evaluate_rain + evaluate_upcoming_event (pure)
-│       └── service.py           # ProactivityService.tick + safeguards
+│       └── service.py           # ProactivityService.tick + on_location_event + safeguards
 │
 ├── data/                        # persisted Docker volume
 │   ├── chroma/
-│   ├── tasks.db                 # SQLite : tasks + feeds + notification_logs + pending_notifications
+│   ├── profile.yaml             # profil utilisateur YAML (édité à la main)
+│   ├── tasks.db                 # SQLite : tasks + feeds + notification_logs +
+│   │                            #   pending_notifications + thoughts + expenses +
+│   │                            #   budget_cycles + location_events
 │   └── scheduler.db             # persisted APScheduler jobs
 │
 └── tests/                       # pytest-asyncio, everything mocked (no external I/O)
     ├── conftest.py
-    ├── test_api.py
-    ├── test_briefing.py
-    ├── test_cache.py
-    ├── test_calendar.py
-    ├── test_config.py
-    ├── test_embedder.py
-    ├── test_feeds.py
-    ├── test_fuel_client.py
-    ├── test_http_retry.py
-    ├── test_llm_client.py
-    ├── test_logging_conf.py
-    ├── test_memory.py
-    ├── test_nominatim.py
-    ├── test_notifications_store.py
-    ├── test_parser.py
-    ├── test_pipeline_dates.py
-    ├── test_pipeline_process.py
-    ├── test_proactivity_models.py
-    ├── test_proactivity_rules.py
-    ├── test_proactivity_service.py
-    ├── test_scheduler_interval.py
-    ├── test_searxng_cache.py
-    ├── test_sentry.py
-    ├── test_tasks.py
-    └── test_weather.py
+    ├── test_api.py / test_dashboard.py
+    ├── test_pipeline_process.py / test_pipeline_stream.py / test_pipeline_dates.py
+    ├── test_parser.py / test_llm_client.py / test_memory.py / test_embedder.py
+    ├── test_finance_{manager,budget,config,cron,csv}.py
+    ├── test_tasks.py / test_thoughts.py / test_feeds.py / test_calendar.py
+    ├── test_weather.py / test_fuel_client.py / test_nominatim.py / test_news_curator.py
+    ├── test_proactivity_{models,rules,service}.py / test_scheduler_interval.py
+    ├── test_notifications_store.py / test_pushover.py / test_location_store.py
+    └── test_cache.py / test_config.py / test_http_retry.py / test_logging_conf.py / …
 ```

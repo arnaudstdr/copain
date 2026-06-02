@@ -46,6 +46,17 @@ pour vider des pensées parasites sans tenter de les traiter.
   `HOME_CITY` (geocoding via OSM Nominatim)
 - **Weather**: via Open-Meteo, supports FR expressions (`demain`, `ce
   weekend`, etc.) up to 16 days
+- **Budget / finances (`intent=expense`)** : saisie en langage naturel des
+  dépenses ponctuelles (`spend`), revenus (`income`, peut ancrer un nouveau
+  cycle budgétaire via `starts_cycle`) et pointages de récurrentes
+  (`tick_recurring`, loyer/PEL définis dans le YAML `finances.recurring`).
+  Le cycle budgétaire est ancré sur la date de perception du salaire (table
+  `budget_cycles`), fallback mois civil. Card Budget sur le dashboard
+  (`compute_budget` : restant prévisionnel = revenus − dépenses −
+  récurrentes non pointées), overlay détail via `GET /budget`, export
+  tableur via `GET /expenses/export.csv`, rappel quotidien des récurrentes
+  dues non pointées via `FinanceReminderJob` (cron APScheduler,
+  `bot/finance/cron.py`).
 - **Opt-in proactivity** (`PROACTIVITY_ENABLED=true`): rain alerts + event
   reminders with five safeguards (feature flag, time window, daily budget,
   dedup, cooldown). Disabled by default.
@@ -106,9 +117,15 @@ FastAPI app (bot/api.py, served by uvicorn)
         │     │                          frames data:{type: delta|replace|done|error, …}
         │     ├── POST /ask/image     → idem avec image (multimodal) → { response, intent, refresh_cards }
         │     ├── GET  /notifications → NotificationStore.get_unread() + mark_read()
-        │     ├── GET  /dashboard     → build_dashboard(): météo + next évent + tâches du jour + count notifs
+        │     ├── GET  /dashboard     → build_dashboard(): météo + next évent + tâches du jour + count notifs + budget
         │     ├── GET  /news/latest   → NewsCurator.fetch_top_news() → { markdown, fetched_at } (card Actu)
         │     ├── GET  /thoughts      → ThoughtManager.list_recent/list_since → liste des dépôts cognitifs
+        │     ├── GET  /tasks         → TaskManager.list_pending() → overlay tâches PWA (cochage)
+        │     ├── POST /tasks/{id}/complete → TaskManager.complete(id)
+        │     ├── GET  /budget        → compute_budget() détaillé (transactions + pending) → overlay Budget
+        │     ├── GET  /expenses/export.csv → build_expenses_csv(from, to) → CSV locale FR
+        │     ├── GET  /weather/forecast → Open-Meteo brut (horaire 24h + 7 jours), lieu selon position courante
+        │     ├── GET  /events        → ICloudCalendarClient.list_all_upcoming(days) → overlay agenda
         │     └── POST /event/location → LocationEventStore.record_event() → { recorded, current_place }
         │
         ├── Pipeline (bot/pipeline.py, transport-agnostic)
@@ -128,8 +145,8 @@ FastAPI app (bot/api.py, served by uvicorn)
         │     └── capture_exception(exc, **context)  → API + APScheduler listeners
         │
         ├── <meta> parser
-        │     └── Intent ∈ {answer, task, search, memory, feed, event, fuel, weather, depot}
-        │         + TaskMeta / FeedMeta / EventMeta / FuelMeta / WeatherMeta / DepotMeta
+        │     └── Intent ∈ {answer, task, search, memory, feed, event, fuel, weather, depot, expense}
+        │         + TaskMeta / FeedMeta / EventMeta / FuelMeta / WeatherMeta / DepotMeta / ExpenseMeta
         │
         ├── Memory Manager (ChromaDB + nomic-embed-text via Ollama)
         │     ├── store()             → embed + persist the memory_content
@@ -169,6 +186,15 @@ FastAPI app (bot/api.py, served by uvicorn)
         │     ├── FuelClient         → data.economie.gouv.fr (ODS v2.1)
         │     └── NominatimClient    → OSM geocoding (FR, in-memory cache)
         │
+        ├── Finance (intent `expense` — bot/finance/)
+        │     ├── ExpenseManager     → tables `expenses` + `budget_cycles` (cycle ancré salaire)
+        │     │     ├── add_punctual / add_income / start_cycle
+        │     │     └── tick_recurring_once (atomique : check + insert sous lock)
+        │     ├── compute_budget     → restant prévisionnel (bot/finance/budget.py, pur)
+        │     ├── FinanceConfig      → récurrentes lues du YAML profil (finances.recurring)
+        │     ├── build_expenses_csv → export CSV locale FR (GET /expenses/export.csv)
+        │     └── FinanceReminderJob → cron quotidien : question Pushover si récurrente due non pointée
+        │
         └── News Curator (card Actu, fetch au tap)
               ├── SearxngClient (categories=news, time_range=day)
               └── LLM (curation + résumé 1-2 lignes par article)
@@ -196,7 +222,7 @@ FastAPI app (bot/api.py, served by uvicorn)
 | Geocoding     | Nominatim OSM (HTTP, no key, in-memory cache)           |
 | Logs          | structlog (console in dev, JSON in prod)                |
 | Container     | Docker + Docker Compose                                 |
-| Tests         | pytest + pytest-asyncio (auto mode, 322 tests)          |
+| Tests         | pytest + pytest-asyncio (auto mode, 460+ tests)         |
 | Quality       | ruff (lint+format) + mypy strict via pre-commit         |
 | Interface web | Vanilla JS PWA, servie par FastAPI à `/`                |
 | Monitoring    | Sentry SDK (opt-in via `SENTRY_DSN`)                    |
@@ -218,7 +244,12 @@ Missing or invalid → 403 with a warning logged (source IP included).
 | GET    | `/dashboard`       | —                                                                 | `{ "weather": …, "next_event": …, "today_tasks": […], "unread_notifications": int }`                    |
 | GET    | `/news/latest`     | —                                                                 | `{ "markdown": str, "fetched_at": str }`                                                                |
 | GET    | `/thoughts`        | `?since=<ISO>&limit=<int>` (optionnels)                           | `{ "thoughts": [ { "id": int, "content": str, "kind": str\|null, "created_at": str } ] }`              |
+| GET    | `/tasks`           | —                                                                 | `{ "tasks": [ { "id": int, "content": str, "due_at": str\|null } ] }` (tâches en cours)                |
+| POST   | `/tasks/{task_id}/complete` | —                                                        | tâche marquée terminée (overlay PWA)                                                                    |
+| GET    | `/budget`          | —                                                                 | détail du cycle courant : transactions + récurrentes pending (overlay Budget)                           |
 | GET    | `/expenses/export.csv` | `?from=YYYY-MM-DD&to=YYYY-MM-DD` (bornes incluses)             | CSV FR (sep `;`, virgule décimale, UTF-8 BOM, dates `JJ/MM/AAAA`) en `attachment`                       |
+| GET    | `/weather/forecast` | `?days=<int>&hours=<int>` (optionnels)                           | prévisions Open-Meteo brutes (horaire + quotidien), lieu selon position courante                        |
+| GET    | `/events`          | `?days=<int>` (optionnel, défaut 7, max 60)                       | `{ "events": […] }` — évents iCloud à venir, tous calendriers                                           |
 | POST   | `/event/location`  | `{ "event": "arrived"\|"left", "place": str, "lat"?, "lon"?, "at"? }` | `{ "recorded": bool, "current_place": str \| null }`                                                |
 
 Quick smoke test:
@@ -239,7 +270,7 @@ On every call, the LLM receives a system prompt whose centrepiece is a
 
 ```json
 {
-  "intent": "answer|task|search|memory|feed|event|fuel|weather|depot",
+  "intent": "answer|task|search|memory|feed|event|fuel|weather|depot|expense",
   "store_memory": true|false,
   "memory_content": "factual summary if store_memory=true, otherwise null",
   "task": {
@@ -273,6 +304,16 @@ On every call, the LLM receives a system prompt whose centrepiece is a
   "depot": {
     "content": "raw thought verbatim if intent=depot, otherwise null",
     "kind": "worry|idea|note if intent=depot, otherwise null"
+  },
+  "expense": {
+    "action": "spend|income|tick_recurring if intent=expense, otherwise null",
+    "amount": "amount in euros (number) if given, otherwise null (tick falls back to the YAML amount)",
+    "label": "short label of the entry, otherwise null",
+    "category": "free category if action=spend, otherwise null",
+    "recurring_key": "YAML key (finances.recurring) if action=tick_recurring, otherwise null",
+    "when": "FR expression ('hier', 'le 5') if mentioned, otherwise null (= today, past-biased)",
+    "shared": "true if paid from the joint account (excluded from personal budget), default false",
+    "starts_cycle": "true when action=income marks the salary reception (anchors a new budget cycle), default false"
   },
   "search_query": "query if intent=search, otherwise null"
 }
@@ -320,4 +361,4 @@ reads files matching the rule's `paths` pattern:
 | `api.md`                | `bot/api.py`, `bot/pipeline.py`, `bot/main.py`                    |
 | `llm.md`                | `bot/llm/**`                                                      |
 | `calendar.md`           | `bot/calendar/**`                                                 |
-| `scheduler.md`          | `bot/tasks/scheduler.py`, `bot/briefing/**`, `bot/proactivity/**` |
+| `scheduler.md`          | `bot/tasks/scheduler.py`, `bot/finance/cron.py`, `bot/proactivity/**` |
