@@ -38,3 +38,18 @@ def test_add_interval_job_uses_memory_jobstore(tmp_path: Path) -> None:
 
     memory_jobs = scheduler._scheduler.get_jobs(jobstore="memory")
     assert any(j.id == "tick" for j in memory_jobs)
+
+
+def test_scheduler_db_uses_wal_mode(tmp_path: Path) -> None:
+    """La base scheduler.db doit être en WAL (mode persistant du fichier)."""
+    import sqlite3
+
+    db_path = tmp_path / "scheduler.db"
+    ReminderScheduler(
+        db_path,
+        notifications_db_path=tmp_path / "tasks.db",
+        timezone="Europe/Paris",
+    )
+    with sqlite3.connect(db_path) as conn:
+        mode = conn.execute("PRAGMA journal_mode").fetchone()[0]
+    assert mode == "wal"

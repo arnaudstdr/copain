@@ -10,6 +10,7 @@ des primitifs (str, int).
 
 from __future__ import annotations
 
+import sqlite3
 from collections.abc import Awaitable, Callable
 from datetime import datetime
 from pathlib import Path
@@ -29,6 +30,19 @@ from bot.sentry_setup import capture_exception
 log = get_logger(__name__)
 
 REMINDER_PREFIX = "⏰ Rappel : "
+
+
+def _enable_wal(db_path: Path) -> None:
+    """Active le mode WAL sur `scheduler.db` (même garantie que `tasks.db`).
+
+    `journal_mode=WAL` est une propriété **persistante** du fichier SQLite :
+    une seule activation suffit, toutes les connexions ultérieures du
+    `SQLAlchemyJobStore` en bénéficient. Réduit les `database is locked`
+    quand plusieurs jobs (rappels + cron) écrivent en même temps.
+    """
+    with sqlite3.connect(db_path) as conn:
+        mode = conn.execute("PRAGMA journal_mode=WAL").fetchone()[0]
+    log.info("scheduler_journal_mode_set", mode=str(mode))
 
 
 async def _send_reminder(
@@ -69,6 +83,7 @@ class ReminderScheduler:
         pushover_user: str = "",
     ) -> None:
         db_path.parent.mkdir(parents=True, exist_ok=True)
+        _enable_wal(db_path)
         self._timezone = timezone
         self._notifications_db_path = notifications_db_path
         self._pushover_token = pushover_token
