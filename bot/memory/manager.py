@@ -7,9 +7,10 @@ import uuid
 from collections.abc import Sequence
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, NamedTuple
 
 import chromadb
+from chromadb.api.types import IncludeEnum
 from chromadb.config import Settings as ChromaSettings
 
 from bot.logging_conf import get_logger
@@ -36,6 +37,18 @@ HNSW_METADATA: dict[str, str | int] = {
     "hnsw:construction_ef": 128,
     "hnsw:search_ef": 64,
 }
+
+
+class DepotMatch(NamedTuple):
+    """Match de similarité sur un dépôt cognitif indexé dans ChromaDB.
+
+    `thought_id` pointe vers la ligne SQLite `thoughts` ; la validation de
+    son existence reste à la charge de l'appelant (vérité = SQLite).
+    """
+
+    thought_id: int
+    content: str
+    distance: float
 
 
 class MemoryManager:
@@ -151,6 +164,44 @@ class MemoryManager:
             metadatas=metadatas,  # type: ignore[arg-type, unused-ignore]
         )
         log.info("memory_stored_batch", count=len(items))
+
+    async def find_similar_depots(
+        self,
+        content: str,
+        *,
+        top_k: int = 8,
+        max_distance: float,
+    ) -> list[DepotMatch]:
+        """Recherche les dépôts cognitifs sémantiquement proches de `content`.
+
+        Query filtrée `where={"kind": "depot"}`, résultats triés par distance
+        cosine croissante et bornés par `max_distance`. Les matchs dont la
+        metadata `thought_id` est absente ou invalide (désynchronisation
+        SQLite ↔ ChromaDB) sont ignorés avec un log `debug`.
+        """
+        vector = await self._embedder.embed(content)
+        result = await asyncio.to_thread(
+            self._collection.query,
+            query_embeddings=[vector],  # type: ignore[arg-type, unused-ignore]
+            n_results=top_k,
+            where={"kind": "depot"},
+            include=[IncludeEnum.documents, IncludeEnum.metadatas, IncludeEnum.distances],
+        )
+        documents = (result.get("documents") or [[]])[0]
+        metadatas = (result.get("metadatas") or [[]])[0]
+        distances = (result.get("distances") or [[]])[0]
+
+        matches: list[DepotMatch] = []
+        for doc, meta, distance in zip(documents, metadatas, distances, strict=True):
+            if distance > max_distance:
+                continue
+            thought_id = (meta or {}).get("thought_id")
+            if not isinstance(thought_id, int) or isinstance(thought_id, bool):
+                log.debug("depot_match_orphan", preview=doc[:80], thought_id=thought_id)
+                continue
+            matches.append(DepotMatch(thought_id=thought_id, content=doc, distance=distance))
+        matches.sort(key=lambda m: m.distance)
+        return matches
 
     async def retrieve_context(self, query: str, top_k: int = 5) -> list[str]:
         """Retourne les top_k documents les plus pertinents pour la requête."""

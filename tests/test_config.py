@@ -186,3 +186,17 @@ def test_sentry_custom_values(monkeypatch: pytest.MonkeyPatch) -> None:
     assert settings.sentry_environment == "prod"
     assert settings.sentry_release == "0.9.0"
     assert settings.sentry_traces_sample_rate == 0.25
+
+
+def test_foryou_similarity_max_distance_default(monkeypatch: pytest.MonkeyPatch) -> None:
+    _minimal_env(monkeypatch)
+    monkeypatch.delenv("FORYOU_SIMILARITY_MAX_DISTANCE", raising=False)
+    settings = load_settings()
+    assert settings.foryou_similarity_max_distance == 0.35
+
+
+def test_foryou_similarity_max_distance_custom(monkeypatch: pytest.MonkeyPatch) -> None:
+    _minimal_env(monkeypatch)
+    monkeypatch.setenv("FORYOU_SIMILARITY_MAX_DISTANCE", "0.5")
+    settings = load_settings()
+    assert settings.foryou_similarity_max_distance == 0.5

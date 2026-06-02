@@ -65,6 +65,8 @@ class Settings:
     finance_reminder_hour: int
     finance_reminder_minute: int
 
+    foryou_similarity_max_distance: float
+
     fuel_default_radius_km: float
     nominatim_user_agent: str
 
@@ -198,6 +200,7 @@ def load_settings() -> Settings:
         proactivity_rain_cooldown_hours=_env_int("PROACTIVITY_RAIN_COOLDOWN_HOURS", 3),
         finance_reminder_hour=_env_int("FINANCE_REMINDER_HOUR", 9),
         finance_reminder_minute=_env_int("FINANCE_REMINDER_MINUTE", 0),
+        foryou_similarity_max_distance=_env_float("FORYOU_SIMILARITY_MAX_DISTANCE", 0.35),
         fuel_default_radius_km=_env_float("FUEL_DEFAULT_RADIUS_KM", 10.0),
         nominatim_user_agent=os.getenv(
             "NOMINATIM_USER_AGENT",

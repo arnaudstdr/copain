@@ -47,6 +47,7 @@ def _settings(sentry_dsn: str | None, traces: float = 0.0) -> Settings:
         proactivity_rain_cooldown_hours=3,
         finance_reminder_hour=9,
         finance_reminder_minute=0,
+        foryou_similarity_max_distance=0.35,
         fuel_default_radius_km=10.0,
         nominatim_user_agent="x",
         cache_llm_ttl_sec=0.0,

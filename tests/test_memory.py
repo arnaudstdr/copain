@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from bot.memory.manager import HNSW_METADATA, MemoryManager
+from bot.memory.manager import HNSW_METADATA, DepotMatch, MemoryManager
 
 
 @pytest.fixture
@@ -89,3 +89,114 @@ async def test_store_many_no_op_on_empty(
     manager = MemoryManager(tmp_data_dir / "chroma", embedder_with_varying_vectors)
     await manager.store_many([])
     assert embedder_with_varying_vectors.embed_many.call_count == 0
+
+
+# --- find_similar_depots -----------------------------------------------------
+
+
+@pytest.fixture
+def depot_embedder() -> AsyncMock:
+    """Embedder déterministe : un vecteur fixe par texte connu.
+
+    L'espace est cosine ; les distances attendues face à la requête
+    `[1, 0, 0, 0]` sont donc maîtrisées :
+    - `[1.0, 0.0, …]`  → 0.0
+    - `[0.95, 0.05, …]` → ≈ 0.0014
+    - `[0.9, 0.1, …]`   → ≈ 0.0062
+    - `[0.85, 0.15, …]` → ≈ 0.0152
+    - `[0.0, 1.0, …]`   → 1.0
+    """
+    vectors: dict[str, list[float]] = {
+        "j'ai peur pour l'entretien": [1.0, 0.0, 0.0, 0.0],
+        "encore ce stress d'entretien": [0.95, 0.05, 0.0, 0.0],
+        "l'entretien m'angoisse": [0.9, 0.1, 0.0, 0.0],
+        "l'entretien me stresse un peu": [0.85, 0.15, 0.0, 0.0],
+        "idée : une appli de recettes": [0.0, 1.0, 0.0, 0.0],
+        "rdv dentiste mardi": [1.0, 0.0, 0.0, 0.0],
+        "je repense à l'entretien": [1.0, 0.0, 0.0, 0.0],
+    }
+    embedder = AsyncMock()
+
+    async def fake_embed(text: str) -> list[float]:
+        return vectors[text]
+
+    embedder.embed.side_effect = fake_embed
+    return embedder
+
+
+async def test_find_similar_depots_filters_kind_and_sorts(
+    tmp_data_dir: Path, depot_embedder: AsyncMock
+) -> None:
+    """Seuls les dépôts remontent (where kind=depot), triés par distance croissante."""
+    manager = MemoryManager(tmp_data_dir / "chroma", depot_embedder)
+    await manager.store_depot("j'ai peur pour l'entretien", thought_id=1, thought_kind="worry")
+    await manager.store_depot("l'entretien m'angoisse", thought_id=2, thought_kind="worry")
+    await manager.store_depot("idée : une appli de recettes", thought_id=3, thought_kind="idea")
+    # Souvenir générique avec le MÊME vecteur que la requête : sans le filtre
+    # `where`, il serait en tête des résultats.
+    await manager.store(original_message="brut", memory_content="rdv dentiste mardi")
+
+    matches = await manager.find_similar_depots("je repense à l'entretien", max_distance=0.35)
+
+    assert [m.thought_id for m in matches] == [1, 2]
+    assert all(isinstance(m, DepotMatch) for m in matches)
+    assert matches[0].content == "j'ai peur pour l'entretien"
+    assert matches[1].content == "l'entretien m'angoisse"
+    assert matches[0].distance <= matches[1].distance <= 0.35
+
+
+async def test_find_similar_depots_tight_max_distance(
+    tmp_data_dir: Path, depot_embedder: AsyncMock
+) -> None:
+    """Un seuil serré exclut les voisins trop éloignés."""
+    manager = MemoryManager(tmp_data_dir / "chroma", depot_embedder)
+    await manager.store_depot("j'ai peur pour l'entretien", thought_id=1, thought_kind="worry")
+    await manager.store_depot("l'entretien m'angoisse", thought_id=2, thought_kind="worry")
+
+    matches = await manager.find_similar_depots("je repense à l'entretien", max_distance=0.003)
+
+    assert [m.thought_id for m in matches] == [1]
+
+
+async def test_find_similar_depots_empty_collection(
+    tmp_data_dir: Path, depot_embedder: AsyncMock
+) -> None:
+    manager = MemoryManager(tmp_data_dir / "chroma", depot_embedder)
+    matches = await manager.find_similar_depots("je repense à l'entretien", max_distance=0.35)
+    assert matches == []
+
+
+async def test_find_similar_depots_ignores_invalid_thought_id(
+    tmp_data_dir: Path, depot_embedder: AsyncMock
+) -> None:
+    """Un match dont la metadata `thought_id` est absente ou invalide est ignoré."""
+    manager = MemoryManager(tmp_data_dir / "chroma", depot_embedder)
+    await manager.store_depot("l'entretien m'angoisse", thought_id=2, thought_kind="worry")
+    # Matchs orphelins insérés à la main : sans thought_id, puis non-entier.
+    manager._collection.add(
+        ids=["orphan-missing", "orphan-str"],
+        embeddings=[[1.0, 0.0, 0.0, 0.0], [1.0, 0.0, 0.0, 0.0]],  # type: ignore[arg-type, unused-ignore]
+        documents=["dépôt sans thought_id", "dépôt thought_id invalide"],
+        metadatas=[{"kind": "depot"}, {"kind": "depot", "thought_id": "abc"}],
+    )
+
+    matches = await manager.find_similar_depots("je repense à l'entretien", max_distance=0.35)
+
+    assert [m.thought_id for m in matches] == [2]
+
+
+async def test_find_similar_depots_respects_top_k(
+    tmp_data_dir: Path, depot_embedder: AsyncMock
+) -> None:
+    manager = MemoryManager(tmp_data_dir / "chroma", depot_embedder)
+    await manager.store_depot("j'ai peur pour l'entretien", thought_id=1, thought_kind="worry")
+    await manager.store_depot("encore ce stress d'entretien", thought_id=2, thought_kind="worry")
+    await manager.store_depot("l'entretien m'angoisse", thought_id=3, thought_kind="worry")
+    await manager.store_depot("l'entretien me stresse un peu", thought_id=4, thought_kind="worry")
+
+    matches = await manager.find_similar_depots(
+        "je repense à l'entretien", top_k=2, max_distance=0.35
+    )
+
+    # Les deux plus proches uniquement (0.0 puis ≈0.0014)
+    assert [m.thought_id for m in matches] == [1, 2]
