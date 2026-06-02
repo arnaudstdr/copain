@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
-from bot.pipeline import _normalize_fr_time_words, _parse_due, _parse_when_to_date
+from bot.pipeline.core import _normalize_fr_time_words, _parse_due, _parse_when_to_date
 
 
 def test_normalize_midi_and_minuit() -> None:
