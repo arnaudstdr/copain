@@ -27,7 +27,6 @@ copain/
 │   ├── __init__.py
 │   ├── main.py                  # entrypoint: build deps + launch uvicorn
 │   ├── api.py                   # FastAPI app + endpoints + verify_api_key dep
-│   ├── pipeline.py              # process_message(+_stream) + _handle_* (transport-agnostic)
 │   ├── dashboard.py             # build_dashboard() : agrégation cards PWA
 │   ├── profile.py               # UserProfile : chargement YAML data/profile.yaml
 │   ├── config.py                # Settings dataclass + load_settings()
@@ -36,6 +35,14 @@ copain/
 │   ├── cache.py                 # TTLCache (LRU async) — LLM opt-in + SearXNG
 │   ├── db.py                    # AsyncEngine partagé + WAL mode
 │   ├── http_retry.py            # httpx retry + JSON helper (Open-Meteo, ODS, …)
+│   │
+│   ├── pipeline/                # cœur transport-agnostic (package)
+│   │   ├── __init__.py          # API publique : BotDeps, process_message(+_stream),
+│   │   │                        #   StreamEvent, MAX_HISTORY, FALLBACK_TEXT
+│   │   ├── core.py              # BotDeps + StreamEvent + orchestrateurs + helpers partagés
+│   │   ├── dates.py             # parsing de dates FR (parse_due, parse_range, …)
+│   │   ├── side_effects.py      # apply_side_effects (memory/task/depot/expense)
+│   │   └── handlers.py          # run_intent_handler + handle_feed/event/fuel/weather
 │   │
 │   ├── llm/
 │   │   ├── client.py            # LLMClient (chat + chat_stream + fallback + cache)

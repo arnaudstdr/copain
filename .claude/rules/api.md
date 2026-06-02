@@ -34,53 +34,67 @@ then re-raised as HTTP 500.
 `images=[image_bytes]`; the multimodal LLM handles caption + image in a
 single call (no streaming on photos — the local fallback is text-only).
 
-## Pipeline (`bot/pipeline.py`)
+## Pipeline (`bot/pipeline/`)
 
-Transport-agnostic core. The entry point is:
+Cœur transport-agnostic, organisé en package à responsabilités nettes :
+
+```text
+bot/pipeline/
+├── __init__.py      # API publique : BotDeps, process_message(+_stream),
+│                    #   StreamEvent, MAX_HISTORY, FALLBACK_TEXT
+├── core.py          # BotDeps, StreamEvent, les deux orchestrateurs + helpers partagés
+├── dates.py         # parsing de dates FR (parse_due, parse_range, parse_weather_range,
+│                    #   parse_when_to_date, normalize_fr_time_words)
+├── side_effects.py  # apply_side_effects (memory/task/depot/expense) + helpers finance
+└── handlers.py      # run_intent_handler + handle_feed/event/fuel/weather + formateurs
+```
+
+Graphe d'imports (DAG simple) : `core → handlers + side_effects → dates`.
+Les consommateurs (`bot/api.py`, `bot/main.py`, `bot/dashboard.py`, tests)
+n'importent que l'API publique ré-exportée par `__init__.py` — jamais de
+helper privé inter-module.
+
+Le point d'entrée est :
 
 ```python
 async def process_message(
     user_text: str,
     deps: BotDeps,
     images: list[bytes] | None = None,
-) -> str: ...
+    voice_mode: bool = False,
+) -> tuple[str, Meta]: ...
 ```
 
-Steps:
+La séquence métier n'est écrite qu'une fois, partagée par les deux
+orchestrateurs de `core.py` via des helpers privés :
 
 ```python
-# 1. Contextual memory (top-5 via embeddings)
-memory_context = await deps.memory.retrieve_context(user_text)
+# 1. System prompt complet — _build_prompt
+#    (mémoire RAG top-5, history, localisation, récurrentes pending)
+system_prompt = await _build_prompt(user_text, deps, voice_mode=voice_mode)
 
-# 2. Build the system prompt (memory + history)
-system = build_system_prompt(memory_context, deps.history)
+# 2. Appel LLM — SEUL point de divergence transport :
+#    non-stream : llm.call (images, fallback local complet)
+#    stream     : llm.chat_stream + MetaStreamFilter (texte seul)
+raw = await deps.llm.call(system=system_prompt, user=user_content, images=images)
 
-# 3. Single non-streamed call (LLMClient.call)
-raw = await deps.llm.call(system, user_text, images=images)
+# 3. Extraction du bloc <meta> — _try_extract_meta
+#    None = bloc absent/invalide → FALLBACK_TEXT + meta neutre,
+#    NI side effects NI entrée dans l'history
+text, meta = _try_extract_meta(raw) or fallback
 
-# 4. Extract the <meta> block + clean text
-text, meta = extract_meta(raw)
+# 4. Séquence métier commune — _route_and_apply
+#    → side_effects.apply_side_effects (memory/task/depot/expense ;
+#      les rappels écrivent dans pending_notifications à l'échéance)
+#    → intent search : recherche SearXNG, l'orchestrateur produit le résumé
+#      (call_with_search non-stream / call_with_search_stream streamé)
+#    → autres intents : handlers.run_intent_handler (feed/event/fuel/weather)
+#      peut remplacer l'intro optimiste par le texte final
+outcome = await _route_and_apply(user_text, meta, deps, intro=text)
 
-# 5. Side effects depending on the intent
-await _apply_side_effects(user_text, meta, deps)
-# → store memory, create task + schedule reminder (writes to pending_notifications at due time)
-
-# 6. Branches that re-run the LLM or replace the text
-if meta["intent"] == "search" and meta["search_query"]:
-    results = await deps.search.search(...)
-    text = await deps.llm.call_with_search(user_text, results)
-elif meta["intent"] == "feed" and meta["feed"]["action"]:
-    text = await _handle_feed(...)
-elif meta["intent"] == "event" and meta["event"]["action"]:
-    text = await _handle_event(...)
-elif meta["intent"] == "fuel" and meta["fuel"]["fuel_type"]:
-    text = await _handle_fuel(...)
-elif meta["intent"] == "weather":
-    text = await _handle_weather(...)
-
-# 7. Rolling history + return
-deps.history.extend([f"user: {user_text}", f"assistant: {text}"])
-return text
+# 5. History roulante APRÈS production du texte final — _record_history
+_record_history(deps, history_user, text)
+return text, meta
 ```
 
 ## Streaming (`POST /ask/stream` + `process_message_stream`)

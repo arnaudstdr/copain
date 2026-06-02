@@ -128,9 +128,13 @@ FastAPI app (bot/api.py, served by uvicorn)
         │     ├── GET  /events        → ICloudCalendarClient.list_all_upcoming(days) → overlay agenda
         │     └── POST /event/location → LocationEventStore.record_event() → { recorded, current_place }
         │
-        ├── Pipeline (bot/pipeline.py, transport-agnostic)
-        │     ├── process_message(text, images?) → (str, Meta)
-        │     └── process_message_stream(text)   → AsyncIterator[StreamEvent] (delta/replace/done)
+        ├── Pipeline (package bot/pipeline/, transport-agnostic)
+        │     ├── core.py          → BotDeps + StreamEvent + orchestrateurs + helpers partagés
+        │     │     ├── process_message(text, images?) → (str, Meta)
+        │     │     └── process_message_stream(text)   → AsyncIterator[StreamEvent] (delta/replace/done)
+        │     ├── dates.py         → parsing de dates FR (parse_due, parse_range, …)
+        │     ├── side_effects.py  → apply_side_effects (memory/task/depot/expense)
+        │     └── handlers.py      → run_intent_handler + handle_feed/event/fuel/weather
         │
         ├── LLM Client (Ollama — gemma4:31b-cloud multimodal + optional local fallback)
         │     ├── call(system, user, images?)        → Ollama chat API
@@ -358,7 +362,7 @@ reads files matching the rule's `paths` pattern:
 | `python-conventions.md` | `bot/**/*.py`, `tests/**/*.py`                                    |
 | `project-structure.md`  | `bot/**/*.py`, `tests/**/*.py`                                    |
 | `config-env.md`         | `bot/config.py`, `.env*`, `docker-compose.yml`, `Dockerfile`      |
-| `api.md`                | `bot/api.py`, `bot/pipeline.py`, `bot/main.py`                    |
+| `api.md`                | `bot/api.py`, `bot/pipeline/**`, `bot/main.py`                    |
 | `llm.md`                | `bot/llm/**`                                                      |
 | `calendar.md`           | `bot/calendar/**`                                                 |
 | `scheduler.md`          | `bot/tasks/scheduler.py`, `bot/finance/cron.py`, `bot/proactivity/**` |
