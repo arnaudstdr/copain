@@ -1,8 +1,8 @@
 // ── Helpers UI partagés : DOM, icônes Lucide, dates, toast/éphémère ───────
-// Import temporaire depuis legacy.js : renderMarkdown déménage dans
-// markdown.js au step 04 (le cycle ui ↔ legacy est bénin — fonctions
-// hoistées, appelées uniquement au runtime).
-import { renderMarkdown } from "./legacy.js";
+// Cycle d'import ui ↔ markdown accepté (cf. PROGRESS.md) : showEphemeral
+// rend du markdown, et renderMarkdown utilise escHtml/lucideSvg d'ici.
+// Bénin : fonctions hoistées, appelées uniquement au runtime.
+import { renderMarkdown } from "./markdown.js";
 
 // ── UI helpers ────────────────────────────────────────────────────────────
 export function escHtml(s) {
@@ -87,6 +87,14 @@ export function formatRelativeDay(d) {
 }
 export function formatDateTime(d) {
   return d.toLocaleString("fr-FR", { weekday: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+}
+export function isAllDayEvent(start, end) {
+  // All-day iCloud : DTSTART/DTEND alignés sur minuit local, durée
+  // multiple de 24 h (cas d'un jour : 24 h ; cas multi-jours : 48 h, …).
+  if (start.getHours() !== 0 || start.getMinutes() !== 0 || start.getSeconds() !== 0) return false;
+  if (end.getHours() !== 0 || end.getMinutes() !== 0 || end.getSeconds() !== 0) return false;
+  const diffMs = end.getTime() - start.getTime();
+  return diffMs > 0 && diffMs % 86400000 === 0;
 }
 export function formatRelativeAge(iso) {
   const d = new Date(iso);

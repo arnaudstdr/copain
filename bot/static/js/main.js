@@ -1,12 +1,12 @@
 // Point d'entrée unique de la PWA (chargé en <script type="module">).
 // Orchestre le boot : hauteur d'app, greeting, config (API key), premier
 // rendu du dashboard. Le reste du code vit encore dans legacy.js, découpé
-// progressivement en modules dédiés (dashboard, overlays, chat, composer,
-// markdown — steps 04-05).
+// progressivement en modules dédiés (overlays, chat, composer — step 05).
 import { setApiKey } from "./state.js";
 import { showToast } from "./ui.js";
 import { fetchConfig } from "./api.js";
-import { renderGreeting, loadDashboard } from "./legacy.js";
+import { loadDashboard } from "./dashboard.js";
+import { renderGreeting } from "./legacy.js";
 
 // ── Init ──────────────────────────────────────────────────────────────────
 document.addEventListener("DOMContentLoaded", async () => {

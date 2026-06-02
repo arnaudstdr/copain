@@ -28,6 +28,12 @@
 - **Cycle d'import temporaire `ui.js → legacy.js`** (renderMarkdown pour
   showEphemeral) : bénin (fonctions hoistées). À résorber au step 04 en le
   basculant vers `markdown.js` (cycle résiduel ui ↔ markdown accepté).
+- **Cycle temporaire `dashboard ↔ legacy`** (step 04) : les cards tappables
+  importent `openWeather`/`openEvents`/`openTasks` depuis `legacy.js`.
+  À résorber au step 05 quand ces fonctions partent dans `overlays.js`
+  (dashboard.js importera alors overlays.js, sans cycle).
+- **`isAllDayEvent` vit dans `ui.js`** (helpers date, exporté) : partagé
+  entre eventCard (dashboard.js) et makeEventItem (futur overlays.js).
 
 ## Dette technique acceptée
 
@@ -72,7 +78,14 @@
 
 ### Step 04 — Extraire markdown.js et dashboard.js
 
-- _(à remplir à la fin du step)_
+- 2 modules créés (markdown 122 l., dashboard 408 l.) ; legacy.js
+  1 268 → 754 l. ; cycle `ui → legacy` résorbé (ui ↔ markdown accepté).
+- `isAllDayEvent` déplacé dans `ui.js` (partagé eventCard / makeEventItem).
+- Cycle temporaire dashboard ↔ legacy (openWeather/openEvents/openTasks),
+  à résorber au step 05 ; `triggerAsk` repéré comme code mort (step 05).
+- `index.html` : `main.js?v=3`.
+- Validation : diff normalisé audité + smoke test import (DOM stubé) +
+  `node --check` (mode module) + 485 tests Python verts + ruff OK.
 
 ### Step 05 — Extraire overlays.js, composer.js et chat.js
 

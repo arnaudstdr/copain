@@ -10,13 +10,13 @@ dashboard (loadDashboard + renderers de cards + news + budget).
 
 ## Critère d'acceptation
 
-- [ ] `js/markdown.js` : `renderMarkdown`, `inlineMd`,
+- [x] `js/markdown.js` : `renderMarkdown`, `inlineMd`,
   `openMarkdownView`, `closeMarkdownView`
-- [ ] `js/dashboard.js` : `loadDashboard`, `renderDashboard`, les
+- [x] `js/dashboard.js` : `loadDashboard`, `renderDashboard`, les
   renderers de cards (weather/event/tasks/budget/news), `envelopeRow`,
   `formatEur`, `openBudget`, `exportExpensesCsv`, `openNews` + newsState,
   `flashCards`, `renderBellBadge`
-- [ ] `legacy.js` réduit d'autant, tout fonctionne
+- [x] `legacy.js` réduit d'autant, tout fonctionne
 - [ ] Checklist ciblée OK : rendu des 5 cards, tap card actu (fetch +
   overlay markdown), overlay budget + export CSV, flash après /ask
 
@@ -48,4 +48,52 @@ dashboard (loadDashboard + renderers de cards + news + budget).
 
 ## Execution notes
 
-_(à remplir pendant le step)_
+### Ce qui a été fait
+
+- `js/markdown.js` créé (122 l.) : `renderMarkdown` (export),
+  `inlineMd` (interne), `openMarkdownView`, `closeMarkdownView` (exports).
+  Importe `escHtml`/`lucideSvg` depuis `ui.js`.
+- `js/dashboard.js` créé (408 l.) : `loadDashboard` (export),
+  `renderDashboard`, `renderDashboardError`, les 5 renderers de cards,
+  `appendOverdueLine`, `envelopeRow`, `formatEur`, `openBudget`,
+  `exportExpensesCsv`, `renderBudgetMarkdown`, `openNews`,
+  `renderBellBadge` (export), `flashCards` (export). Consomme `newsState`
+  et `dashboardData` depuis `state.js` (pas de duplication).
+- `legacy.js` 1 268 → 754 l. ; le cycle temporaire `ui → legacy`
+  (renderMarkdown) est résorbé comme prévu.
+- `main.js` importe désormais `loadDashboard` depuis `dashboard.js` ;
+  `ui.js` importe `renderMarkdown` depuis `markdown.js`.
+- `index.html` : `main.js?v=2` → `?v=3`.
+
+### Écarts par rapport au plan initial
+
+- **`isAllDayEvent` déplacé dans `ui.js`** (section helpers date, exporté) :
+  utilisé à la fois par `eventCard` (dashboard.js) et `makeEventItem`
+  (overlay évents, encore dans legacy.js jusqu'au step 05). Le ranger dans
+  les helpers date évite une duplication et n'épaissit pas le cycle
+  dashboard ↔ legacy.
+- **Cycle d'import temporaire `dashboard ↔ legacy`** : les cards tappables
+  référencent `openWeather`/`openEvents`/`openTasks`, exportés de
+  `legacy.js` en attendant `overlays.js` (step 05). Bénin (fonctions
+  hoistées, appel runtime uniquement), même mécanique que l'ex-cycle
+  `ui → legacy` du step 03.
+- `triggerAsk` (legacy.js) identifié comme code mort (aucun appelant) —
+  non supprimé (hors scope pur déplacement), à traiter au step 05.
+
+### Fichiers touchés
+
+- `bot/static/js/markdown.js`, `bot/static/js/dashboard.js` (créations)
+- `bot/static/js/legacy.js`, `bot/static/js/ui.js`, `bot/static/js/main.js`
+- `bot/static/index.html` (`?v=3`)
+
+### Validation
+
+- Diff normalisé avant/après : uniquement imports/exports et commentaires
+  de transition — pur déplacement confirmé.
+- `node --input-type=module --check` OK sur les 7 modules.
+- Smoke test import (DOM stubé via Proxy) : graphe complet résolu, cycles
+  inclus ; tests fonctionnels rapides de `renderMarkdown` (gras/italique/
+  liste) et `isAllDayEvent` (all-day vs horaire).
+- 485 tests Python verts, `ruff check` + `ruff format --check` OK.
+- Checklist manuelle ciblée à faire (navigateur desktop suffisant) : rendu
+  des 5 cards, tap card actu, overlay budget + export CSV, flash après /ask.
