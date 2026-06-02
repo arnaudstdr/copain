@@ -337,6 +337,109 @@ async def test_ask_llm_error_returns_friendly_message(client: AsyncClient, state
     assert "LLM" in response.json()["response"]
 
 
+# --- /ask/stream ------------------------------------------------------------
+
+
+def _sse_events(body: str) -> list[dict[str, object]]:
+    """Parse les frames SSE `data: {json}\\n\\n` d'une réponse complète."""
+    import json
+
+    return [
+        json.loads(frame[len("data: ") :])
+        for frame in body.split("\n\n")
+        if frame.startswith("data: ")
+    ]
+
+
+async def test_ask_stream_without_api_key_returns_403(client: AsyncClient) -> None:
+    response = await client.post("/ask/stream", json={"message": "salut"})
+    assert response.status_code == 403
+
+
+async def test_ask_stream_emits_sse_frames(client: AsyncClient) -> None:
+    from unittest.mock import patch
+
+    async def fake_stream(message: str, deps: BotDeps) -> AsyncIterator[dict[str, object]]:
+        yield {"type": "delta", "text": "Bon"}
+        yield {"type": "delta", "text": "jour"}
+        yield {"type": "done", "meta": _NEUTRAL_META}
+
+    with patch("bot.api.process_message_stream", new=fake_stream):
+        response = await client.post(
+            "/ask/stream",
+            headers={"X-API-Key": API_KEY},
+            json={"message": "salut"},
+        )
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/event-stream")
+    events = _sse_events(response.text)
+    assert [e["type"] for e in events] == ["delta", "delta", "done"]
+    assert events[0]["text"] == "Bon"
+    assert events[-1]["intent"] == "answer"
+    assert events[-1]["refresh_cards"] == []
+
+
+async def test_ask_stream_task_intent_lists_refresh_cards(client: AsyncClient) -> None:
+    from unittest.mock import patch
+
+    task_meta = dict(_NEUTRAL_META)
+    task_meta["intent"] = "task"
+
+    async def fake_stream(message: str, deps: BotDeps) -> AsyncIterator[dict[str, object]]:
+        yield {"type": "delta", "text": "Noté."}
+        yield {"type": "done", "meta": task_meta}
+
+    with patch("bot.api.process_message_stream", new=fake_stream):
+        response = await client.post(
+            "/ask/stream",
+            headers={"X-API-Key": API_KEY},
+            json={"message": "rappelle-moi le pain"},
+        )
+    events = _sse_events(response.text)
+    assert events[-1]["refresh_cards"] == ["today_tasks", "unread_notifications"]
+
+
+async def test_ask_stream_llm_timeout_emits_error_frame(client: AsyncClient) -> None:
+    from unittest.mock import patch
+
+    from bot.llm.client import LLMTimeoutError
+
+    async def fake_stream(message: str, deps: BotDeps) -> AsyncIterator[dict[str, object]]:
+        yield {"type": "delta", "text": "déb"}
+        raise LLMTimeoutError("slow")
+
+    with patch("bot.api.process_message_stream", new=fake_stream):
+        response = await client.post(
+            "/ask/stream",
+            headers={"X-API-Key": API_KEY},
+            json={"message": "salut"},
+        )
+    assert response.status_code == 200
+    events = _sse_events(response.text)
+    assert events[-1]["type"] == "error"
+    assert "trop longtemps" in str(events[-1]["text"])
+
+
+async def test_ask_stream_llm_error_emits_error_frame(client: AsyncClient) -> None:
+    from unittest.mock import patch
+
+    from bot.llm.client import LLMError
+
+    async def fake_stream(message: str, deps: BotDeps) -> AsyncIterator[dict[str, object]]:
+        raise LLMError("down")
+        yield  # pragma: no cover — fait de la fonction un générateur async
+
+    with patch("bot.api.process_message_stream", new=fake_stream):
+        response = await client.post(
+            "/ask/stream",
+            headers={"X-API-Key": API_KEY},
+            json={"message": "salut"},
+        )
+    events = _sse_events(response.text)
+    assert [e["type"] for e in events] == ["error"]
+    assert "LLM" in str(events[0]["text"])
+
+
 # --- /ask/image -------------------------------------------------------------
 
 

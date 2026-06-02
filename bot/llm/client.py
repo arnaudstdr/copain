@@ -127,6 +127,33 @@ class LLMClient:
         bloc <meta> (la décision de routing a déjà été prise). Le résultat est
         éligible au cache (`cacheable=True`) : pas de side effect possible.
         """
+        return await self.chat(
+            messages=self._search_messages(original_message, results),
+            cacheable=True,
+        )
+
+    async def call_with_search_stream(
+        self,
+        original_message: str,
+        results: Iterable[Mapping[str, Any]],
+    ) -> AsyncIterator[str]:
+        """Version streamée de `call_with_search` : yield des chunks de texte.
+
+        Mêmes prompts (donc même clé de cache) ; `chat_stream` gère déjà le
+        cache opt-in (un seul chunk sur hit) et le fallback pré-premier-chunk.
+        """
+        async for piece in self.chat_stream(
+            messages=self._search_messages(original_message, results),
+            cacheable=True,
+        ):
+            yield piece
+
+    @staticmethod
+    def _search_messages(
+        original_message: str,
+        results: Iterable[Mapping[str, Any]],
+    ) -> list[dict[str, Any]]:
+        """Construit les messages du résumé de recherche (partagé stream / non-stream)."""
         formatted = "\n".join(
             f"- {r.get('title', '?')} ({r.get('url', '')}) : {r.get('snippet', '')}"
             for r in results
@@ -137,13 +164,10 @@ class LLMClient:
             "N'inclus PAS de bloc <meta>."
         )
         user = f"Question initiale : {original_message}\n\nRésultats :\n{formatted}"
-        return await self.chat(
-            messages=[
-                {"role": "system", "content": system},
-                {"role": "user", "content": user},
-            ],
-            cacheable=True,
-        )
+        return [
+            {"role": "system", "content": system},
+            {"role": "user", "content": user},
+        ]
 
     async def chat(
         self,

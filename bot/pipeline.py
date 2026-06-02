@@ -10,10 +10,10 @@ from __future__ import annotations
 
 import re
 from collections import deque
-from collections.abc import Sequence
+from collections.abc import AsyncIterator, Sequence
 from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal, TypedDict
 from zoneinfo import ZoneInfo
 
 import dateparser
@@ -23,7 +23,7 @@ from bot.calendar.client import ICloudCalendarError
 from bot.fuel.client import FuelError
 from bot.fuel.geocoding import NominatimError
 from bot.fuel.models import FUEL_LABELS, GeoPoint, normalize_fuel_type
-from bot.llm.parser import Meta, MetaParseError, extract_meta
+from bot.llm.parser import Meta, MetaParseError, MetaStreamFilter, extract_meta
 from bot.llm.prompt import build_system_prompt
 from bot.logging_conf import get_logger
 from bot.rss.manager import FeedAlreadyExists
@@ -95,6 +95,21 @@ _FALLBACK_META: Meta = {
 }
 
 
+class StreamEvent(TypedDict, total=False):
+    """Événement émis par `process_message_stream`, sérialisé en SSE par l'API.
+
+    - `delta`   : chunk de texte visible à concaténer côté client.
+    - `replace` : le texte remplace tout ce qui a été affiché (handlers Python,
+      fallback quand le bloc <meta> est invalide, reset avant le résumé search).
+    - `done`    : fin de réponse ; porte la `Meta` pour que l'API calcule les
+      `refresh_cards`.
+    """
+
+    type: Literal["delta", "replace", "done"]
+    text: str
+    meta: Meta
+
+
 @dataclass
 class BotDeps:
     """Conteneur pour toutes les dépendances injectées dans le pipeline."""
@@ -140,24 +155,7 @@ async def process_message(
     Les rappels créés en chemin par `_apply_side_effects` écrivent dans
     `pending_notifications` via `ReminderScheduler.add_reminder`.
     """
-    memory_context = await deps.memory.retrieve_context(
-        user_text or "(image envoyée sans légende)", top_k=5
-    )
-    tz = ZoneInfo(deps.settings.timezone)
-    now_str = datetime.now(tz).strftime("%A %d %B %Y à %H:%M")
-    current_location = await deps.location_events.get_current_location()
-    pending_recurring = await _safe_pending_recurring(deps)
-    system_prompt = build_system_prompt(
-        memory_context=memory_context,
-        recent_history=list(deps.history),
-        current_datetime=now_str,
-        home_city=deps.settings.home_city,
-        user_profile=deps.profile,
-        voice_mode=voice_mode,
-        current_location=current_location,
-        timezone=deps.settings.timezone,
-        pending_recurring=pending_recurring,
-    )
+    system_prompt = await _build_prompt(user_text, deps, voice_mode=voice_mode)
 
     user_content = (
         user_text if user_text else "Analyse cette image et propose une action pertinente."
@@ -176,18 +174,10 @@ async def process_message(
         results = await deps.search.search(meta["search_query"])
         log.info("search_performed", query=meta["search_query"], hits=len(results))
         text = await deps.llm.call_with_search(user_text, results)
-
-    elif meta["intent"] == "feed" and meta["feed"]["action"]:
-        text = await _handle_feed(user_text, meta, deps, intro=text)
-
-    elif meta["intent"] == "event" and meta["event"]["action"]:
-        text = await _handle_event(meta, deps, intro=text)
-
-    elif meta["intent"] == "fuel" and meta["fuel"]["fuel_type"]:
-        text = await _handle_fuel(meta, deps, intro=text)
-
-    elif meta["intent"] == "weather":
-        text = await _handle_weather(meta, deps, intro=text)
+    else:
+        replacement = await _run_intent_handler(user_text, meta, deps, intro=text)
+        if replacement is not None:
+            text = replacement
 
     history_user = user_text if user_text else "(image envoyée)"
     if images:
@@ -196,6 +186,126 @@ async def process_message(
     deps.history.append(f"assistant: {text}")
 
     return text, meta
+
+
+async def process_message_stream(
+    user_text: str,
+    deps: BotDeps,
+) -> AsyncIterator[StreamEvent]:
+    """Variante streamée de `process_message`, consommée par `POST /ask/stream`.
+
+    Yield des `StreamEvent` au fil de l'eau : les `delta` sont le texte visible
+    du LLM débarrassé du bloc <meta> (via `MetaStreamFilter`), le `done` final
+    porte la `Meta` pour le calcul des `refresh_cards` côté API.
+
+    L'intent n'est connu qu'à la fin du premier appel LLM (le bloc <meta>
+    arrive en dernier). Les intents dont le texte final est produit par un
+    handler Python (feed/event/fuel/weather) émettent donc un `replace` après
+    les deltas de l'intro ; `search` émet `replace("")` puis streame le résumé
+    du second appel LLM (le plus long — c'est là que le streaming paie).
+
+    Chemin texte uniquement : pas d'images (les photos restent sur
+    `POST /ask/image`) ni de voice_mode (Siri reste sur `POST /ask`).
+    """
+    system_prompt = await _build_prompt(user_text, deps, voice_mode=False)
+
+    meta_filter = MetaStreamFilter()
+    emitted_any = False
+    async for chunk in deps.llm.chat_stream(
+        messages=[
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_text},
+        ]
+    ):
+        visible = meta_filter.feed(chunk)
+        if not emitted_any:
+            visible = visible.lstrip()  # aligne le début sur le .strip() d'extract_meta
+        if visible:
+            emitted_any = True
+            yield {"type": "delta", "text": visible}
+    tail = meta_filter.flush()
+    if tail:
+        yield {"type": "delta", "text": tail}
+
+    try:
+        text, meta = extract_meta(meta_filter.raw)
+    except MetaParseError as exc:
+        log.warning("meta_parse_failed", error=str(exc), raw_preview=meta_filter.raw[:200])
+        # Même comportement que process_message : texte de secours, meta
+        # neutre, pas de side effects ni d'entrée dans l'history.
+        yield {"type": "replace", "text": FALLBACK_TEXT}
+        yield {"type": "done", "meta": _FALLBACK_META}
+        return
+
+    await _apply_side_effects(user_text, meta, deps)
+
+    if meta["intent"] == "search" and meta["search_query"]:
+        results = await deps.search.search(meta["search_query"])
+        log.info("search_performed", query=meta["search_query"], hits=len(results))
+        yield {"type": "replace", "text": ""}
+        summary_parts: list[str] = []
+        async for piece in deps.llm.call_with_search_stream(user_text, results):
+            summary_parts.append(piece)
+            yield {"type": "delta", "text": piece}
+        text = "".join(summary_parts)
+    else:
+        replacement = await _run_intent_handler(user_text, meta, deps, intro=text)
+        if replacement is not None:
+            text = replacement
+            yield {"type": "replace", "text": text}
+
+    deps.history.append(f"user: {user_text}")
+    deps.history.append(f"assistant: {text}")
+
+    yield {"type": "done", "meta": meta}
+
+
+async def _build_prompt(user_text: str, deps: BotDeps, voice_mode: bool) -> str:
+    """Prépare le system prompt complet (mémoire RAG, localisation, pending récurrentes).
+
+    Partagé entre `process_message` et `process_message_stream`.
+    """
+    memory_context = await deps.memory.retrieve_context(
+        user_text or "(image envoyée sans légende)", top_k=5
+    )
+    tz = ZoneInfo(deps.settings.timezone)
+    now_str = datetime.now(tz).strftime("%A %d %B %Y à %H:%M")
+    current_location = await deps.location_events.get_current_location()
+    pending_recurring = await _safe_pending_recurring(deps)
+    return build_system_prompt(
+        memory_context=memory_context,
+        recent_history=list(deps.history),
+        current_datetime=now_str,
+        home_city=deps.settings.home_city,
+        user_profile=deps.profile,
+        voice_mode=voice_mode,
+        current_location=current_location,
+        timezone=deps.settings.timezone,
+        pending_recurring=pending_recurring,
+    )
+
+
+async def _run_intent_handler(
+    user_text: str,
+    meta: Meta,
+    deps: BotDeps,
+    intro: str,
+) -> str | None:
+    """Exécute le handler Python de l'intent et retourne le texte de remplacement.
+
+    Retourne None quand aucun handler ne s'applique (le texte du LLM reste tel
+    quel). Le cas `search` n'est PAS géré ici : il relance le LLM et chaque
+    chemin (stream / non-stream) le traite à sa façon.
+    """
+    if meta["intent"] == "feed" and meta["feed"]["action"]:
+        return await _handle_feed(user_text, meta, deps, intro=intro)
+    if meta["intent"] == "event" and meta["event"]["action"]:
+        return await _handle_event(meta, deps, intro=intro)
+    if meta["intent"] == "fuel" and meta["fuel"]["fuel_type"]:
+        return await _handle_fuel(meta, deps, intro=intro)
+    if meta["intent"] == "weather":
+        return await _handle_weather(meta, deps, intro=intro)
+    return None
 
 
 async def _apply_side_effects(

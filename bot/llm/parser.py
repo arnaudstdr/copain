@@ -125,6 +125,83 @@ def extract_meta(raw: str) -> tuple[str, Meta]:
     return clean_text, meta
 
 
+class MetaStreamFilter:
+    """Filtre incrémental du bloc `<meta>` pour le streaming.
+
+    Ollama livre la réponse par chunks ; le marqueur `<meta>` peut être coupé
+    entre deux chunks (`"...<me"` puis `"ta>{...}"`). `feed(chunk)` retourne le
+    texte sûr à émettre immédiatement : tout sauf un suffixe qui pourrait être
+    le début du marqueur, ainsi que le whitespace qui le précède (pour coller
+    au `.strip()` d'`extract_meta`). Dès que le marqueur complet est détecté,
+    plus rien n'est émis.
+
+    `raw` accumule la réponse brute complète (bloc <meta> inclus) : c'est elle
+    qu'on passe à `extract_meta` une fois le stream terminé pour récupérer la
+    `Meta` validée.
+    """
+
+    _MARKER = "<meta>"
+
+    def __init__(self) -> None:
+        self._raw_parts: list[str] = []
+        self._pending = ""
+        self._meta_started = False
+
+    @property
+    def raw(self) -> str:
+        """Réponse brute complète accumulée (pour `extract_meta` en fin de stream)."""
+        return "".join(self._raw_parts)
+
+    @property
+    def meta_started(self) -> bool:
+        """True dès que le marqueur `<meta>` complet a été vu."""
+        return self._meta_started
+
+    def feed(self, chunk: str) -> str:
+        """Absorbe un chunk et retourne la portion de texte visible à émettre."""
+        self._raw_parts.append(chunk)
+        if self._meta_started:
+            return ""
+        self._pending += chunk
+        idx = self._pending.find(self._MARKER)
+        if idx != -1:
+            self._meta_started = True
+            out = self._pending[:idx].rstrip()
+            self._pending = ""
+            return out
+        safe_len = len(self._pending) - self._holdback_len(self._pending)
+        out = self._pending[:safe_len]
+        self._pending = self._pending[safe_len:]
+        return out
+
+    def flush(self) -> str:
+        """Vide le buffer en fin de stream (cas : pas de bloc <meta> du tout)."""
+        if self._meta_started:
+            self._pending = ""
+            return ""
+        out = self._pending.rstrip()
+        self._pending = ""
+        return out
+
+    @classmethod
+    def _holdback_len(cls, text: str) -> int:
+        """Longueur du suffixe à retenir : préfixe partiel de `<meta>` + whitespace avant.
+
+        Exemples : "blabla <me" → 3 (« <me ») ; "fin.\\n\\n" → 2 (les sauts de
+        ligne qui précéderaient un futur marqueur) ; "a < b" → 0.
+        """
+        marker = cls._MARKER
+        prefix_len = 0
+        for k in range(min(len(marker) - 1, len(text)), 0, -1):
+            if text.endswith(marker[:k]):
+                prefix_len = k
+                break
+        i = len(text) - prefix_len
+        while i > 0 and text[i - 1] in " \t\r\n":
+            i -= 1
+        return len(text) - i
+
+
 def _validate(data: Any) -> Meta:
     if not isinstance(data, dict):
         raise MetaParseError("Le bloc <meta> doit être un objet JSON")

@@ -9,6 +9,7 @@ before the server starts, then attached to `app.state.copain`.
 
 ```text
 POST /ask         → AskResponse        # body { message }
+POST /ask/stream  → StreamingResponse  # body { message } — SSE, mode dialogue PWA
 POST /ask/image   → AskResponse        # body { message, image_b64, media_type }
 GET  /notifications → NotificationsResponse # purges as it returns
 ```
@@ -82,11 +83,27 @@ deps.history.extend([f"user: {user_text}", f"assistant: {text}"])
 return text
 ```
 
-There is **no streaming on the API path** for now: the iOS client polls
-once per question, receives the full reply, and renders it. The
-`LLMClient.chat_stream` entry point still exists (kept in the LLM client)
-but is unused by `process_message` — it can be reintroduced via SSE later
-if needed.
+## Streaming (`POST /ask/stream` + `process_message_stream`)
+
+Le mode dialogue de la PWA consomme la variante streamée du pipeline,
+`process_message_stream(user_text, deps)`, un générateur async de
+`StreamEvent` sérialisés en frames SSE (`data: {json}\n\n`) :
+
+- `delta`   — chunk de texte visible (le bloc `<meta>` est filtré au fil de
+  l'eau par `MetaStreamFilter`, même coupé entre deux chunks Ollama) ;
+- `replace` — le texte remplace tout ce qui est affiché (handlers Python
+  feed/event/fuel/weather, fallback meta invalide, reset avant le résumé
+  search) ;
+- `done`    — fin de réponse, porte `intent` + `refresh_cards` ;
+- `error`   — message FR convivial (le status HTTP est figé à 200 dès
+  l'ouverture du stream, les erreurs LLM passent donc par une frame).
+
+L'intent n'étant connu qu'à la fin du premier appel LLM, l'intro est
+streamée de façon optimiste puis remplacée si un handler produit le texte
+final. Pour `search`, le résumé du second appel LLM est lui aussi streamé
+(`call_with_search_stream`). Chemin texte uniquement : les photos restent
+sur `/ask/image`, Siri et la bulle éphémère du dashboard sur `/ask`
+(non-streamé, fallback local complet).
 
 ## Notifications (`bot/notifications/`)
 

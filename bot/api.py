@@ -18,6 +18,7 @@ dependencies `get_deps` / `get_notifications`.
 from __future__ import annotations
 
 import base64
+import json
 import pathlib
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -28,7 +29,7 @@ from zoneinfo import ZoneInfo
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request, status
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, Response
+from fastapi.responses import FileResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
@@ -37,7 +38,7 @@ from bot.finance.csv_export import build_expenses_csv
 from bot.llm.client import LLMError, LLMTimeoutError
 from bot.llm.parser import Meta
 from bot.logging_conf import get_logger
-from bot.pipeline import BotDeps, process_message
+from bot.pipeline import BotDeps, process_message, process_message_stream
 from bot.sentry_setup import capture_exception
 
 if TYPE_CHECKING:
@@ -306,6 +307,11 @@ def _refresh_cards_for(meta: Meta) -> list[str]:
     return list(_REFRESH_BY_INTENT.get(meta["intent"], []))
 
 
+def _sse_frame(payload: dict[str, object]) -> str:
+    """Sérialise un événement en frame SSE (`data: {json}\\n\\n`)."""
+    return f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
+
+
 # --- Container des dépendances vivantes attaché à app.state ------------------
 
 
@@ -458,6 +464,81 @@ def create_app(state: AppState) -> FastAPI:
             ) from exc
         return AskResponse(
             response=reply, intent=meta["intent"], refresh_cards=_refresh_cards_for(meta)
+        )
+
+    @app.post(
+        "/ask/stream",
+        dependencies=[Depends(verify_api_key)],
+    )
+    async def ask_stream(
+        payload: AskRequest,
+        deps: BotDeps = Depends(get_deps),
+    ) -> StreamingResponse:
+        """Variante streamée de `/ask` (SSE), utilisée par le mode dialogue de la PWA.
+
+        Frames `data: {json}\\n\\n` de types `delta` / `replace` / `done` /
+        `error` (cf. `bot.pipeline.StreamEvent`). Le status HTTP est figé à
+        200 dès l'ouverture du stream : les erreurs LLM sont donc remontées
+        en frame `error` avec les mêmes messages FR que `/ask`.
+        """
+        log.info("ask_stream_received", preview=payload.message[:80])
+
+        async def event_source() -> AsyncIterator[str]:
+            try:
+                async for event in process_message_stream(payload.message, deps):
+                    if event["type"] == "done":
+                        meta = event["meta"]
+                        yield _sse_frame(
+                            {
+                                "type": "done",
+                                "intent": meta["intent"],
+                                "refresh_cards": _refresh_cards_for(meta),
+                            }
+                        )
+                    else:
+                        yield _sse_frame({"type": event["type"], "text": event.get("text", "")})
+            except LLMTimeoutError:
+                log.warning("llm_timeout", kind="stream")
+                yield _sse_frame(
+                    {
+                        "type": "error",
+                        "text": (
+                            "Le modèle met trop longtemps à répondre pour l'instant. "
+                            "Réessaie dans quelques secondes."
+                        ),
+                    }
+                )
+            except LLMError as exc:
+                log.error("llm_error", kind="stream", error=str(exc))
+                yield _sse_frame(
+                    {
+                        "type": "error",
+                        "text": (
+                            "Le modèle LLM a un souci côté serveur pour l'instant. "
+                            "Réessaie dans un moment."
+                        ),
+                    }
+                )
+            except Exception as exc:
+                log.exception("ask_stream_failed", error=str(exc))
+                capture_exception(exc, source="api_ask_stream")
+                yield _sse_frame(
+                    {
+                        "type": "error",
+                        "text": "Une erreur interne est survenue. Réessaie dans un moment.",
+                    }
+                )
+
+        return StreamingResponse(
+            event_source(),
+            media_type="text/event-stream",
+            headers={
+                # no-store : jamais de cache sur un stream de conversation.
+                # X-Accel-Buffering : neutralise le buffering d'un éventuel
+                # reverse proxy (nginx) entre Tailscale et uvicorn.
+                "Cache-Control": "no-store",
+                "X-Accel-Buffering": "no",
+            },
         )
 
     @app.post(

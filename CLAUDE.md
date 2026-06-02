@@ -102,6 +102,8 @@ FastAPI app (bot/api.py, served by uvicorn)
         │     ├── GET  /config       → { api_key }  (pas d'auth, réseau Tailscale privé)
         │     ├── POST /ask           → pipeline.process_message(message) → { response, intent, refresh_cards }
         │     │                          (header X-Source: siri active le voice_mode TTS)
+        │     ├── POST /ask/stream    → pipeline.process_message_stream(message) → SSE (mode dialogue PWA)
+        │     │                          frames data:{type: delta|replace|done|error, …}
         │     ├── POST /ask/image     → idem avec image (multimodal) → { response, intent, refresh_cards }
         │     ├── GET  /notifications → NotificationStore.get_unread() + mark_read()
         │     ├── GET  /dashboard     → build_dashboard(): météo + next évent + tâches du jour + count notifs
@@ -110,13 +112,15 @@ FastAPI app (bot/api.py, served by uvicorn)
         │     └── POST /event/location → LocationEventStore.record_event() → { recorded, current_place }
         │
         ├── Pipeline (bot/pipeline.py, transport-agnostic)
-        │     └── process_message(text, images?) → str
+        │     ├── process_message(text, images?) → (str, Meta)
+        │     └── process_message_stream(text)   → AsyncIterator[StreamEvent] (delta/replace/done)
         │
         ├── LLM Client (Ollama — gemma4:31b-cloud multimodal + optional local fallback)
         │     ├── call(system, user, images?)        → Ollama chat API
         │     ├── call_with_search(message, results) → re-run with SearXNG results
+        │     ├── call_with_search_stream(…)         → idem, streamé (intent search via /ask/stream)
         │     ├── chat(messages, cacheable=False)    → low-level call (opt-in cache)
-        │     ├── chat_stream(messages)              → streaming chunks (currently unused by the API)
+        │     ├── chat_stream(messages)              → streaming chunks (utilisé par /ask/stream)
         │     └── TTLCache (bot.cache)               → LLM opt-in + SearXNG always-on
         │
         ├── Observability (optional)
@@ -208,6 +212,7 @@ Missing or invalid → 403 with a warning logged (source IP included).
 | Method | Path               | Body                                                              | Response                                                                                                |
 | ------ | ------------------ | ----------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
 | POST   | `/ask`             | `{ "message": str }` <br>(header `X-Source: siri` → mode vocal)   | `{ "response": str, "intent": str, "refresh_cards": [str] }`                                            |
+| POST   | `/ask/stream`      | `{ "message": str }`                                              | SSE `text/event-stream` — frames `data: { "type": "delta"\|"replace"\|"done"\|"error", … }`             |
 | POST   | `/ask/image`       | `{ "message": str, "image_b64": str, "media_type": str }`         | `{ "response": str, "intent": str, "refresh_cards": [str] }`                                            |
 | GET    | `/notifications`   | —                                                                 | `{ "notifications": [ { "id": int, "text": str, "created_at": str } ] }`                                |
 | GET    | `/dashboard`       | —                                                                 | `{ "weather": …, "next_event": …, "today_tasks": […], "unread_notifications": int }`                    |

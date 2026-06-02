@@ -36,22 +36,25 @@ Two critical rules to remember when editing the prompt:
 
 ## Client
 
-`LLMClient` exposes four entry points:
+`LLMClient` exposes five entry points:
 
 - `call(system, user, images?)` — main chat call, supports multimodal images
   passed as base64.
 - `call_with_search(message, results)` — re-runs the LLM with SearXNG
   results as context for the `search` intent branch. Passes `cacheable=True`
   because this path has no `<meta>` and no side effects.
-- `chat(messages, cacheable=False)` — low-level Ollama call used by the two
+- `call_with_search_stream(message, results)` — streamed variant of the
+  above (same prompts, hence same cache key), used by the `search` branch
+  of `process_message_stream` (`POST /ask/stream`).
+- `chat(messages, cacheable=False)` — low-level Ollama call used by the
   above. `cacheable=True` enables response caching (key = hash of model +
   messages); NEVER enable it on a call that carries a `<meta>` block or
   triggers side effects (memory store, task/event creation).
 - `chat_stream(messages, cacheable=False)` — same as `chat` but yields text
-  chunks as Ollama streams them. Kept available for future SSE support; the
-  current HTTP API uses `call` only (full response in a single body). If
-  the primary model fails **before** the first chunk, the client falls back
-  to a single non-streamed call on the fallback endpoint (if configured).
+  chunks as Ollama streams them. Used by `process_message_stream` to feed
+  `POST /ask/stream` (PWA dialogue mode). If the primary model fails
+  **before** the first chunk, the client falls back to a single
+  non-streamed call on the fallback endpoint (if configured).
 
 ### Cache
 
@@ -81,7 +84,11 @@ primary:
 The LLM emits the `<meta>` JSON block at the **end** of its response.
 `bot.llm.parser.extract_meta` splits the full reply into `(visible_text,
 meta_dict)` and the pipeline routes side effects (memory store, task /
-event creation, search, fuel/weather queries) from `meta_dict`. With the
-HTTP API returning the response in one shot, there is no mid-stream
-filtering to do — the meta block is parsed once at the end and stripped
-from the user-facing text.
+event creation, search, fuel/weather queries) from `meta_dict`.
+
+On the streamed path (`POST /ask/stream`), `bot.llm.parser.MetaStreamFilter`
+filters the block incrementally: `feed(chunk)` returns the safe-to-emit text
+while holding back any suffix that could be the start of `<meta>` (the
+marker can be split across two Ollama chunks) plus the whitespace before
+it; once the marker is seen, nothing more is emitted. `raw` keeps the full
+response so `extract_meta` can parse the meta once the stream ends.

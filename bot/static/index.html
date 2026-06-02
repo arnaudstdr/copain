@@ -1058,6 +1058,41 @@
     return await res.json();
   }
 
+  /**
+   * Appel streamé de /ask/stream (SSE sur POST via fetch + ReadableStream).
+   * `handlers` : { onDelta(text), onReplace(text), onDone(intent, refreshCards), onError(text) }.
+   * Les frames sont de la forme `data: {json}\n\n` (cf. bot/api.py).
+   */
+  async function callTextStream(message, handlers) {
+    const res = await fetch(`${API_BASE}/ask/stream`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-API-Key": API_KEY },
+      body: JSON.stringify({ message })
+    });
+    if (!res.ok || !res.body) throw new Error(`${res.status}`);
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buf = "";
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buf += decoder.decode(value, { stream: true });
+      let sep;
+      while ((sep = buf.indexOf("\n\n")) !== -1) {
+        const frame = buf.slice(0, sep);
+        buf = buf.slice(sep + 2);
+        const line = frame.split("\n").find(l => l.startsWith("data: "));
+        if (!line) continue;
+        let evt;
+        try { evt = JSON.parse(line.slice(6)); } catch { continue; }
+        if (evt.type === "delta") handlers.onDelta(evt.text || "");
+        else if (evt.type === "replace") handlers.onReplace(evt.text || "");
+        else if (evt.type === "done") handlers.onDone(evt.intent, evt.refresh_cards || []);
+        else if (evt.type === "error") handlers.onError(evt.text || "");
+      }
+    }
+  }
+
   // ── Bulle éphémère ────────────────────────────────────────────────────────
   function showEphemeral(text, isError) {
     const e = document.getElementById("ephemeral");
@@ -1741,16 +1776,66 @@
     tb.innerHTML = '<span class="dot"></span><span class="dot"></span><span class="dot"></span>';
     typing.appendChild(tb); feed.appendChild(typing); feed.scrollTop = feed.scrollHeight;
 
+    // Photos : pas de streaming (multimodal via /ask/image, réponse en un bloc).
+    if (att) {
+      try {
+        const body = await callImage(text, att);
+        chatHistory.push({ role: "assistant", text: body.response });
+        if (body.refresh_cards && body.refresh_cards.length > 0) loadDashboard();
+      } catch (e) {
+        chatHistory.push({ role: "assistant", text: "Impossible de joindre Copain.", error: true });
+      } finally {
+        setLoading(false, "chat");
+        document.getElementById("chat-typing")?.remove();
+        renderChatFeed();
+      }
+      return;
+    }
+
+    // Texte : streaming SSE. Une bulle "live" remplace l'indicateur typing au
+    // premier delta et est re-rendue en markdown à chaque chunk ; à la fin,
+    // renderChatFeed() reconstruit le feed proprement depuis chatHistory.
+    let acc = "";
+    let liveSpan = null;
+    const renderLive = () => {
+      if (!liveSpan) {
+        document.getElementById("chat-typing")?.remove();
+        const row = el("div", "row bot");
+        row.id = "chat-live";
+        const avatar = el("div", "avatar-sm");
+        avatar.appendChild(lucideNode("bot", 16));
+        row.appendChild(avatar);
+        const bubble = el("div", "bubble bot");
+        liveSpan = el("span", "bubble-text chat-md");
+        bubble.appendChild(liveSpan);
+        row.appendChild(bubble);
+        feed.appendChild(row);
+      }
+      liveSpan.innerHTML = renderMarkdown(acc);
+      feed.scrollTop = feed.scrollHeight;
+    };
+
+    let streamError = null;
     try {
-      const body = att ? await callImage(text, att) : await callText(text);
-      chatHistory.push({ role: "assistant", text: body.response });
-      // On rafraîchit le dashboard en arrière-plan si l'action a modifié quelque chose.
-      if (body.refresh_cards && body.refresh_cards.length > 0) loadDashboard();
+      await callTextStream(text, {
+        onDelta(t) { acc += t; renderLive(); },
+        onReplace(t) { acc = t; renderLive(); },
+        onDone(intent, refreshCards) {
+          if (refreshCards && refreshCards.length > 0) loadDashboard();
+        },
+        onError(t) { streamError = t || "Impossible de joindre Copain."; }
+      });
+      if (streamError) {
+        chatHistory.push({ role: "assistant", text: streamError, error: true });
+      } else {
+        chatHistory.push({ role: "assistant", text: acc });
+      }
     } catch (e) {
       chatHistory.push({ role: "assistant", text: "Impossible de joindre Copain.", error: true });
     } finally {
       setLoading(false, "chat");
       document.getElementById("chat-typing")?.remove();
+      document.getElementById("chat-live")?.remove();
       renderChatFeed();
     }
   }

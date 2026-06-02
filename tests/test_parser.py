@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from bot.llm.parser import MetaParseError, extract_meta
+from bot.llm.parser import MetaParseError, MetaStreamFilter, extract_meta
 
 
 def test_extract_meta_task_intent(sample_llm_response: str) -> None:
@@ -544,3 +544,69 @@ def test_extract_meta_expense_shared_non_bool_rejected() -> None:
 "search_query":null}</meta>"""
     with pytest.raises(MetaParseError, match=r"expense\.shared"):
         extract_meta(raw)
+
+
+# --- MetaStreamFilter --------------------------------------------------------
+
+
+_META_JSON = (
+    '{"intent": "answer", "store_memory": false, "memory_content": null,'
+    ' "task": {"content": null, "due_str": null}, "search_query": null}'
+)
+
+
+def test_stream_filter_marker_split_across_chunks() -> None:
+    """Le marqueur <meta> coupé entre deux chunks ne doit jamais être émis."""
+    f = MetaStreamFilter()
+    out = f.feed("Bonjour !")
+    out += f.feed("\n\n<me")
+    out += f.feed(f"ta>{_META_JSON}</meta>")
+    out += f.flush()
+    assert out == "Bonjour !"
+    assert f.meta_started is True
+
+
+def test_stream_filter_raw_accumulates_full_response() -> None:
+    """`raw` doit contenir la réponse brute complète, bloc <meta> inclus."""
+    chunks = ["Salut.", "\n<meta>", _META_JSON, "</meta>"]
+    f = MetaStreamFilter()
+    for c in chunks:
+        f.feed(c)
+    assert f.raw == "".join(chunks)
+    text, meta = extract_meta(f.raw)
+    assert text == "Salut."
+    assert meta["intent"] == "answer"
+
+
+def test_stream_filter_legitimate_angle_bracket_is_emitted() -> None:
+    """Un `<` ou un préfixe partiel (<met…) qui n'aboutit pas reste visible."""
+    f = MetaStreamFilter()
+    out = f.feed("a < b et la <met")
+    out += f.feed("hode> marche")
+    out += f.flush()
+    assert out == "a < b et la <methode> marche"
+    assert f.meta_started is False
+
+
+def test_stream_filter_no_meta_flushes_remaining_text() -> None:
+    f = MetaStreamFilter()
+    out = f.feed("Texte sans bloc meta.")
+    out += f.flush()
+    assert out == "Texte sans bloc meta."
+
+
+def test_stream_filter_whitespace_before_meta_not_emitted() -> None:
+    """Les \\n\\n qui précèdent le bloc <meta> sont retenus (cohérent avec .strip())."""
+    f = MetaStreamFilter()
+    out = f.feed("Fin de réponse.\n\n")
+    out += f.feed(f"<meta>{_META_JSON}</meta>")
+    out += f.flush()
+    assert out == "Fin de réponse."
+
+
+def test_stream_filter_nothing_emitted_after_meta_started() -> None:
+    f = MetaStreamFilter()
+    f.feed(f"Texte.\n<meta>{_META_JSON}")
+    assert f.feed("</meta>") == ""
+    assert f.feed("du bruit après") == ""
+    assert f.flush() == ""
