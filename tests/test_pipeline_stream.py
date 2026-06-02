@@ -174,6 +174,42 @@ async def test_stream_search_intent_replaces_then_streams_summary(deps: BotDeps)
     deps.search.search.assert_awaited_once_with("prix vélo cargo")
 
 
+async def test_stream_search_frame_sequence_golden(deps: BotDeps) -> None:
+    """Golden : séquence complète des frames d'un intent search streamé.
+
+    Verrouille le protocole consommé par la PWA : deltas de l'intro
+    optimiste, puis un unique replace("") qui efface l'intro, puis les
+    deltas du résumé du second appel LLM, puis un unique done final
+    portant la Meta. Robuste au découpage en chunks (les deltas contigus
+    sont concaténés) mais strict sur l'ordre et le contenu.
+    """
+    deps.llm.chat_stream = MagicMock(
+        return_value=_astream(
+            ["Je vérifie.\n", _meta_block("search", search_query="prix vélo cargo")]
+        )
+    )
+    deps.llm.call_with_search_stream = MagicMock(return_value=_astream(["Voici ", "le résumé."]))
+    events = await _collect(process_message_stream("cherche le prix des vélos cargo", deps))
+
+    types = [e["type"] for e in events]
+    assert types.count("replace") == 1
+    assert types.count("done") == 1
+    assert types[-1] == "done"
+
+    replace_idx = types.index("replace")
+    intro_deltas = events[:replace_idx]
+    summary_deltas = events[replace_idx + 1 : -1]
+    assert all(e["type"] == "delta" for e in intro_deltas)
+    assert all(e["type"] == "delta" for e in summary_deltas)
+
+    # Le \n final de l'intro est retenu par MetaStreamFilter (il précède le
+    # bloc <meta>) : seul le texte utile atteint le client.
+    assert "".join(e["text"] for e in intro_deltas) == "Je vérifie."
+    assert events[replace_idx]["text"] == ""
+    assert "".join(e["text"] for e in summary_deltas) == "Voici le résumé."
+    assert events[-1]["meta"]["intent"] == "search"
+
+
 async def test_stream_weather_intent_replaces_with_handler_text(deps: BotDeps) -> None:
     """Un intent à handler Python (weather) doit émettre un replace avec le texte final."""
     deps.llm.chat_stream = MagicMock(

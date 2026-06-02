@@ -35,7 +35,7 @@ if TYPE_CHECKING:
     from bot.profile import UserProfile
     from bot.rss.fetcher import RssFetcher
     from bot.rss.manager import FeedManager
-    from bot.search.searxng import SearxngClient
+    from bot.search.searxng import SearchResult, SearxngClient
     from bot.tasks.manager import TaskManager
     from bot.tasks.scheduler import ReminderScheduler
     from bot.thoughts.manager import ThoughtManager
@@ -121,6 +121,20 @@ class BotDeps:
     history: deque[str]
 
 
+@dataclass
+class _RouteOutcome:
+    """Issue du routing commun : exactement une branche est active.
+
+    - `search_results` non-None → intent search, l'orchestrateur produit le
+      résumé à partir de ces résultats (variante streamée ou non) ;
+    - sinon `replacement` porte l'éventuel texte final d'un handler Python
+      (None = l'intro du LLM reste le texte final).
+    """
+
+    search_results: list[SearchResult] | None = None
+    replacement: str | None = None
+
+
 async def process_message(
     user_text: str,
     deps: BotDeps,
@@ -148,28 +162,21 @@ async def process_message(
     )
     raw = await deps.llm.call(system=system_prompt, user=user_content, images=images)
 
-    try:
-        text, meta = extract_meta(raw)
-    except MetaParseError as exc:
-        log.warning("meta_parse_failed", error=str(exc), raw_preview=raw[:200])
+    extracted = _try_extract_meta(raw)
+    if extracted is None:
         return FALLBACK_TEXT, _FALLBACK_META
+    text, meta = extracted
 
-    await apply_side_effects(user_text, meta, deps)
-
-    if meta["intent"] == "search" and meta["search_query"]:
-        results = await deps.search.search(meta["search_query"])
-        log.info("search_performed", query=meta["search_query"], hits=len(results))
-        text = await deps.llm.call_with_search(user_text, results)
-    else:
-        replacement = await run_intent_handler(user_text, meta, deps, intro=text)
-        if replacement is not None:
-            text = replacement
+    outcome = await _route_and_apply(user_text, meta, deps, intro=text)
+    if outcome.search_results is not None:
+        text = await deps.llm.call_with_search(user_text, outcome.search_results)
+    elif outcome.replacement is not None:
+        text = outcome.replacement
 
     history_user = user_text if user_text else "(image envoyée)"
     if images:
         history_user = f"[photo] {history_user}"
-    deps.history.append(f"user: {history_user}")
-    deps.history.append(f"assistant: {text}")
+    _record_history(deps, history_user, text)
 
     return text, meta
 
@@ -213,37 +220,70 @@ async def process_message_stream(
     if tail:
         yield {"type": "delta", "text": tail}
 
-    try:
-        text, meta = extract_meta(meta_filter.raw)
-    except MetaParseError as exc:
-        log.warning("meta_parse_failed", error=str(exc), raw_preview=meta_filter.raw[:200])
+    extracted = _try_extract_meta(meta_filter.raw)
+    if extracted is None:
         # Même comportement que process_message : texte de secours, meta
         # neutre, pas de side effects ni d'entrée dans l'history.
         yield {"type": "replace", "text": FALLBACK_TEXT}
         yield {"type": "done", "meta": _FALLBACK_META}
         return
+    text, meta = extracted
 
-    await apply_side_effects(user_text, meta, deps)
-
-    if meta["intent"] == "search" and meta["search_query"]:
-        results = await deps.search.search(meta["search_query"])
-        log.info("search_performed", query=meta["search_query"], hits=len(results))
+    outcome = await _route_and_apply(user_text, meta, deps, intro=text)
+    if outcome.search_results is not None:
         yield {"type": "replace", "text": ""}
         summary_parts: list[str] = []
-        async for piece in deps.llm.call_with_search_stream(user_text, results):
+        async for piece in deps.llm.call_with_search_stream(user_text, outcome.search_results):
             summary_parts.append(piece)
             yield {"type": "delta", "text": piece}
         text = "".join(summary_parts)
-    else:
-        replacement = await run_intent_handler(user_text, meta, deps, intro=text)
-        if replacement is not None:
-            text = replacement
-            yield {"type": "replace", "text": text}
+    elif outcome.replacement is not None:
+        text = outcome.replacement
+        yield {"type": "replace", "text": text}
 
-    deps.history.append(f"user: {user_text}")
-    deps.history.append(f"assistant: {text}")
+    _record_history(deps, user_text, text)
 
     yield {"type": "done", "meta": meta}
+
+
+def _try_extract_meta(raw: str) -> tuple[str, Meta] | None:
+    """Extrait `(texte, meta)` de la réponse LLM, ou None si le bloc est invalide.
+
+    Le None signifie pour l'orchestrateur appelant : texte de secours, meta
+    neutre, et surtout NI side effects NI entrée dans l'history (comportement
+    verrouillé par les tests des deux chemins).
+    """
+    try:
+        return extract_meta(raw)
+    except MetaParseError as exc:
+        log.warning("meta_parse_failed", error=str(exc), raw_preview=raw[:200])
+        return None
+
+
+async def _route_and_apply(user_text: str, meta: Meta, deps: BotDeps, intro: str) -> _RouteOutcome:
+    """Séquence métier commune aux deux orchestrateurs : side effects puis routing.
+
+    Pour l'intent search (avec query), exécute la recherche SearXNG et laisse
+    l'orchestrateur produire le résumé via le second appel LLM ; pour les
+    autres intents, délègue aux handlers Python qui peuvent remplacer l'intro.
+    """
+    await apply_side_effects(user_text, meta, deps)
+    if meta["intent"] == "search" and meta["search_query"]:
+        results = await deps.search.search(meta["search_query"])
+        log.info("search_performed", query=meta["search_query"], hits=len(results))
+        return _RouteOutcome(search_results=results)
+    replacement = await run_intent_handler(user_text, meta, deps, intro=intro)
+    return _RouteOutcome(replacement=replacement)
+
+
+def _record_history(deps: BotDeps, user_entry: str, assistant_text: str) -> None:
+    """Append user/assistant dans l'history roulante, APRÈS le texte final.
+
+    L'ordre compte : le texte enregistré doit être celui réellement renvoyé
+    (y compris un remplacement par handler ou un résumé search).
+    """
+    deps.history.append(f"user: {user_entry}")
+    deps.history.append(f"assistant: {assistant_text}")
 
 
 async def _build_prompt(user_text: str, deps: BotDeps, voice_mode: bool) -> str:
