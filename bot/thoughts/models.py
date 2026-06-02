@@ -42,6 +42,7 @@ class Thought(Base):
         DateTime(timezone=True), nullable=False, default=_utcnow
     )
     processed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    surfaced_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     def __repr__(self) -> str:
         tag = f"[{self.kind}]" if self.kind else "[·]"

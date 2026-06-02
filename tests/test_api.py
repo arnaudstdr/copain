@@ -1044,6 +1044,37 @@ async def test_thoughts_clamps_excessive_limit(client: AsyncClient, state: AppSt
     assert kwargs["limit"] == 200
 
 
+# --- POST /thoughts/{id}/close ----------------------------------------------
+
+
+async def test_close_thought_returns_closed(client: AsyncClient, state: AppState) -> None:
+    state.deps.thoughts.close = AsyncMock(return_value=True)
+    response = await client.post("/thoughts/12/close", headers={"X-API-Key": API_KEY})
+    assert response.status_code == 200
+    assert response.json() == {"closed": True, "thought_id": 12}
+    state.deps.thoughts.close.assert_awaited_once_with(12)
+
+
+async def test_close_thought_is_idempotent(client: AsyncClient, state: AppState) -> None:
+    # Le manager retourne True même pour un dépôt déjà clos : 200 idem.
+    state.deps.thoughts.close = AsyncMock(return_value=True)
+    for _ in range(2):
+        response = await client.post("/thoughts/12/close", headers={"X-API-Key": API_KEY})
+        assert response.status_code == 200
+        assert response.json() == {"closed": True, "thought_id": 12}
+
+
+async def test_close_unknown_thought_returns_404(client: AsyncClient, state: AppState) -> None:
+    state.deps.thoughts.close = AsyncMock(return_value=False)
+    response = await client.post("/thoughts/999/close", headers={"X-API-Key": API_KEY})
+    assert response.status_code == 404
+
+
+async def test_close_thought_requires_api_key(client: AsyncClient) -> None:
+    response = await client.post("/thoughts/1/close")
+    assert response.status_code == 403
+
+
 # --- /budget --------------------------------------------------------------
 
 

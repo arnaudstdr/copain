@@ -183,6 +183,11 @@ class ThoughtsListResponse(BaseModel):
     thoughts: list[ThoughtItem]
 
 
+class ThoughtCloseResponse(BaseModel):
+    closed: bool
+    thought_id: int
+
+
 # --- News schemas ----------------------------------------------------------
 
 
@@ -812,6 +817,27 @@ def create_app(state: AppState) -> FastAPI:
             for t in rows
         ]
         return ThoughtsListResponse(thoughts=items)
+
+    @app.post(
+        "/thoughts/{thought_id}/close",
+        response_model=ThoughtCloseResponse,
+        dependencies=[Depends(verify_api_key)],
+    )
+    async def close_thought(
+        thought_id: int, deps: BotDeps = Depends(get_deps)
+    ) -> ThoughtCloseResponse:
+        """Clôt un dépôt cognitif (tap PWA, card "Pour toi").
+
+        Idempotent : re-clore un dépôt déjà clos renvoie 200 sans modifier
+        le `processed_at` initial. 404 si l'id est inconnu.
+        """
+        ok = await deps.thoughts.close(thought_id)
+        if not ok:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Thought not found",
+            )
+        return ThoughtCloseResponse(closed=True, thought_id=thought_id)
 
     @app.get(
         "/budget",
