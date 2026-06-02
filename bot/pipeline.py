@@ -458,17 +458,15 @@ async def _handle_expense_side_effect(meta: Meta, deps: BotDeps) -> None:
         if item is None:
             log.warning("expense_tick_unknown_key", key=key)
             return
-        already = await deps.expenses.is_recurring_ticked_in_cycle(item.key, when)
-        if already:
-            log.info("expense_tick_duplicate_ignored", key=item.key)
-            return
         # Montant : par défaut on prend l'amount du YAML (source de vérité
         # pour un loyer fixe). Si l'utilisateur précise un autre montant
         # ("j'ai versé 11€ sur le PEL"), le LLM le met dans `expense.amount`
         # et on l'utilise comme override. Couvre les placements variables
         # autant que les ponctuelles qui dérapent d'un mois sur l'autre.
         amount_cents = override_cents if override_cents is not None else item.amount_cents
-        expense = await deps.expenses.tick_recurring(
+        # `tick_recurring_once` est atomique (check + insert sous lock) :
+        # deux requêtes concurrentes ne peuvent pas doubler le pointage.
+        tick = await deps.expenses.tick_recurring_once(
             recurring_key=item.key,
             label=item.label,
             amount_cents=amount_cents,
@@ -476,9 +474,12 @@ async def _handle_expense_side_effect(meta: Meta, deps: BotDeps) -> None:
             occurred_on=when,
             category=item.category,
         )
+        if tick is None:
+            log.info("expense_tick_duplicate_ignored", key=item.key)
+            return
         log.info(
             "expense_recurring_ticked",
-            expense_id=expense.id,
+            expense_id=tick.id,
             key=item.key,
             kind=item.kind,
             amount_cents=amount_cents,

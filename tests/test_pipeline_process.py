@@ -136,6 +136,7 @@ def deps() -> BotDeps:
     expenses.add_punctual = AsyncMock(return_value=fake_expense)
     expenses.add_income = AsyncMock(return_value=fake_expense)
     expenses.tick_recurring = AsyncMock(return_value=fake_expense)
+    expenses.tick_recurring_once = AsyncMock(return_value=fake_expense)
     expenses.start_cycle = AsyncMock(return_value=fake_expense)
     expenses.list_for_month = AsyncMock(return_value=[])
     expenses.list_for_cycle = AsyncMock(return_value=[])
@@ -815,7 +816,7 @@ async def test_process_expense_tick_recurring_unknown_key_is_noop(
         )
     )
     await process_message("le loyer est passé", deps=deps)
-    deps.expenses.tick_recurring.assert_not_awaited()
+    deps.expenses.tick_recurring_once.assert_not_awaited()
 
 
 async def test_process_expense_tick_recurring_calls_manager(deps: BotDeps) -> None:
@@ -847,8 +848,8 @@ async def test_process_expense_tick_recurring_calls_manager(deps: BotDeps) -> No
         )
     )
     await process_message("le loyer est passé", deps=deps)
-    deps.expenses.tick_recurring.assert_awaited_once()
-    kwargs = deps.expenses.tick_recurring.await_args.kwargs
+    deps.expenses.tick_recurring_once.assert_awaited_once()
+    kwargs = deps.expenses.tick_recurring_once.await_args.kwargs
     assert kwargs["recurring_key"] == "loyer"
     assert kwargs["kind"] == "expense"
     assert kwargs["amount_cents"] == 80000  # depuis le YAML (source de vérité)
@@ -873,7 +874,8 @@ async def test_process_expense_tick_already_ticked_skipped(deps: BotDeps) -> Non
         },
     )
     deps.profile = profile
-    deps.expenses.is_recurring_ticked_in_cycle = AsyncMock(return_value=True)
+    # Déjà pointée dans le cycle : la variante atomique retourne None.
+    deps.expenses.tick_recurring_once = AsyncMock(return_value=None)
     deps.llm.call = AsyncMock(
         return_value=_meta_block(
             intent="expense",
@@ -884,6 +886,9 @@ async def test_process_expense_tick_already_ticked_skipped(deps: BotDeps) -> Non
         )
     )
     await process_message("le loyer est passé", deps=deps)
+    # Le check + insert vivent dans tick_recurring_once : elle est bien
+    # appelée, mais aucune écriture directe via tick_recurring.
+    deps.expenses.tick_recurring_once.assert_awaited_once()
     deps.expenses.tick_recurring.assert_not_awaited()
 
 
@@ -938,8 +943,8 @@ async def test_process_expense_tick_recurring_amount_null_uses_yaml_default(
         )
     )
     await process_message("j'ai versé le PEL", deps=deps)
-    deps.expenses.tick_recurring.assert_awaited_once()
-    kwargs = deps.expenses.tick_recurring.await_args.kwargs
+    deps.expenses.tick_recurring_once.assert_awaited_once()
+    kwargs = deps.expenses.tick_recurring_once.await_args.kwargs
     assert kwargs["amount_cents"] == 1500  # 15€ du YAML
 
 
@@ -958,6 +963,6 @@ async def test_process_expense_tick_recurring_amount_override_replaces_yaml(
         )
     )
     await process_message("j'ai versé 11€ sur le PEL", deps=deps)
-    deps.expenses.tick_recurring.assert_awaited_once()
-    kwargs = deps.expenses.tick_recurring.await_args.kwargs
+    deps.expenses.tick_recurring_once.assert_awaited_once()
+    kwargs = deps.expenses.tick_recurring_once.await_args.kwargs
     assert kwargs["amount_cents"] == 1100  # override LLM

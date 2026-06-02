@@ -284,3 +284,52 @@ async def test_is_recurring_ticked_in_cycle_isolates_cycles(manager: ExpenseMana
     assert await manager.is_recurring_ticked_in_cycle("loyer", date(2026, 5, 18))
     # Cycle suivant : pas encore pointé.
     assert not await manager.is_recurring_ticked_in_cycle("loyer", date(2026, 6, 2))
+
+
+async def test_tick_recurring_once_returns_none_when_already_ticked(
+    manager: ExpenseManager,
+) -> None:
+    first = await manager.tick_recurring_once(
+        recurring_key="loyer",
+        label="Loyer",
+        amount_cents=80000,
+        kind="expense",
+        occurred_on=date(2026, 5, 5),
+    )
+    second = await manager.tick_recurring_once(
+        recurring_key="loyer",
+        label="Loyer",
+        amount_cents=80000,
+        kind="expense",
+        occurred_on=date(2026, 5, 18),  # même cycle (mois civil sans ancre)
+    )
+    assert first is not None
+    assert second is None
+
+
+async def test_tick_recurring_once_is_atomic_under_concurrency(
+    manager: ExpenseManager,
+) -> None:
+    """Deux pointages concurrents de la même récurrente → une seule écriture.
+
+    Régression du check-then-act SELECT puis INSERT qui pouvait doubler un
+    tick si deux requêtes arrivaient en parallèle.
+    """
+    import asyncio
+
+    results = await asyncio.gather(
+        *(
+            manager.tick_recurring_once(
+                recurring_key="pel",
+                label="Versement PEL",
+                amount_cents=20000,
+                kind="saving",
+                occurred_on=date(2026, 5, 5),
+            )
+            for _ in range(5)
+        )
+    )
+    created = [r for r in results if r is not None]
+    assert len(created) == 1
+    rows = await manager.list_for_month(date(2026, 5, 1))
+    assert len(rows) == 1

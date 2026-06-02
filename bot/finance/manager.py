@@ -6,6 +6,7 @@ via `bot.db.create_shared_engine` — un seul pool sur `tasks.db`.
 
 from __future__ import annotations
 
+import asyncio
 import calendar as _calendar
 from collections.abc import Sequence
 from datetime import date
@@ -47,6 +48,11 @@ class ExpenseManager:
     def __init__(self, engine: AsyncEngine) -> None:
         self._engine = engine
         self._sessionmaker = async_sessionmaker(self._engine, expire_on_commit=False)
+        # Sérialise le check-then-act de `tick_recurring_once` : la fenêtre
+        # de cycle est dynamique (ancrée sur les salaires), donc pas de
+        # contrainte UNIQUE possible en SQL. Serveur mono-process → un lock
+        # asyncio suffit à empêcher un double pointage concurrent.
+        self._tick_lock = asyncio.Lock()
 
     async def init_schema(self) -> None:
         async with self._engine.begin() as conn:
@@ -136,6 +142,35 @@ class ExpenseManager:
             occurred_on=occurred_on,
         )
         return await self._persist(expense)
+
+    async def tick_recurring_once(
+        self,
+        *,
+        recurring_key: str,
+        label: str,
+        amount_cents: int,
+        kind: Literal["expense", "saving"],
+        occurred_on: date,
+        category: str | None = None,
+    ) -> Expense | None:
+        """Pointe une récurrente si elle ne l'est pas déjà dans le cycle.
+
+        Variante atomique de `is_recurring_ticked_in_cycle` + `tick_recurring` :
+        le SELECT et l'INSERT sont sérialisés sous un lock pour qu'un double
+        envoi concurrent (« le loyer est passé » reçu deux fois) ne produise
+        qu'une seule écriture. Retourne `None` si déjà pointée.
+        """
+        async with self._tick_lock:
+            if await self.is_recurring_ticked_in_cycle(recurring_key, occurred_on):
+                return None
+            return await self.tick_recurring(
+                recurring_key=recurring_key,
+                label=label,
+                amount_cents=amount_cents,
+                kind=kind,
+                occurred_on=occurred_on,
+                category=category,
+            )
 
     async def is_recurring_ticked_this_month(
         self,
