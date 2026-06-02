@@ -102,7 +102,25 @@ copain/
 │   ├── news/
 │   │   └── client.py            # NewsCurator (SearXNG news + curation LLM)
 │   │
-│   ├── static/                  # PWA vanilla JS (index.html servi à /)
+│   ├── static/                  # PWA vanilla JS (index.html servi à /, no-store)
+│   │   ├── index.html           # structure HTML + <link> CSS + <script type="module">
+│   │   │                        #   assets versionnés ?v=N (cache-busting Safari)
+│   │   ├── manifest.json
+│   │   ├── styles/
+│   │   │   ├── theme.css        # variables CSS + palettes dark/light
+│   │   │   ├── layout.css       # app shell, header, dashboard, composer
+│   │   │   ├── components.css   # cards, overlays, chat, markdown, éphémère/toast
+│   │   │   └── animations.css   # keyframes
+│   │   └── js/                  # modules ES6 natifs, zéro build step
+│   │       ├── main.js          # point d'entrée : boot + bindings du DOM statique
+│   │       ├── state.js         # état global partagé (API_KEY, loading, caches…)
+│   │       ├── api.js           # fetch wrappers : callText, callImage, stream SSE
+│   │       ├── dashboard.js     # loadDashboard + renderers de cards + budget
+│   │       ├── overlays.js      # notifs, tâches (swipe), météo, évents
+│   │       ├── chat.js          # mode chat (feed, envoi, bulle SSE live)
+│   │       ├── composer.js      # envoi /ask, photos, micro (SpeechRecognition)
+│   │       ├── markdown.js      # renderMarkdown + vue markdown plein écran
+│   │       └── ui.js            # el(), escHtml(), Lucide, helpers date, toast/éphémère
 │   │
 │   └── proactivity/
 │       ├── models.py            # NotificationLog (shares Base with tasks)
