@@ -65,7 +65,11 @@ pour vider des pensées parasites sans tenter de les traiter.
   `GET /dashboard` agrège l'état en un seul appel. Mode chat optionnel via
   icône 💬 pour les conversations longues. **Plus de briefing matin
   automatique ni de card carburant** (intentionnellement, pour ne pas
-  pousser d'info entrante non sollicitée).
+  pousser d'info entrante non sollicitée). Code sous `bot/static/` :
+  `index.html` (structure seule, servi en `no-store`), CSS sous `styles/`,
+  JS en modules ES6 natifs sous `js/` (entrée `main.js`, assets référencés
+  avec `?v=N` incrémenté à chaque déploiement pour invalider le cache
+  Safari).
 - **Profil utilisateur YAML** (`data/profile.yaml`): fichier édité à la main
   décrivant l'utilisateur (identité, famille, travail, voiture, routines,
   préférences). Injecté tel quel dans le system prompt à chaque appel LLM,
@@ -228,7 +232,7 @@ FastAPI app (bot/api.py, served by uvicorn)
 | Container     | Docker + Docker Compose                                 |
 | Tests         | pytest + pytest-asyncio (auto mode, 460+ tests)         |
 | Quality       | ruff (lint+format) + mypy strict via pre-commit         |
-| Interface web | Vanilla JS PWA, servie par FastAPI à `/`                |
+| Interface web | Vanilla JS PWA (modules ES6 natifs, zéro build step)    |
 | Monitoring    | Sentry SDK (opt-in via `SENTRY_DSN`)                    |
 | Push iOS      | Pushover (opt-in via `PUSHOVER_TOKEN` + `PUSHOVER_USER`)|
 
