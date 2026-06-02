@@ -1,0 +1,59 @@
+html, body { height: 100%; background: var(--bg); color: var(--text); font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, sans-serif; overflow: hidden; -webkit-font-smoothing: antialiased; }
+
+/* Hauteur du #app pilotée par JS via window.visualViewport (cf. setupAppHeight).
+   Fallback 100dvh pour les chargements pré-JS / navigateurs sans visualViewport.
+   Sur iOS 26 PWA standalone, 100dvh peut renvoyer une valeur trop petite — on
+   remplace par la vraie hauteur visuelle mesurée. */
+:root { --app-h: 100dvh; }
+
+#app { display: flex; flex-direction: column; height: var(--app-h); max-width: 480px; margin: 0 auto; background: var(--bg); position: relative; overflow: hidden; }
+
+/* ── Header ── */
+header { display: flex; align-items: center; gap: 12px; padding: 12px 16px; padding-top: max(12px, env(safe-area-inset-top)); border-bottom: 1px solid var(--border); background: var(--bg2); flex-shrink: 0; }
+.greeting { flex: 1; min-width: 0; }
+.greeting-name { font-weight: 600; font-size: 15px; letter-spacing: -0.2px; }
+.greeting-date { font-size: 11.5px; color: var(--text3); margin-top: 1px; text-transform: capitalize; }
+.header-btn { position: relative; width: 36px; height: 36px; border-radius: 50%; background: var(--bg3); border: 1px solid var(--border2); color: var(--text2); cursor: pointer; display: flex; align-items: center; justify-content: center; flex-shrink: 0; transition: transform 0.1s, background 0.15s; }
+.header-btn:active { transform: scale(0.92); }
+.header-btn:hover { background: var(--bg4); }
+/* Bouton texte dans le header (action contextuelle d'une vue markdown). */
+.header-action-btn { margin-left: auto; padding: 7px 14px; border-radius: 18px; background: var(--bg3); border: 1px solid var(--border2); color: var(--text); font-size: 13px; font-weight: 500; cursor: pointer; flex-shrink: 0; transition: transform 0.1s, background 0.15s; }
+.header-action-btn:active { transform: scale(0.96); }
+.header-action-btn:hover { background: var(--bg4); }
+.header-action-btn.hidden { display: none; }
+.badge { position: absolute; top: -3px; right: -3px; background: var(--red); color: #fff; font-size: 9px; font-weight: 700; min-width: 16px; height: 16px; padding: 0 4px; border-radius: 8px; display: flex; align-items: center; justify-content: center; }
+
+/* ── Dashboard feed ── */
+#dashboard { flex: 1; overflow-y: auto; padding: 12px 14px; display: flex; flex-direction: column; gap: 10px; scroll-behavior: smooth; }
+#dashboard::-webkit-scrollbar { width: 3px; }
+#dashboard::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 4px; }
+
+/* ── Composer wrap (preview + input bar) ── */
+/* Composer dans le flow flexbox du #app : flex-shrink: 0 la garde à sa
+   taille naturelle, et comme c'est le dernier enfant après #dashboard
+   (flex: 1), elle est mécaniquement collée au bas du #app. La hauteur
+   du #app étant pilotée par JS via --app-h (visualViewport), le bas
+   du #app = le bas physique de l'écran. */
+.composer-wrap { background: var(--bg2); flex-shrink: 0; }
+
+/* ── Input bar ── */
+.bar, #bar { display: flex; align-items: flex-end; gap: 7px; padding: 9px 14px; border-top: 1px solid var(--border); background: var(--bg2); flex-shrink: 0; padding-bottom: max(9px, env(safe-area-inset-bottom)); }
+.icon-btn { width: 36px; height: 36px; border-radius: 50%; background: var(--bg3); border: 1px solid var(--border2); color: var(--text2); cursor: pointer; display: flex; align-items: center; justify-content: center; flex-shrink: 0; transition: transform 0.1s, background 0.15s; }
+.icon-btn:active { transform: scale(0.92); }
+.icon-btn:hover { background: var(--bg4); }
+.icon-btn.recording { background: #3b1f4a; border-color: var(--purple); color: var(--purple); }
+/* font-size: 16px obligatoire — sinon iOS Safari déclenche un zoom auto
+   sur focus de l'input et ne dézoome jamais à blur. */
+.msg-input { flex: 1; background: var(--bg3); border: 1px solid var(--border2); border-radius: 18px; padding: 8px 14px; color: var(--text); font-size: 16px; resize: none; line-height: 1.4; font-family: inherit; max-height: 110px; overflow-y: auto; outline: none; transition: border-color 0.15s; }
+.msg-input:focus { border-color: var(--accent); }
+.send-btn { width: 40px; height: 40px; border-radius: 50%; background: var(--accent); border: none; color: #fff; cursor: pointer; display: flex; align-items: center; justify-content: center; flex-shrink: 0; transition: opacity 0.15s, transform 0.1s; }
+.send-btn:active { transform: scale(0.92); }
+.send-btn:disabled { opacity: 0.4; cursor: default; }
+
+/* ── Preview photo ── */
+#preview-bar, #chat-preview-bar { padding: 8px 14px; border-top: 1px solid var(--border); background: var(--bg2); display: flex; align-items: center; gap: 12px; flex-shrink: 0; }
+#preview-bar.hidden, #chat-preview-bar.hidden { display: none; }
+.preview-wrap { position: relative; width: 44px; height: 44px; flex-shrink: 0; }
+.preview-img { width: 44px; height: 44px; object-fit: cover; border-radius: 8px; }
+.remove-btn { position: absolute; top: -5px; right: -5px; width: 16px; height: 16px; border-radius: 50%; background: var(--red); border: none; color: #fff; font-size: 8px; cursor: pointer; display: flex; align-items: center; justify-content: center; }
+.preview-label { font-size: 12px; color: var(--text2); }

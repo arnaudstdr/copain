@@ -1,0 +1,56 @@
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  /* Palette sombre — défaut (le rendu pré-iOS-prefers ne change pas). */
+  --bg: #0f0f11;
+  --bg2: #13131a;
+  --bg3: #1e1e2e;
+  --bg4: #26263a;
+  --border: #1e1e24;
+  --border2: #2a2a3a;
+  --text: #e8e8ec;
+  --text2: #9999aa;
+  --text3: #6b6b80;
+  --accent: #5b5bd6;
+  --accent2: #7a7ae8;
+  --green: #4ade80;
+  --red: #ef4444;
+  --orange: #f59e0b;
+  --purple: #a855f7;
+  --blue: #60a5fa;
+  /* Couleurs dérivées (fond de flash, overlays, shadows) — résolues à
+     partir du mode courant pour rester cohérentes entre les thèmes. */
+  --flash-bg: rgba(91, 91, 214, 0.18);
+  --overlay-bg: rgba(0, 0, 0, 0.55);
+  --shadow-strong: 0 8px 32px rgba(0, 0, 0, 0.4);
+  --track-bg: rgba(255, 255, 255, 0.1);
+  --on-accent: #fff;
+}
+
+/* Palette claire — alignée sur le system iOS (fonds quasi-blanc, accents
+   conservés). Active dès que l'iPhone est en mode clair. */
+@media (prefers-color-scheme: light) {
+  :root {
+    --bg: #f2f2f7;
+    --bg2: #ffffff;
+    --bg3: #efeff3;
+    --bg4: #e5e5ea;
+    --border: #e5e5ea;
+    --border2: #d1d1d6;
+    --text: #1c1c1e;
+    --text2: #4a4a4f;
+    --text3: #8e8e93;
+    --accent: #5b5bd6;
+    --accent2: #4c4ad6;
+    --green: #34c759;
+    --red: #ff3b30;
+    --orange: #ff9500;
+    --purple: #af52de;
+    --blue: #007aff;
+    --flash-bg: rgba(91, 91, 214, 0.12);
+    --overlay-bg: rgba(0, 0, 0, 0.35);
+    --shadow-strong: 0 8px 24px rgba(0, 0, 0, 0.12);
+    --track-bg: rgba(0, 0, 0, 0.08);
+    --on-accent: #fff;
+  }
+}
