@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import re
-from typing import Any, Literal, TypedDict, get_args
+from typing import Any, Literal, TypedDict, cast, get_args
 
 META_PATTERN = re.compile(r"<meta>\s*(\{.*?\})\s*</meta>", re.DOTALL)
 
@@ -32,6 +32,9 @@ VALID_EVENT_ACTIONS: frozenset[str] = frozenset(get_args(EventAction))
 
 DepotKind = Literal["worry", "idea", "note"]
 VALID_DEPOT_KINDS: frozenset[str] = frozenset(get_args(DepotKind))
+
+DepotAction = Literal["add", "close"]
+VALID_DEPOT_ACTIONS: frozenset[str] = frozenset(get_args(DepotAction))
 
 ExpenseAction = Literal["spend", "income", "tick_recurring"]
 VALID_EXPENSE_ACTIONS: frozenset[str] = frozenset(get_args(ExpenseAction))
@@ -73,6 +76,8 @@ class WeatherMeta(TypedDict):
 class DepotMeta(TypedDict):
     content: str | None
     kind: DepotKind | None
+    action: DepotAction  # défaut "add" si absent (rétrocompat ancien prompt)
+    thought_id: int | None  # id du souci à clore, uniquement pour action=close
 
 
 class ExpenseMeta(TypedDict):
@@ -291,9 +296,17 @@ def _validate(data: Any) -> Meta:
     depot_kind = depot_raw.get("kind")
     if depot_kind is not None and depot_kind not in VALID_DEPOT_KINDS:
         raise MetaParseError(f"depot.kind invalide : {depot_kind!r}")
+    # `action` est optionnel : default "add" si absent ou null (rétro-compat
+    # avec les LLM qui n'ont pas encore le nouveau prompt).
+    raw_depot_action = depot_raw.get("action") or "add"
+    if raw_depot_action not in VALID_DEPOT_ACTIONS:
+        raise MetaParseError(f"depot.action invalide : {raw_depot_action!r}")
+    depot_action = cast(DepotAction, raw_depot_action)  # sûr : validé ci-dessus
     depot: DepotMeta = {
         "content": _opt_str(depot_raw.get("content"), "depot.content"),
         "kind": depot_kind,
+        "action": depot_action,
+        "thought_id": _opt_int(depot_raw.get("thought_id"), "depot.thought_id"),
     }
 
     expense_raw = data.get("expense") or {
@@ -358,6 +371,22 @@ def _opt_str(value: Any, field: str) -> str | None:
     if not isinstance(value, str):
         raise MetaParseError(f"{field} doit être une chaîne ou null")
     return value
+
+
+def _opt_int(value: Any, field: str) -> int | None:
+    """Accepte int ou str numérique. `True`/`False` rejetés (bool is int)."""
+    if value is None:
+        return None
+    if isinstance(value, bool):
+        raise MetaParseError(f"{field} doit être un entier ou null")
+    if isinstance(value, int):
+        return value
+    if isinstance(value, str):
+        try:
+            return int(value)
+        except ValueError as exc:
+            raise MetaParseError(f"{field} doit être un entier ou null") from exc
+    raise MetaParseError(f"{field} doit être un entier ou null")
 
 
 def _opt_float(value: Any, field: str) -> float | None:

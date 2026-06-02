@@ -340,7 +340,7 @@ def test_extract_meta_depot_invalid_kind_raises() -> None:
 
 
 def test_extract_meta_depot_optional_in_old_format() -> None:
-    """Rétrocompat : si le LLM oublie depot, défauts à None."""
+    """Rétrocompat : si le LLM oublie depot, défauts à None (et action=add)."""
     raw = """<meta>{"intent": "answer", "store_memory": false, "memory_content": null,
 "task": {"content": null, "due_str": null},
 "feed": {"action": null, "name": null, "url": null},
@@ -348,6 +348,61 @@ def test_extract_meta_depot_optional_in_old_format() -> None:
     _, meta = extract_meta(raw)
     assert meta["depot"]["content"] is None
     assert meta["depot"]["kind"] is None
+    assert meta["depot"]["action"] == "add"
+    assert meta["depot"]["thought_id"] is None
+
+
+def test_extract_meta_depot_action_defaults_to_add_when_missing() -> None:
+    """Rétrocompat : un bloc depot sans `action` (ancien prompt) → action=add."""
+    raw = """<meta>{"intent":"depot","store_memory":false,"memory_content":null,
+"depot":{"content":"une pensée","kind":"note"},
+"search_query":null}</meta>"""
+    _, meta = extract_meta(raw)
+    assert meta["depot"]["action"] == "add"
+    assert meta["depot"]["thought_id"] is None
+
+
+def test_extract_meta_depot_close_with_thought_id() -> None:
+    raw = """<meta>{"intent":"depot","store_memory":false,"memory_content":null,
+"depot":{"content":null,"kind":null,"action":"close","thought_id":12},
+"search_query":null}</meta>"""
+    _, meta = extract_meta(raw)
+    assert meta["depot"]["action"] == "close"
+    assert meta["depot"]["thought_id"] == 12
+
+
+def test_extract_meta_depot_thought_id_str_numeric_accepted() -> None:
+    """Le LLM peut émettre l'id en chaîne ("12") : converti en int."""
+    raw = """<meta>{"intent":"depot","store_memory":false,"memory_content":null,
+"depot":{"content":null,"kind":null,"action":"close","thought_id":"12"},
+"search_query":null}</meta>"""
+    _, meta = extract_meta(raw)
+    assert meta["depot"]["thought_id"] == 12
+
+
+def test_extract_meta_depot_invalid_action_raises() -> None:
+    raw = """<meta>{"intent":"depot","store_memory":false,"memory_content":null,
+"depot":{"content":null,"kind":null,"action":"delete","thought_id":12},
+"search_query":null}</meta>"""
+    with pytest.raises(MetaParseError, match=r"depot\.action"):
+        extract_meta(raw)
+
+
+def test_extract_meta_depot_thought_id_not_numeric_raises() -> None:
+    raw = """<meta>{"intent":"depot","store_memory":false,"memory_content":null,
+"depot":{"content":null,"kind":null,"action":"close","thought_id":"abc"},
+"search_query":null}</meta>"""
+    with pytest.raises(MetaParseError, match=r"depot\.thought_id"):
+        extract_meta(raw)
+
+
+def test_extract_meta_depot_thought_id_bool_rejected() -> None:
+    """`true` est un int en Python : il doit quand même être rejeté."""
+    raw = """<meta>{"intent":"depot","store_memory":false,"memory_content":null,
+"depot":{"content":null,"kind":null,"action":"close","thought_id":true},
+"search_query":null}</meta>"""
+    with pytest.raises(MetaParseError, match=r"depot\.thought_id"):
+        extract_meta(raw)
 
 
 def test_extract_meta_expense_spend() -> None:

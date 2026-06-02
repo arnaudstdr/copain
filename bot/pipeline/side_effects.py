@@ -27,6 +27,17 @@ if TYPE_CHECKING:
 
 log = get_logger(__name__)
 
+# Réponse honnête quand le LLM désigne un `thought_id` invalide (halluciné,
+# déjà clos, ou absent) sur une clôture en langage naturel : aucun side
+# effect n'a eu lieu, le texte optimiste du LLM doit être remplacé.
+CLOSE_NOT_FOUND_TEXT = (
+    "Hmm, je n'ai pas retrouvé ce souci dans tes dépôts ouverts — rien n'a été clos."
+)
+
+# Nombre max de soucis ouverts injectés dans le system prompt (les plus
+# récents) : borne la taille du prompt et le périmètre désignable par le LLM.
+OPEN_WORRIES_PROMPT_LIMIT = 10
+
 
 @dataclass(frozen=True, slots=True)
 class SideEffectsOutcome:
@@ -35,9 +46,13 @@ class SideEffectsOutcome:
     - `loop_size` : taille de la boucle de rumination que le dépôt vient de
       rejoindre (nouveau dépôt inclus), ou None si pas de boucle / pas un
       dépôt. Sert à suffixer l'accusé par template (décision D3 du SPEC).
+    - `replace_text` : texte qui doit remplacer la réponse du LLM (clôture
+      NL avec id invalide → réponse honnête), ou None si le texte du LLM
+      reste valable.
     """
 
     loop_size: int | None = None
+    replace_text: str | None = None
 
 
 async def apply_side_effects(
@@ -52,6 +67,14 @@ async def apply_side_effects(
     if meta["intent"] == "expense" and meta["expense"]["action"]:
         await handle_expense_side_effect(meta, deps)
         return SideEffectsOutcome()
+
+    # Cas clôture en langage naturel (« c'est bon pour X ») : le LLM désigne
+    # un id pris dans la section « Soucis ouverts » du prompt. On valide
+    # contre les soucis RÉELLEMENT ouverts (un id halluciné ou déjà clos est
+    # traité pareil : réponse honnête, aucun side effect). Ce chemin ne passe
+    # JAMAIS par store_depot ni par la détection de boucle.
+    if meta["intent"] == "depot" and meta["depot"]["action"] == "close":
+        return await _close_thought_from_meta(meta, deps)
 
     # Cas dépôt cognitif : on persiste dans la table `thoughts` (listing
     # chronologique, état) et on indexe en parallèle dans ChromaDB avec
@@ -106,6 +129,39 @@ async def apply_side_effects(
                 content=task.content,
             )
     return SideEffectsOutcome()
+
+
+async def _close_thought_from_meta(meta: Meta, deps: BotDeps) -> SideEffectsOutcome:
+    """Clôt le souci désigné par `depot.thought_id` après validation stricte.
+
+    L'id doit appartenir aux soucis ouverts injectés dans le prompt (mêmes
+    critères de collecte : kind=worry, les plus récents). Sinon → outcome
+    avec `replace_text` honnête, aucun side effect.
+    """
+    thought_id = meta["depot"]["thought_id"]
+    if thought_id is not None:
+        open_worries = await deps.thoughts.list_open(
+            kinds=["worry"], limit=OPEN_WORRIES_PROMPT_LIMIT
+        )
+        if any(t.id == thought_id for t in open_worries):
+            await deps.thoughts.close(thought_id)
+            log.info("thought_closed_nl", thought_id=thought_id)
+            return SideEffectsOutcome()
+    log.warning("thought_close_nl_invalid_id", thought_id=thought_id)
+    return SideEffectsOutcome(replace_text=CLOSE_NOT_FOUND_TEXT)
+
+
+async def safe_open_worries(deps: BotDeps) -> Sequence[Thought]:
+    """Collecte les soucis ouverts pour injection dans le system prompt.
+
+    Fail-soft : SQLite indisponible → liste vide, le prompt se construit
+    sans la section (pattern `safe_pending_recurring`).
+    """
+    try:
+        return await deps.thoughts.list_open(kinds=["worry"], limit=OPEN_WORRIES_PROMPT_LIMIT)
+    except Exception as exc:
+        log.warning("open_worries_skipped", error=str(exc))
+        return ()
 
 
 async def _detect_depot_loop(thought: Thought, deps: BotDeps) -> int | None:

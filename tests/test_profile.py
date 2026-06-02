@@ -199,3 +199,52 @@ def test_build_system_prompt_unknown_place_falls_back_to_raw_label() -> None:
     )
     # Pas de mapping connu → on injecte le label brut préfixé.
     assert "schiltigheim" in prompt
+
+
+# --- open_worries (clôture en langage naturel) -------------------------------
+
+
+def test_build_system_prompt_omits_open_worries_when_empty() -> None:
+    from bot.llm.prompt import build_system_prompt
+    from bot.profile import UserProfile
+
+    prompt = build_system_prompt(
+        memory_context=[],
+        recent_history=[],
+        current_datetime="lundi à 10:00",
+        home_city="Sélestat",
+        user_profile=UserProfile(raw_yaml="", is_loaded=False),
+        open_worries=(),
+    )
+    # Le template statique référence « Soucis ouverts » (règle de routage,
+    # few-shot) : on cible le marqueur de SECTION pour tester l'omission.
+    assert "--- Soucis ouverts" not in prompt
+
+
+def test_build_system_prompt_injects_open_worries() -> None:
+    from datetime import datetime
+    from unittest.mock import MagicMock
+
+    from bot.llm.prompt import build_system_prompt
+    from bot.profile import UserProfile
+
+    worry = MagicMock()
+    worry.id = 12
+    worry.content = "peur pour le contrôle technique"
+    # Dates SQLite naïves UTC (pattern du projet).
+    worry.created_at = datetime(2026, 5, 28, 10, 0)
+    prompt = build_system_prompt(
+        memory_context=[],
+        recent_history=[],
+        current_datetime="lundi à 10:00",
+        home_city="Sélestat",
+        user_profile=UserProfile(raw_yaml="", is_loaded=False),
+        timezone="Europe/Paris",
+        open_worries=[worry],
+    )
+    assert "--- Soucis ouverts" in prompt
+    assert "[id 12]" in prompt
+    assert "peur pour le contrôle technique" in prompt
+    assert "28/05" in prompt
+    # Le bloc soucis doit être avant le contexte mémoire (comme les autres injections).
+    assert prompt.index("--- Soucis ouverts") < prompt.index("Contexte mémoire")

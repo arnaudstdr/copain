@@ -19,7 +19,11 @@ from bot.llm.parser import Meta, MetaParseError, MetaStreamFilter, extract_meta
 from bot.llm.prompt import build_system_prompt
 from bot.logging_conf import get_logger
 from bot.pipeline.handlers import FALLBACK_TEXT, run_intent_handler
-from bot.pipeline.side_effects import apply_side_effects, safe_pending_recurring
+from bot.pipeline.side_effects import (
+    apply_side_effects,
+    safe_open_worries,
+    safe_pending_recurring,
+)
 
 if TYPE_CHECKING:
     from bot.calendar.client import ICloudCalendarClient
@@ -66,7 +70,7 @@ _FALLBACK_META: Meta = {
     },
     "fuel": {"fuel_type": None, "radius_km": None, "location": None},
     "weather": {"location": None, "when": None},
-    "depot": {"content": None, "kind": None},
+    "depot": {"content": None, "kind": None, "action": "add", "thought_id": None},
     "expense": {
         "action": None,
         "amount": None,
@@ -280,6 +284,10 @@ async def _route_and_apply(user_text: str, meta: Meta, deps: BotDeps, intro: str
     autres intents, délègue aux handlers Python qui peuvent remplacer l'intro.
     """
     effects = await apply_side_effects(user_text, meta, deps)
+    if effects.replace_text is not None:
+        # Les side effects imposent le texte final (clôture NL avec id
+        # invalide → réponse honnête) : pas de handler, pas de search.
+        return _RouteOutcome(replacement=effects.replace_text, loop_size=effects.loop_size)
     if meta["intent"] == "search" and meta["search_query"]:
         results = await deps.search.search(meta["search_query"])
         log.info("search_performed", query=meta["search_query"], hits=len(results))
@@ -315,6 +323,7 @@ async def _build_prompt(user_text: str, deps: BotDeps, voice_mode: bool) -> str:
     now_str = datetime.now(tz).strftime("%A %d %B %Y à %H:%M")
     current_location = await deps.location_events.get_current_location()
     pending_recurring = await safe_pending_recurring(deps)
+    open_worries = await safe_open_worries(deps)
     return build_system_prompt(
         memory_context=memory_context,
         recent_history=list(deps.history),
@@ -325,4 +334,5 @@ async def _build_prompt(user_text: str, deps: BotDeps, voice_mode: bool) -> str:
         current_location=current_location,
         timezone=deps.settings.timezone,
         pending_recurring=pending_recurring,
+        open_worries=open_worries,
     )

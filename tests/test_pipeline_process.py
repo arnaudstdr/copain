@@ -41,6 +41,8 @@ def _meta_block(
     weather_when: str | None = None,
     depot_content: str | None = None,
     depot_kind: str | None = None,
+    depot_action: str | None = None,
+    depot_thought_id: int | None = None,
     expense_action: str | None = None,
     expense_amount: float | None = None,
     expense_label: str | None = None,
@@ -83,6 +85,8 @@ def _meta_block(
         "depot": {
             "content": depot_content,
             "kind": depot_kind,
+            "action": depot_action,
+            "thought_id": depot_thought_id,
         },
         "expense": {
             "action": expense_action,
@@ -134,6 +138,8 @@ def deps() -> BotDeps:
     fake_thought.kind = "worry"
     thoughts.create = AsyncMock(return_value=fake_thought)
     thoughts.list_since = AsyncMock(return_value=[])
+    thoughts.list_open = AsyncMock(return_value=[])
+    thoughts.close = AsyncMock(return_value=True)
 
     expenses = MagicMock()
     fake_expense = MagicMock()
@@ -496,6 +502,113 @@ async def test_process_depot_history_records_suffixed_text(deps: BotDeps) -> Non
     await process_message("j'ai peur pour les finances de mon fils", deps=deps)
 
     assert "assistant: Noté. — 3e fois que ça revient." in deps.history
+
+
+def _open_worry(thought_id: int, content: str = "peur pour le contrôle technique") -> MagicMock:
+    """Souci ouvert factice retourné par `list_open` (created_at naïf UTC)."""
+    t = MagicMock()
+    t.id = thought_id
+    t.content = content
+    t.created_at = datetime.now(UTC).replace(tzinfo=None) - timedelta(days=5)
+    return t
+
+
+def _depot_close_llm_response(
+    thought_id: int | None, response_text: str = "Bien, je le range."
+) -> AsyncMock:
+    return AsyncMock(
+        return_value=_meta_block(
+            intent="depot",
+            depot_action="close",
+            depot_thought_id=thought_id,
+            response_text=response_text,
+        )
+    )
+
+
+async def test_process_depot_close_valid_id_closes_and_keeps_ack(deps: BotDeps) -> None:
+    """action=close avec un souci réellement ouvert → close() appelé, accusé LLM conservé."""
+    deps.thoughts.list_open = AsyncMock(return_value=[_open_worry(12)])
+    deps.llm.call = _depot_close_llm_response(thought_id=12)
+
+    text, meta = await process_message("c'est bon pour le contrôle technique", deps=deps)
+
+    assert text == "Bien, je le range."
+    assert meta["intent"] == "depot"
+    deps.thoughts.close.assert_awaited_once_with(12)
+    # Une clôture n'est pas un dépôt : ni persistance, ni détection de boucle.
+    deps.thoughts.create.assert_not_called()
+    deps.memory.store_depot.assert_not_called()
+    deps.memory.find_similar_depots.assert_not_called()
+
+
+async def test_process_depot_close_unknown_id_replaces_with_honest_text(deps: BotDeps) -> None:
+    """thought_id halluciné (absent des soucis ouverts) → aucun side effect, réponse honnête."""
+    deps.thoughts.list_open = AsyncMock(return_value=[_open_worry(12)])
+    deps.llm.call = _depot_close_llm_response(thought_id=999)
+
+    text, _ = await process_message("c'est réglé", deps=deps)
+
+    assert "pas retrouvé" in text
+    deps.thoughts.close.assert_not_called()
+    deps.memory.store_depot.assert_not_called()
+
+
+async def test_process_depot_close_already_closed_id_treated_as_invalid(deps: BotDeps) -> None:
+    """Un id existant mais déjà clos n'est pas dans list_open → même chemin que l'hallucination."""
+    deps.thoughts.list_open = AsyncMock(return_value=[])
+    deps.llm.call = _depot_close_llm_response(thought_id=12)
+
+    text, _ = await process_message("c'est réglé pour le contrôle technique", deps=deps)
+
+    assert "pas retrouvé" in text
+    deps.thoughts.close.assert_not_called()
+
+
+async def test_process_depot_close_missing_thought_id_replaces(deps: BotDeps) -> None:
+    """action=close sans thought_id → réponse honnête, aucun side effect."""
+    deps.thoughts.list_open = AsyncMock(return_value=[_open_worry(12)])
+    deps.llm.call = _depot_close_llm_response(thought_id=None)
+
+    text, _ = await process_message("c'est réglé", deps=deps)
+
+    assert "pas retrouvé" in text
+    deps.thoughts.close.assert_not_called()
+
+
+async def test_process_depot_close_records_final_text_in_history(deps: BotDeps) -> None:
+    """L'history porte le texte réellement renvoyé (remplacement honnête inclus)."""
+    deps.thoughts.list_open = AsyncMock(return_value=[])
+    deps.llm.call = _depot_close_llm_response(thought_id=999)
+
+    text, _ = await process_message("c'est réglé", deps=deps)
+
+    assert "pas retrouvé" in text
+    assert f"assistant: {text}" in deps.history
+
+
+async def test_process_injects_open_worries_into_prompt(deps: BotDeps) -> None:
+    """Les soucis ouverts (kind=worry, max 10) sont injectés dans le system prompt."""
+    deps.thoughts.list_open = AsyncMock(return_value=[_open_worry(12)])
+
+    await process_message("salut", deps=deps)
+
+    deps.thoughts.list_open.assert_awaited_once_with(kinds=["worry"], limit=10)
+    system_prompt = deps.llm.call.await_args.kwargs["system"]
+    assert "--- Soucis ouverts" in system_prompt
+    assert "[id 12]" in system_prompt
+    assert "peur pour le contrôle technique" in system_prompt
+
+
+async def test_process_open_worries_failure_is_fail_soft(deps: BotDeps) -> None:
+    """SQLite en échec sur list_open → prompt sans la section, réponse normale."""
+    deps.thoughts.list_open = AsyncMock(side_effect=RuntimeError("sqlite down"))
+
+    text, _ = await process_message("salut", deps=deps)
+
+    assert text == "Réponse texte."
+    system_prompt = deps.llm.call.await_args.kwargs["system"]
+    assert "--- Soucis ouverts" not in system_prompt
 
 
 async def test_process_search_intent_relaunches_llm_with_results(

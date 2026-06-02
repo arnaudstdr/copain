@@ -310,8 +310,10 @@ On every call, the LLM receives a system prompt whose centrepiece is a
     "when": "FR expression if specified (e.g. 'demain', 'ce weekend'), otherwise null (= today)"
   },
   "depot": {
-    "content": "raw thought verbatim if intent=depot, otherwise null",
-    "kind": "worry|idea|note if intent=depot, otherwise null"
+    "content": "raw thought verbatim if intent=depot and action=add, otherwise null",
+    "kind": "worry|idea|note if intent=depot and action=add, otherwise null",
+    "action": "add|close if intent=depot (default add; close = NL closure of a listed open worry), otherwise null",
+    "thought_id": "id of the worry to close (taken from the 'Soucis ouverts' prompt section) if action=close, otherwise null"
   },
   "expense": {
     "action": "spend|income|tick_recurring if intent=expense, otherwise null",

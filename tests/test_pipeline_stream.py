@@ -30,6 +30,8 @@ def _meta_block(
     weather_location: str | None = None,
     depot_content: str | None = None,
     depot_kind: str | None = None,
+    depot_action: str | None = None,
+    depot_thought_id: int | None = None,
 ) -> str:
     """Bloc <meta> minimal valide (les sous-objets absents sont tolérés par le parser)."""
     meta = {
@@ -38,7 +40,12 @@ def _meta_block(
         "memory_content": None,
         "task": {"content": task_content, "due_str": task_due},
         "weather": {"location": weather_location, "when": None},
-        "depot": {"content": depot_content, "kind": depot_kind},
+        "depot": {
+            "content": depot_content,
+            "kind": depot_kind,
+            "action": depot_action,
+            "thought_id": depot_thought_id,
+        },
         "search_query": search_query,
     }
     return f"<meta>{json.dumps(meta)}</meta>"
@@ -105,6 +112,8 @@ def deps() -> BotDeps:
     fake_thought.kind = "worry"
     thoughts.create = AsyncMock(return_value=fake_thought)
     thoughts.list_since = AsyncMock(return_value=[])
+    thoughts.list_open = AsyncMock(return_value=[])
+    thoughts.close = AsyncMock(return_value=True)
 
     search = MagicMock()
     search.search = AsyncMock(return_value=[])
@@ -225,6 +234,56 @@ async def test_stream_depot_without_loop_has_no_suffix_delta(deps: BotDeps) -> N
 
     assert _visible_text(events) == "Noté."
     deps.thoughts.create.assert_awaited_once()
+
+
+def _open_worry_stream(thought_id: int) -> MagicMock:
+    """Souci ouvert factice pour la clôture NL (created_at naïf UTC)."""
+    t = MagicMock()
+    t.id = thought_id
+    t.content = "peur pour le contrôle technique"
+    t.created_at = datetime.now(UTC).replace(tzinfo=None) - timedelta(days=5)
+    return t
+
+
+async def test_stream_depot_close_invalid_id_emits_replace(deps: BotDeps) -> None:
+    """Clôture NL avec id halluciné → frame replace avec la réponse honnête."""
+    deps.thoughts.list_open = AsyncMock(return_value=[_open_worry_stream(12)])
+    deps.llm.chat_stream = MagicMock(
+        return_value=_astream(
+            [
+                "Bien, je le range.",
+                f"\n{_meta_block('depot', depot_action='close', depot_thought_id=999)}",
+            ]
+        )
+    )
+
+    events = await _collect(process_message_stream("c'est réglé", deps))
+
+    replaces = [e for e in events if e["type"] == "replace"]
+    assert len(replaces) == 1
+    assert "pas retrouvé" in replaces[0]["text"]
+    assert "pas retrouvé" in _visible_text(events)
+    deps.thoughts.close.assert_not_called()
+
+
+async def test_stream_depot_close_valid_id_keeps_ack_without_replace(deps: BotDeps) -> None:
+    """Clôture NL valide → close() appelé, accusé LLM conservé, aucun replace."""
+    deps.thoughts.list_open = AsyncMock(return_value=[_open_worry_stream(12)])
+    deps.llm.chat_stream = MagicMock(
+        return_value=_astream(
+            [
+                "Bien, je le range.",
+                f"\n{_meta_block('depot', depot_action='close', depot_thought_id=12)}",
+            ]
+        )
+    )
+
+    events = await _collect(process_message_stream("c'est bon pour le contrôle", deps))
+
+    assert all(e["type"] != "replace" for e in events)
+    assert _visible_text(events) == "Bien, je le range."
+    deps.thoughts.close.assert_awaited_once_with(12)
+    deps.memory.store_depot.assert_not_called()
 
 
 async def test_stream_search_intent_replaces_then_streams_summary(deps: BotDeps) -> None:

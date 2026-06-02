@@ -3,11 +3,16 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
+from datetime import UTC
+from typing import TYPE_CHECKING
 from zoneinfo import ZoneInfo
 
 from bot.finance.budget import PendingRecurring
 from bot.locations.presence import LocationPresence
 from bot.profile import UserProfile
+
+if TYPE_CHECKING:
+    from bot.thoughts.models import Thought
 
 # Préambule injecté en tête du system prompt quand l'utilisateur passe par
 # la voix (Apple Shortcut "Dis à Copain" → Siri TTS). Le LLM doit produire
@@ -69,8 +74,10 @@ comme lieu par défaut.
     "when": "expression temporelle FR si précisée (ex: 'demain', 'ce weekend', 'cette semaine', 'dans 3 jours'), sinon null (= aujourd'hui)"
   }},
   "depot": {{
-    "content": "pensée brute recopiée si intent=depot, sinon null",
-    "kind": "worry|idea|note si intent=depot, sinon null"
+    "content": "pensée brute recopiée si intent=depot et action=add, sinon null",
+    "kind": "worry|idea|note si intent=depot et action=add, sinon null",
+    "action": "add|close si intent=depot (add = déposer une pensée, close = clore un souci listé), sinon null (défaut add)",
+    "thought_id": "id du souci à clore (pris dans la section « Soucis ouverts ») si action=close, sinon null"
   }},
   "expense": {{
     "action": "spend|income|tick_recurring si intent=expense, sinon null",
@@ -139,6 +146,14 @@ Règles pour intent :
                formulée, sans la résumer.
              * Choix de kind : worry (inquiétude, peur, anxiété), idea
                (intuition, idée à creuser, projet), note (le reste).
+             CLÔTURE D'UN SOUCI (action=close) : si l'utilisateur dit qu'un
+             souci listé dans la section « Soucis ouverts » plus bas est
+             résolu, réglé ou passé (« c'est bon pour X », « X c'est réglé »,
+             « finalement X s'est bien passé »), utilise intent=depot avec
+             action="close" et thought_id pris DANS la liste. Laisse alors
+             content et kind à null. Réponds très court (« Bien, je le
+             range. »). Si aucun souci listé ne correspond, c'est un dépôt
+             normal (action=add).
 
   Distinction critique depot vs task vs memory :
   * task   = action concrète à faire (« rappelle-moi de prendre RDV pédiatre »).
@@ -306,6 +321,13 @@ Réponse attendue :
 C'est rangé.
 <meta>{{"intent":"depot","store_memory":false,"memory_content":null,"task":{{"content":null,"due_str":null}},"feed":{{"action":null,"name":null,"url":null}},"event":{{"action":null,"title":null,"start_str":null,"end_str":null,"location":null,"description":null,"range_str":null,"calendar_name":null}},"fuel":{{"fuel_type":null,"radius_km":null,"location":null}},"weather":{{"location":null,"when":null}},"depot":{{"content":"la voiture fait un bruit bizarre au démarrage","kind":"note"}},"search_query":null}}</meta>
 
+Exemple 13bis (clôture d'un souci listé) :
+Utilisateur : « c'est bon pour le contrôle technique, c'est passé »
+Hypothèse : la section « Soucis ouverts » contient « [id 12] « peur pour le contrôle technique » (déposé le 28/05) ».
+Réponse attendue :
+Bien, je le range.
+<meta>{{"intent":"depot","store_memory":false,"memory_content":null,"task":{{"content":null,"due_str":null}},"feed":{{"action":null,"name":null,"url":null}},"event":{{"action":null,"title":null,"start_str":null,"end_str":null,"location":null,"description":null,"range_str":null,"calendar_name":null}},"fuel":{{"fuel_type":null,"radius_km":null,"location":null}},"weather":{{"location":null,"when":null}},"depot":{{"content":null,"kind":null,"action":"close","thought_id":12}},"search_query":null}}</meta>
+
 Exemples pour intent=expense :
 
 Exemple 14 (dépense ponctuelle) :
@@ -352,7 +374,7 @@ Réponse attendue :
 Noté.
 <meta>{{"intent":"expense","store_memory":false,"memory_content":null,"task":{{"content":null,"due_str":null}},"feed":{{"action":null,"name":null,"url":null}},"event":{{"action":null,"title":null,"start_str":null,"end_str":null,"location":null,"description":null,"range_str":null,"calendar_name":null}},"fuel":{{"fuel_type":null,"radius_km":null,"location":null}},"weather":{{"location":null,"when":null}},"depot":{{"content":null,"kind":null}},"expense":{{"action":"spend","amount":15,"label":"Lidl","category":"nourriture","recurring_key":null,"when":null,"shared":false,"starts_cycle":false}},"search_query":null}}</meta>
 
-{profile_section}{location_section}{pending_recurring_section}--- Contexte mémoire (notes et conversations passées pertinentes) ---
+{profile_section}{location_section}{pending_recurring_section}{open_worries_section}--- Contexte mémoire (notes et conversations passées pertinentes) ---
 {memory_context}
 
 --- Historique récent de la conversation ---
@@ -422,6 +444,24 @@ def _format_pending_recurring_section(pending: Sequence[PendingRecurring]) -> st
     return "\n".join(lines) + "\n\n"
 
 
+def _format_open_worries_section(worries: Sequence[Thought], timezone: str) -> str:
+    """Construit le bloc des soucis ouverts (uniquement si non-vide).
+
+    Ce bloc permet au LLM de produire `depot.thought_id` parmi les ids
+    réellement ouverts quand l'utilisateur signale qu'un souci est résolu
+    (clôture en langage naturel, `depot.action=close`).
+    """
+    if not worries:
+        return ""
+    tz = ZoneInfo(timezone)
+    lines = ["--- Soucis ouverts (déposés par l'utilisateur, non clos) ---"]
+    for worry in worries:
+        # Dates SQLite naïves UTC : réattacher UTC avant conversion locale.
+        created_local = worry.created_at.replace(tzinfo=UTC).astimezone(tz)
+        lines.append(f"- [id {worry.id}] « {worry.content} » (déposé le {created_local:%d/%m})")
+    return "\n".join(lines) + "\n\n"
+
+
 def build_system_prompt(
     memory_context: Sequence[str],
     recent_history: Sequence[str],
@@ -432,6 +472,7 @@ def build_system_prompt(
     current_location: LocationPresence | None = None,
     timezone: str = "Europe/Paris",
     pending_recurring: Sequence[PendingRecurring] | None = None,
+    open_worries: Sequence[Thought] | None = None,
 ) -> str:
     """Formate le template avec les blocs mémoire, historique, profil, datetime et ville.
 
@@ -453,6 +494,11 @@ def build_system_prompt(
     `data/profile.yaml` et pas encore pointées sur le mois courant. Le
     LLM peut alors produire `expense.recurring_key` valide. Quand la
     liste est vide, le bloc est omis pour ne pas polluer le prompt.
+
+    Quand `open_worries` est fourni et non-vide, un bloc liste les soucis
+    ouverts (id + contenu + date de dépôt) pour que le LLM puisse désigner
+    un `depot.thought_id` valide lors d'une clôture en langage naturel.
+    Même logique d'omission quand la liste est vide.
     """
     if user_profile.is_loaded:
         profile_section = (
@@ -466,12 +512,14 @@ def build_system_prompt(
     else:
         location_section = ""
     pending_recurring_section = _format_pending_recurring_section(pending_recurring or ())
+    open_worries_section = _format_open_worries_section(open_worries or (), timezone)
     body = SYSTEM_PROMPT_TEMPLATE.format(
         current_datetime=current_datetime,
         home_city=home_city,
         profile_section=profile_section,
         location_section=location_section,
         pending_recurring_section=pending_recurring_section,
+        open_worries_section=open_worries_section,
         memory_context=_format_block(memory_context, "élément pertinent"),
         recent_history=_format_block(recent_history, "échange récent"),
     )
