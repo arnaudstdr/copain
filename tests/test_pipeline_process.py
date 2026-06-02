@@ -7,10 +7,12 @@ C'est le cœur du bot, les autres tests ne couvraient que chaque brique isolée.
 from __future__ import annotations
 
 from collections import deque
+from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+from bot.memory.manager import DepotMatch
 from bot.pipeline import BotDeps, process_message
 from bot.profile import UserProfile
 
@@ -106,11 +108,13 @@ def deps() -> BotDeps:
     settings.home_lon = 7.45
     settings.home_city = "Sélestat"
     settings.fuel_default_radius_km = 10.0
+    settings.foryou_similarity_max_distance = 0.35
 
     memory = MagicMock()
     memory.retrieve_context = AsyncMock(return_value=[])
     memory.store = AsyncMock()
     memory.store_depot = AsyncMock()
+    memory.find_similar_depots = AsyncMock(return_value=[])
 
     llm = MagicMock()
     llm.call = AsyncMock(return_value=_meta_block(intent="answer"))
@@ -129,6 +133,7 @@ def deps() -> BotDeps:
     fake_thought.content = "j'ai peur pour les finances de mon fils"
     fake_thought.kind = "worry"
     thoughts.create = AsyncMock(return_value=fake_thought)
+    thoughts.list_since = AsyncMock(return_value=[])
 
     expenses = MagicMock()
     fake_expense = MagicMock()
@@ -333,6 +338,164 @@ async def test_process_depot_chroma_failure_is_swallowed(deps: BotDeps) -> None:
     text, _ = await process_message("une note libre", deps=deps)
     deps.thoughts.create.assert_awaited_once()
     assert text == "OK."
+
+
+# --- détection de boucle au dépôt (suffixe accusé) ---------------------------
+
+
+def _neighbour_thought(thought_id: int, days_ago: float) -> MagicMock:
+    """Voisin SQLite factice : `created_at` naïf UTC (comme aiosqlite le renvoie)."""
+    t = MagicMock()
+    t.id = thought_id
+    t.created_at = datetime.now(UTC).replace(tzinfo=None) - timedelta(days=days_ago)
+    return t
+
+
+def _depot_llm_response(response_text: str = "Noté.") -> AsyncMock:
+    return AsyncMock(
+        return_value=_meta_block(
+            intent="depot",
+            depot_content="j'ai peur pour les finances de mon fils",
+            depot_kind="worry",
+            response_text=response_text,
+        )
+    )
+
+
+async def test_process_depot_loop_detected_suffixes_ack(deps: BotDeps) -> None:
+    """2 voisins similaires dans la fenêtre → accusé suffixé « 3e fois que ça revient »."""
+    deps.llm.call = _depot_llm_response()
+    deps.memory.find_similar_depots = AsyncMock(
+        return_value=[
+            DepotMatch(thought_id=3, content="peur pour les finances", distance=0.1),
+            DepotMatch(thought_id=5, content="inquiet pour l'argent", distance=0.2),
+        ]
+    )
+    deps.thoughts.list_since = AsyncMock(
+        return_value=[_neighbour_thought(3, days_ago=2), _neighbour_thought(5, days_ago=10)]
+    )
+
+    text, _ = await process_message("j'ai peur pour les finances de mon fils", deps=deps)
+
+    assert text == "Noté. — 3e fois que ça revient."
+    call = deps.memory.find_similar_depots.await_args
+    assert call.kwargs["max_distance"] == 0.35
+    assert call.kwargs["top_k"] == 8
+
+
+async def test_process_depot_loop_of_five_suffixes_5e(deps: BotDeps) -> None:
+    """4 voisins valides → « 5e fois que ça revient »."""
+    deps.llm.call = _depot_llm_response()
+    deps.memory.find_similar_depots = AsyncMock(
+        return_value=[
+            DepotMatch(thought_id=i, content=f"souci {i}", distance=0.1) for i in (1, 2, 3, 4)
+        ]
+    )
+    deps.thoughts.list_since = AsyncMock(
+        return_value=[_neighbour_thought(i, days_ago=i) for i in (1, 2, 3, 4)]
+    )
+
+    text, _ = await process_message("encore ce souci", deps=deps)
+
+    assert text == "Noté. — 5e fois que ça revient."
+
+
+async def test_process_depot_without_neighbours_keeps_ack(deps: BotDeps) -> None:
+    """Aucun voisin similaire → accusé inchangé."""
+    deps.llm.call = _depot_llm_response()
+
+    text, _ = await process_message("j'ai peur pour les finances de mon fils", deps=deps)
+
+    assert text == "Noté."
+
+
+async def test_process_depot_self_match_excluded_from_loop(deps: BotDeps) -> None:
+    """Le dépôt vient d'être indexé : son auto-match ne compte pas (2 membres < 3)."""
+    deps.llm.call = _depot_llm_response()
+    deps.memory.find_similar_depots = AsyncMock(
+        return_value=[
+            DepotMatch(thought_id=7, content="le dépôt lui-même", distance=0.0),
+            DepotMatch(thought_id=3, content="un seul voisin", distance=0.1),
+        ]
+    )
+    deps.thoughts.list_since = AsyncMock(return_value=[_neighbour_thought(3, days_ago=2)])
+
+    text, _ = await process_message("j'ai peur pour les finances de mon fils", deps=deps)
+
+    assert text == "Noté."
+
+
+async def test_process_depot_neighbour_outside_window_excluded(deps: BotDeps) -> None:
+    """Un voisin créé hors fenêtre 30 j ne compte pas dans la boucle."""
+    deps.llm.call = _depot_llm_response()
+    deps.memory.find_similar_depots = AsyncMock(
+        return_value=[
+            DepotMatch(thought_id=3, content="récent", distance=0.1),
+            DepotMatch(thought_id=5, content="trop vieux", distance=0.2),
+        ]
+    )
+    deps.thoughts.list_since = AsyncMock(
+        return_value=[_neighbour_thought(3, days_ago=2), _neighbour_thought(5, days_ago=31)]
+    )
+
+    text, _ = await process_message("j'ai peur pour les finances de mon fils", deps=deps)
+
+    assert text == "Noté."
+
+
+async def test_process_depot_orphan_match_ignored(deps: BotDeps) -> None:
+    """Un match ChromaDB absent de SQLite (orphelin) est ignoré du comptage."""
+    deps.llm.call = _depot_llm_response()
+    deps.memory.find_similar_depots = AsyncMock(
+        return_value=[
+            DepotMatch(thought_id=3, content="voisin valide", distance=0.1),
+            DepotMatch(thought_id=999, content="orphelin chroma", distance=0.2),
+        ]
+    )
+    deps.thoughts.list_since = AsyncMock(return_value=[_neighbour_thought(3, days_ago=2)])
+
+    text, _ = await process_message("j'ai peur pour les finances de mon fils", deps=deps)
+
+    assert text == "Noté."
+
+
+async def test_process_depot_loop_detection_failure_keeps_ack(deps: BotDeps) -> None:
+    """ChromaDB en échec sur la similarité → accusé intact, pas d'exception (fail-soft)."""
+    deps.llm.call = _depot_llm_response()
+    deps.memory.find_similar_depots = AsyncMock(side_effect=RuntimeError("chroma down"))
+
+    text, _ = await process_message("j'ai peur pour les finances de mon fils", deps=deps)
+
+    assert text == "Noté."
+
+
+async def test_process_depot_indexing_failure_skips_loop_detection(deps: BotDeps) -> None:
+    """Si store_depot échoue, le dépôt n'est pas dans ChromaDB → pas de recherche de boucle."""
+    deps.llm.call = _depot_llm_response()
+    deps.memory.store_depot = AsyncMock(side_effect=RuntimeError("chroma down"))
+
+    text, _ = await process_message("j'ai peur pour les finances de mon fils", deps=deps)
+
+    deps.memory.find_similar_depots.assert_not_called()
+    assert text == "Noté."
+
+
+async def test_process_depot_history_records_suffixed_text(deps: BotDeps) -> None:
+    """L'history roulante porte le texte final AVEC suffixe (cohérence des tours suivants)."""
+    deps.llm.call = _depot_llm_response()
+    deps.memory.find_similar_depots = AsyncMock(
+        return_value=[
+            DepotMatch(thought_id=3, content="a", distance=0.1),
+            DepotMatch(thought_id=5, content="b", distance=0.2),
+        ]
+    )
+    deps.thoughts.list_since = AsyncMock(
+        return_value=[_neighbour_thought(3, days_ago=2), _neighbour_thought(5, days_ago=10)]
+    )
+
+    await process_message("j'ai peur pour les finances de mon fils", deps=deps)
+
+    assert "assistant: Noté. — 3e fois que ça revient." in deps.history
 
 
 async def test_process_search_intent_relaunches_llm_with_results(

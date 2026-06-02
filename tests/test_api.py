@@ -270,6 +270,42 @@ async def test_ask_expense_intent_refreshes_budget_card(
     assert body["refresh_cards"] == ["budget"]
 
 
+async def test_ask_depot_intent_refreshes_foryou_card(client: AsyncClient, state: AppState) -> None:
+    """Un dépôt cognitif doit signaler au front que la card « Pour toi » a bougé."""
+    fake_thought = MagicMock()
+    fake_thought.id = 7
+    fake_thought.content = "j'ai peur pour les finances"
+    fake_thought.kind = "worry"
+    state.deps.thoughts.create = AsyncMock(return_value=fake_thought)
+    state.deps.thoughts.list_since = AsyncMock(return_value=[])
+    state.deps.memory.store_depot = AsyncMock()
+    state.deps.memory.find_similar_depots = AsyncMock(return_value=[])
+    state.deps.settings.foryou_similarity_max_distance = 0.35
+    state.deps.llm.call = AsyncMock(
+        return_value=(
+            "Noté.\n"
+            '<meta>{"intent":"depot","store_memory":false,"memory_content":null,'
+            '"task":{"content":null,"due_str":null},'
+            '"feed":{"action":null,"name":null,"url":null},'
+            '"event":{"action":null,"title":null,"start_str":null,"end_str":null,'
+            '"location":null,"description":null,"range_str":null,"calendar_name":null},'
+            '"fuel":{"fuel_type":null,"radius_km":null,"location":null},'
+            '"weather":{"location":null,"when":null},'
+            '"depot":{"content":"j\'ai peur pour les finances","kind":"worry"},'
+            '"search_query":null}</meta>'
+        )
+    )
+    response = await client.post(
+        "/ask",
+        headers={"X-API-Key": API_KEY},
+        json={"message": "j'ai peur pour les finances"},
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["intent"] == "depot"
+    assert body["refresh_cards"] == ["foryou"]
+
+
 async def test_ask_without_x_source_uses_default_mode(client: AsyncClient, state: AppState) -> None:
     """Sans header X-Source, le pipeline reçoit voice_mode=False par défaut."""
     from unittest.mock import patch
