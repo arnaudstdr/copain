@@ -55,4 +55,23 @@ module) : le step à risque, fait à code constant.
 
 ## Execution notes
 
-_(à remplir pendant le step)_
+- **Fait** : JS inline (lignes 227-1662 d'index.html, 1 436 lignes) extrait
+  tel quel vers `bot/static/js/legacy.js` (dé-indenté de 2 espaces) ;
+  `bot/static/js/main.js` créé (`import "./legacy.js"` + commentaire) ;
+  `index.html` réduit à 227 lignes avec un unique
+  `<script type="module" src="/static/js/main.js?v=1">` avant `</body>`.
+- **Handlers inline** : 25 attributs `on*` retirés du HTML statique,
+  remplacés par un bloc `bindStaticHandlers()` ajouté en fin de
+  `legacy.js` (addEventListener par sélecteur ; helper `closeOnBackdrop`
+  pour l'idiome `if(event.target===this)closeX()`). Les boutons sans id
+  sont ciblés par sélecteur structurel (ex.
+  `#bar .icon-btn[title="Joindre une photo"]`) — aucun id ajouté au HTML.
+- **Écart au plan** : aucun. `?v=1` (et pas v=2) car `main.js`/`legacy.js`
+  sont des assets neufs, jamais cachés par Safari.
+- **Fichiers touchés** : `bot/static/index.html`,
+  `bot/static/js/legacy.js` (créé), `bot/static/js/main.js` (créé).
+- **Vérifications** : diff normalisé OK (legacy.js hors bloc bindings ==
+  JS d'origine de git HEAD) ; syntaxe validée par `node --check` en mode
+  module ; 485 tests Python verts ; ruff check + format OK.
+- **Reste à valider** : checklist fonctionnelle complète sur iPhone (PWA
+  standalone) — critère d'acceptation final du step.

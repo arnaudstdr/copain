@@ -13,7 +13,10 @@
 
 ## Patterns et utilitaires réutilisables
 
-- _(vide pour l'instant)_
+- **`bindStaticHandlers()`** (fin de `legacy.js`) : centralise tous les
+  listeners du HTML statique (ex-attributs `on*`). Les steps 03-05 doivent
+  déplacer chaque binding vers le module qui possède le handler — ne pas
+  recréer d'attributs inline ni de globals `window.*`.
 
 ## Décisions d'archi raffinées
 
@@ -43,7 +46,13 @@
 
 ### Step 02 — Basculer le JS en module ES6
 
-- _(à remplir à la fin du step)_
+- JS inline → `js/legacy.js` (pur déplacement vérifié) + `js/main.js`
+  (point d'entrée module) ; `index.html` 1 665 → 227 lignes.
+- 25 attributs `on*` remplacés par `bindStaticHandlers()` (sélecteurs
+  structurels, aucun id ajouté, helper `closeOnBackdrop`).
+- Assets JS neufs en `?v=1` (jamais cachés) ; CSS inchangés restent `v=1`.
+- Validation : diff normalisé + `node --check` (mode module) + 485 tests
+  Python verts + ruff OK. Checklist iPhone complète à faire avant commit.
 
 ### Step 03 — Extraire state.js, ui.js et api.js
 
