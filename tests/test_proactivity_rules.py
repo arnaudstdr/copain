@@ -5,9 +5,9 @@ from __future__ import annotations
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
-from bot.briefing.weather import HourlyPrecipitation
 from bot.calendar.models import CalendarEvent
 from bot.proactivity.rules import evaluate_rain, evaluate_upcoming_event
+from bot.weather.client import HourlyPrecipitation
 
 TZ = ZoneInfo("Europe/Paris")
 

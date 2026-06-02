@@ -19,7 +19,6 @@ from collections.abc import Awaitable, Callable
 import uvicorn
 
 from bot.api import AppState, create_app
-from bot.briefing.weather import OpenMeteoClient
 from bot.calendar.client import ICloudCalendarClient, ICloudCalendarError
 from bot.config import Settings, load_settings
 from bot.db import create_shared_engine, enable_wal_mode
@@ -46,6 +45,7 @@ from bot.sentry_setup import configure_sentry
 from bot.tasks.manager import TaskManager
 from bot.tasks.scheduler import ReminderScheduler
 from bot.thoughts.manager import ThoughtManager
+from bot.weather.client import OpenMeteoClient
 
 log = get_logger(__name__)
 

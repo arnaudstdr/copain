@@ -15,13 +15,13 @@ from datetime import datetime
 from typing import TYPE_CHECKING
 from zoneinfo import ZoneInfo
 
-from bot.briefing.weather import WeatherError, WeatherSummary
 from bot.calendar.client import ICloudCalendarError
 from bot.calendar.models import CalendarEvent
 from bot.finance.budget import BudgetSummary, compute_budget
 from bot.finance.config import extract_finance_config
 from bot.logging_conf import get_logger
 from bot.tasks.models import Task
+from bot.weather.client import WeatherError, WeatherSummary
 
 if TYPE_CHECKING:
     from bot.notifications.store import NotificationStore

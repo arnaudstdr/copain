@@ -14,12 +14,12 @@ from zoneinfo import ZoneInfo
 import pytest
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
 
-from bot.briefing.weather import HourlyPrecipitation
 from bot.calendar.models import CalendarEvent
 from bot.db import create_shared_engine
 from bot.proactivity.models import NotificationLog
 from bot.proactivity.service import ProactivityService
 from bot.tasks.manager import TaskManager
+from bot.weather.client import HourlyPrecipitation
 
 TZ = ZoneInfo("Europe/Paris")
 
@@ -268,7 +268,7 @@ async def test_disconnected_calendar_skips_events_but_allows_rain(engine: AsyncE
 
 def _weather_summary(mock_weather: MagicMock, city: str = "Sélestat") -> MagicMock:
     """Configure le mock météo pour retourner un WeatherSummary plausible."""
-    from bot.briefing.weather import WeatherSummary
+    from bot.weather.client import WeatherSummary
 
     mock_weather.get_today = AsyncMock(
         return_value=WeatherSummary(

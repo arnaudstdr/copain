@@ -14,13 +14,13 @@ from zoneinfo import ZoneInfo
 
 import pytest
 
-from bot.briefing.weather import WeatherError, WeatherSummary
 from bot.calendar.client import ICloudCalendarError
 from bot.calendar.models import CalendarEvent
 from bot.dashboard import build_dashboard, overdue_tasks_count, today_tasks
 from bot.pipeline import BotDeps
 from bot.profile import UserProfile
 from bot.tasks.models import Task
+from bot.weather.client import WeatherError, WeatherSummary
 
 TZ = ZoneInfo("Europe/Paris")
 

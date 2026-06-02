@@ -526,7 +526,7 @@ async def test_dashboard_does_not_consume_unread_notifications(
     client: AsyncClient, state: AppState
 ) -> None:
     """`GET /dashboard` doit pouvoir être appelé à volonté sans purger la file."""
-    from bot.briefing.weather import WeatherError
+    from bot.weather.client import WeatherError
 
     state.deps.tasks.list_pending = AsyncMock(return_value=[])
     state.deps.weather.get_today = AsyncMock(side_effect=WeatherError("down"))
@@ -549,7 +549,7 @@ async def test_dashboard_tolerates_weather_and_calendar_down(
     client: AsyncClient, state: AppState
 ) -> None:
     """Météo + calendar down → cards null, autres sections renvoyées."""
-    from bot.briefing.weather import WeatherError
+    from bot.weather.client import WeatherError
 
     state.deps.weather.get_today = AsyncMock(side_effect=WeatherError("api down"))
     state.deps.calendar.is_connected = False
@@ -807,7 +807,7 @@ async def test_weather_forecast_returns_hourly_and_daily(
 ) -> None:
     from datetime import UTC, date, datetime
 
-    from bot.briefing.weather import DailyWeather, HourlyForecast
+    from bot.weather.client import DailyWeather, HourlyForecast
 
     state.deps.weather.get_hourly_forecast = AsyncMock(
         return_value=[
@@ -1149,7 +1149,7 @@ async def test_budget_returns_summary_with_transactions(
 async def test_dashboard_populates_weather_when_available(
     client: AsyncClient, state: AppState
 ) -> None:
-    from bot.briefing.weather import WeatherSummary
+    from bot.weather.client import WeatherSummary
 
     state.deps.weather.get_today = AsyncMock(
         return_value=WeatherSummary(

@@ -9,7 +9,7 @@ from zoneinfo import ZoneInfo
 import httpx
 import pytest
 
-from bot.briefing.weather import (
+from bot.weather.client import (
     DailyWeather,
     HourlyPrecipitation,
     OpenMeteoClient,

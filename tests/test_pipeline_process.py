@@ -584,7 +584,7 @@ async def test_process_weather_intent_home_default(deps: BotDeps) -> None:
     """Sans location → HOME_LAT/HOME_LON ; sans when → aujourd'hui (1 jour)."""
     from datetime import date
 
-    from bot.briefing.weather import DailyWeather
+    from bot.weather.client import DailyWeather
 
     day = DailyWeather(
         city="Sélestat",
@@ -620,8 +620,8 @@ async def test_process_weather_intent_with_location_calls_geocoder(
     """Avec location → appel Nominatim + coordonnées utilisées."""
     from datetime import date
 
-    from bot.briefing.weather import DailyWeather
     from bot.fuel.models import GeoPoint
+    from bot.weather.client import DailyWeather
 
     deps.geocoder.geocode_fr = AsyncMock(return_value=GeoPoint(lat=48.58, lon=7.75))
     deps.weather.get_forecast = AsyncMock(
@@ -657,7 +657,7 @@ async def test_process_weather_demain_requests_two_days_returns_single(
     """'demain' → days=2 (jour 0 + jour 1), on retourne juste le jour 1."""
     from datetime import date, timedelta
 
-    from bot.briefing.weather import DailyWeather
+    from bot.weather.client import DailyWeather
 
     today = date.today()
     tomorrow = today + timedelta(days=1)

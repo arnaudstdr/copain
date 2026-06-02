@@ -22,16 +22,16 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
 from sqlalchemy.sql import functions as sql_functions
 
-from bot.briefing.weather import WeatherError
 from bot.logging_conf import get_logger
 from bot.proactivity.models import NotificationLog
 from bot.proactivity.rules import Notification, evaluate_rain, evaluate_upcoming_event
+from bot.weather.client import WeatherError
 
 if TYPE_CHECKING:
-    from bot.briefing.weather import OpenMeteoClient
     from bot.calendar.client import ICloudCalendarClient
     from bot.config import Settings
     from bot.notifications.store import NotificationStore
+    from bot.weather.client import OpenMeteoClient
 
 log = get_logger(__name__)
 

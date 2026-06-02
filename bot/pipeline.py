@@ -19,7 +19,6 @@ from zoneinfo import ZoneInfo
 
 import dateparser
 
-from bot.briefing.weather import WeatherError
 from bot.calendar.client import ICloudCalendarError
 from bot.fuel.client import FuelError
 from bot.fuel.geocoding import NominatimError
@@ -28,9 +27,9 @@ from bot.llm.parser import Meta, MetaParseError, MetaStreamFilter, extract_meta
 from bot.llm.prompt import build_system_prompt
 from bot.logging_conf import get_logger
 from bot.rss.manager import FeedAlreadyExists
+from bot.weather.client import WeatherError
 
 if TYPE_CHECKING:
-    from bot.briefing.weather import DailyWeather, OpenMeteoClient
     from bot.calendar.client import ICloudCalendarClient
     from bot.calendar.models import CalendarEvent
     from bot.config import Settings
@@ -52,6 +51,7 @@ if TYPE_CHECKING:
     from bot.tasks.manager import TaskManager
     from bot.tasks.scheduler import ReminderScheduler
     from bot.thoughts.manager import ThoughtManager
+    from bot.weather.client import DailyWeather, OpenMeteoClient
 
 log = get_logger(__name__)
 

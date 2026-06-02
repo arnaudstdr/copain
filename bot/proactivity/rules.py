@@ -12,8 +12,8 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Literal
 
-from bot.briefing.weather import HourlyPrecipitation
 from bot.calendar.models import CalendarEvent
+from bot.weather.client import HourlyPrecipitation
 
 NotificationKind = Literal["rain", "event", "location_return"]
 
