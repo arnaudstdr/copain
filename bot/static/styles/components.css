@@ -142,6 +142,9 @@
 .row { display: flex; align-items: flex-end; gap: 8px; animation: fadeUp 0.2s ease; }
 .row.user { justify-content: flex-end; }
 .row.bot { justify-content: flex-start; }
+/* Séparateur de jour dans le fil de discussion ("Aujourd'hui", "Hier", date). */
+.chat-day-sep { display: flex; justify-content: center; margin: 6px 0 2px; }
+.chat-day-sep span { font-size: 11px; font-weight: 600; letter-spacing: 0.02em; color: var(--text3); background: var(--bg3); border: 1px solid var(--border2); border-radius: 10px; padding: 3px 10px; text-transform: capitalize; }
 .avatar-sm { font-size: 14px; background: var(--bg3); border-radius: 9px; width: 28px; height: 28px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
 .bubble { max-width: 78%; padding: 9px 13px; border-radius: 16px; }
 .bubble.user { background: var(--accent); color: var(--on-accent); border-bottom-right-radius: 4px; }

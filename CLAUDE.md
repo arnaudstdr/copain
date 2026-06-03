@@ -76,9 +76,14 @@ pour vider des pensées parasites sans tenter de les traiter.
 - **Dashboard PWA**: l'iPhone tape `/` et reçoit une PWA orientée "tableau
   de bord" (cards météo / prochain évent / tâches / notifs / actu).
   `GET /dashboard` agrège l'état en un seul appel. Mode chat optionnel via
-  icône 💬 pour les conversations longues. **Plus de briefing matin
-  automatique ni de card carburant** (intentionnellement, pour ne pas
-  pousser d'info entrante non sollicitée). Code sous `bot/static/` :
+  icône 💬 pour les conversations longues. Le **mode dialogue conserve son
+  historique de bulles** : les échanges streamés (`/ask/stream` uniquement —
+  ni Siri, ni photos, ni bulle éphémère) sont persistés en SQLite et
+  réaffichés datés au reload via `GET /history` (scroll infini avec
+  séparateurs de jour, fenêtre glissante `CHAT_HISTORY_RETENTION_DAYS`).
+  **Plus de briefing matin automatique ni de card carburant**
+  (intentionnellement, pour ne pas pousser d'info entrante non sollicitée).
+  Code sous `bot/static/` :
   `index.html` (structure seule, servi en `no-store`), CSS sous `styles/`,
   JS en modules ES6 natifs sous `js/` (entrée `main.js`, assets référencés
   avec `?v=N` incrémenté à chaque déploiement pour invalider le cache
@@ -138,6 +143,7 @@ FastAPI app (bot/api.py, served by uvicorn)
         │     ├── GET  /news/latest   → NewsCurator.fetch_top_news() → { markdown, fetched_at } (card Actu)
         │     ├── GET  /thoughts      → ThoughtManager.list_recent/list_since → liste des dépôts cognitifs
         │     ├── POST /thoughts/{id}/close → ThoughtManager.close(id) → tap "C'est réglé" (404 si inconnu)
+        │     ├── GET  /history       → ChatHistoryManager.page(limit, before_id) → bulles du mode dialogue (scroll infini)
         │     ├── GET  /foryou        → ForYouBuilder.build() → card "Pour toi" (restitution, fail-soft)
         │     ├── GET  /tasks         → TaskManager.list_pending() → overlay tâches PWA (cochage)
         │     ├── POST /tasks/{id}/complete → TaskManager.complete(id)
@@ -185,6 +191,11 @@ FastAPI app (bot/api.py, served by uvicorn)
         ├── Thought Manager (SQLite — table `thoughts`)
         │     └── create / list_recent / list_since / list_open / close /
         │         mark_surfaced (intent `depot` + restitution)
+        │
+        ├── Chat History Manager (SQLite — table `chat_messages`, bot/chat/)
+        │     └── add_exchange / page(before_id) / purge_older_than — historise
+        │         le mode dialogue (`/ask/stream` uniquement) pour réafficher
+        │         les bulles datées côté PWA (fenêtre glissante, purge au boot)
         │
         ├── Restitution des dépôts (card "Pour toi" — bot/thoughts/)
         │     ├── restitution.py → heuristiques pures (select_candidates, is_loop)
@@ -274,6 +285,7 @@ Missing or invalid → 403 with a warning logged (source IP included).
 | GET    | `/news/latest`     | —                                                                 | `{ "markdown": str, "fetched_at": str }`                                                                |
 | GET    | `/thoughts`        | `?since=<ISO>&limit=<int>` (optionnels)                           | `{ "thoughts": [ { "id": int, "content": str, "kind": str\|null, "created_at": str } ] }`              |
 | POST   | `/thoughts/{id}/close` | —                                                             | `{ "closed": bool, "thought_id": int }` (idempotent, 404 si id inconnu)                                 |
+| GET    | `/history`         | `?limit=<int>&before_id=<int>` (optionnels)                       | `{ "messages": [ { "id": int, "role": str, "content": str, "created_at": str } ], "has_more": bool }`   |
 | GET    | `/foryou`          | —                                                                 | `{ "items": [ { "type": str, "message": str, "thought_ids": [int] } ], "fetched_at": str }`             |
 | GET    | `/tasks`           | —                                                                 | `{ "tasks": [ { "id": int, "content": str, "due_at": str\|null } ] }` (tâches en cours)                |
 | POST   | `/tasks/{task_id}/complete` | —                                                        | tâche marquée terminée (overlay PWA)                                                                    |

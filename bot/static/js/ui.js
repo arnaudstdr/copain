@@ -89,6 +89,18 @@ export function formatRelativeDay(d) {
 export function formatDateTime(d) {
   return d.toLocaleString("fr-FR", { weekday: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
 }
+// Libellé d'un séparateur de jour dans le fil de discussion :
+// "Aujourd'hui" / "Hier" / "lundi 28 mai" (avec l'année si autre que l'actuelle).
+export function formatDaySeparator(d) {
+  const today = new Date();
+  if (sameDay(d, today)) return "Aujourd'hui";
+  const yesterday = new Date(today);
+  yesterday.setDate(today.getDate() - 1);
+  if (sameDay(d, yesterday)) return "Hier";
+  const opts = { weekday: "long", day: "numeric", month: "long" };
+  if (d.getFullYear() !== today.getFullYear()) opts.year = "numeric";
+  return d.toLocaleDateString("fr-FR", opts);
+}
 export function isAllDayEvent(start, end) {
   // All-day iCloud : DTSTART/DTEND alignés sur minuit local, durée
   // multiple de 24 h (cas d'un jour : 24 h ; cas multi-jours : 48 h, …).

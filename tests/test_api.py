@@ -20,6 +20,7 @@ from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from bot.api import AppState, create_app
+from bot.chat.manager import ChatHistoryManager
 from bot.db import create_shared_engine
 from bot.locations.store import LocationEventStore
 from bot.notifications.store import NotificationStore
@@ -1319,3 +1320,54 @@ async def test_dashboard_populates_weather_when_available(
         "precipitation_mm": 0.0,
         "wind_kmh": 12.0,
     }
+
+
+# --- GET /history (historique du mode dialogue) -----------------------------
+
+
+async def test_history_without_api_key_returns_403(client: AsyncClient) -> None:
+    response = await client.get("/history")
+    assert response.status_code == 403
+
+
+async def test_history_empty_when_disabled(client: AsyncClient) -> None:
+    """chat_history=None (défaut des tests) → page vide, 200."""
+    response = await client.get("/history", headers={"X-API-Key": API_KEY})
+    assert response.status_code == 200
+    assert response.json() == {"messages": [], "has_more": False}
+
+
+async def test_history_returns_seeded_messages(
+    state: AppState, client: AsyncClient, engine: AsyncEngine
+) -> None:
+    mgr = ChatHistoryManager(engine)
+    await mgr.init_schema()
+    await mgr.add_exchange("salut", "bonjour à toi")
+    state.deps.chat_history = mgr
+
+    response = await client.get("/history", headers={"X-API-Key": API_KEY})
+    assert response.status_code == 200
+    body = response.json()
+    assert [m["role"] for m in body["messages"]] == ["user", "assistant"]
+    assert [m["content"] for m in body["messages"]] == ["salut", "bonjour à toi"]
+    assert body["has_more"] is False
+
+
+async def test_history_paginates_with_before_id(
+    state: AppState, client: AsyncClient, engine: AsyncEngine
+) -> None:
+    mgr = ChatHistoryManager(engine)
+    await mgr.init_schema()
+    for i in range(3):
+        await mgr.add_exchange(f"q{i}", f"r{i}")  # 6 lignes, ids 1..6
+    state.deps.chat_history = mgr
+
+    first = await client.get("/history?limit=4", headers={"X-API-Key": API_KEY})
+    body = first.json()
+    assert body["has_more"] is True
+    cursor = body["messages"][0]["id"]
+
+    older = await client.get(f"/history?limit=4&before_id={cursor}", headers={"X-API-Key": API_KEY})
+    older_body = older.json()
+    assert older_body["has_more"] is False
+    assert [m["content"] for m in older_body["messages"]] == ["q0", "r0"]

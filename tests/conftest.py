@@ -145,6 +145,7 @@ def make_settings(**overrides: Any) -> MagicMock:
     settings.fuel_default_radius_km = 10.0
     settings.foryou_similarity_max_distance = 0.35
     settings.max_history = 6
+    settings.chat_history_retention_days = 30
     settings.open_worries_prompt_limit = 10
     for key, value in overrides.items():
         setattr(settings, key, value)

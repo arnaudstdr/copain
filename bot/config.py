@@ -68,6 +68,7 @@ class Settings:
     foryou_similarity_max_distance: float
 
     max_history: int
+    chat_history_retention_days: int
     open_worries_prompt_limit: int
 
     fuel_default_radius_km: float
@@ -205,6 +206,7 @@ def load_settings() -> Settings:
         finance_reminder_minute=_env_int("FINANCE_REMINDER_MINUTE", 0),
         foryou_similarity_max_distance=_env_float("FORYOU_SIMILARITY_MAX_DISTANCE", 0.35),
         max_history=_env_int("MAX_HISTORY", 6),
+        chat_history_retention_days=_env_int("CHAT_HISTORY_RETENTION_DAYS", 30),
         open_worries_prompt_limit=_env_int("OPEN_WORRIES_PROMPT_LIMIT", 10),
         fuel_default_radius_km=_env_float("FUEL_DEFAULT_RADIUS_KM", 10.0),
         nominatim_user_agent=os.getenv(

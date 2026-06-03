@@ -70,6 +70,10 @@ copain/
 │   ├── search/
 │   │   └── searxng.py           # SearxngClient
 │   │
+│   ├── chat/
+│   │   ├── models.py            # ChatMessage (shares Base with tasks)
+│   │   └── manager.py           # ChatHistoryManager (add_exchange / page / purge)
+│   │
 │   ├── calendar/
 │   │   ├── models.py            # CalendarEvent dataclass
 │   │   └── client.py            # ICloudCalendarClient (connect + fuzzy match)
@@ -134,7 +138,7 @@ copain/
 │   ├── profile.yaml             # profil utilisateur YAML (édité à la main)
 │   ├── tasks.db                 # SQLite : tasks + feeds + notification_logs +
 │   │                            #   pending_notifications + thoughts + expenses +
-│   │                            #   budget_cycles + location_events
+│   │                            #   budget_cycles + location_events + chat_messages
 │   └── scheduler.db             # persisted APScheduler jobs
 │
 └── tests/                       # pytest-asyncio, everything mocked (no external I/O)

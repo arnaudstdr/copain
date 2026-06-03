@@ -49,6 +49,7 @@ def _settings(sentry_dsn: str | None, traces: float = 0.0) -> Settings:
         finance_reminder_minute=0,
         foryou_similarity_max_distance=0.35,
         max_history=6,
+        chat_history_retention_days=30,
         open_worries_prompt_limit=10,
         fuel_default_radius_km=10.0,
         nominatim_user_agent="x",

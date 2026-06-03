@@ -361,3 +361,42 @@ async def test_stream_passes_system_prompt_and_user_message(deps: BotDeps) -> No
     messages: list[dict[str, Any]] = deps.llm.chat_stream.call_args.kwargs["messages"]
     assert messages[0]["role"] == "system"
     assert messages[1] == {"role": "user", "content": "salut"}
+
+
+async def test_stream_persists_chat_exchange(deps: BotDeps) -> None:
+    """Le mode dialogue historise l'échange (user + texte final) via chat_history."""
+    deps.chat_history = MagicMock()
+    deps.chat_history.add_exchange = AsyncMock()
+    await _collect(process_message_stream("salut", deps))
+    deps.chat_history.add_exchange.assert_awaited_once_with("salut", "Réponse texte.")
+
+
+async def test_stream_persists_final_text_after_handler(deps: BotDeps) -> None:
+    """Le texte historisé est bien le texte final (remplacé par un handler)."""
+    deps.chat_history = MagicMock()
+    deps.chat_history.add_exchange = AsyncMock()
+    deps.llm.chat_stream = MagicMock(
+        return_value=_astream(["Je regarde le ciel.\n", _meta_block("weather")])
+    )
+    await _collect(process_message_stream("quel temps fait-il ?", deps))
+    args = deps.chat_history.add_exchange.await_args.args
+    assert args[0] == "quel temps fait-il ?"
+    assert "Aucune prévision" in args[1]
+
+
+async def test_stream_invalid_meta_does_not_persist(deps: BotDeps) -> None:
+    """Sans bloc <meta> valide, aucun échange n'est historisé."""
+    deps.chat_history = MagicMock()
+    deps.chat_history.add_exchange = AsyncMock()
+    deps.llm.chat_stream = MagicMock(return_value=_astream(["Texte sans bloc meta."]))
+    await _collect(process_message_stream("salut", deps))
+    deps.chat_history.add_exchange.assert_not_awaited()
+
+
+async def test_stream_persist_failure_does_not_break_response(deps: BotDeps) -> None:
+    """Une erreur de persistance (canal d'affichage) n'interrompt pas la réponse."""
+    deps.chat_history = MagicMock()
+    deps.chat_history.add_exchange = AsyncMock(side_effect=RuntimeError("db down"))
+    events = await _collect(process_message_stream("salut", deps))
+    assert events[-1]["type"] == "done"
+    assert _visible_text(events) == "Réponse texte."

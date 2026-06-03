@@ -2,27 +2,89 @@
 import {
   loading,
   chatAttachment, setChatAttachment,
-  chatHistory,
+  chatHistory, chatHistoryState,
 } from "./state.js";
-import { el, lucideNode } from "./ui.js";
-import { callImage, callTextStream } from "./api.js";
+import { el, lucideNode, sameDay, formatDaySeparator } from "./ui.js";
+import { callImage, callTextStream, fetchHistory } from "./api.js";
 import { renderMarkdown } from "./markdown.js";
 import { loadDashboard, invalidateCards } from "./dashboard.js";
 import { setLoading, autoResize, updateChatSendBtn } from "./composer.js";
 
 // ── Mode chat (overlay) ───────────────────────────────────────────────────
+let scrollBound = false;
 export function openChat() {
   document.getElementById("chat-view").classList.remove("hidden");
+  bindFeedScroll();
   renderChatFeed();
+  if (!chatHistoryState.loaded) hydrateHistory();
   setTimeout(() => document.getElementById("chat-input").focus(), 50);
 }
 export function closeChat() {
   document.getElementById("chat-view").classList.add("hidden");
 }
-function renderChatFeed() {
+
+// Hydrate le fil depuis la persistance serveur à la 1re ouverture de session.
+// Les bulles déjà envoyées dans cette session (présentes en mémoire) sont
+// conservées et placées après l'historique rechargé.
+async function hydrateHistory() {
+  try {
+    const data = await fetchHistory(50);
+    const restored = (data.messages || []).map(m => ({
+      id: m.id, role: m.role, text: m.content, createdAt: m.created_at,
+    }));
+    chatHistory.unshift(...restored);
+    chatHistoryState.hasMore = !!data.has_more;
+    chatHistoryState.oldestId = restored.length ? restored[0].id : null;
+  } catch {
+    // Réaffichage non critique : en cas d'échec on garde un fil vide.
+  } finally {
+    chatHistoryState.loaded = true;
+    renderChatFeed();
+  }
+}
+
+// Charge une page plus ancienne quand on scrolle en haut du fil, en
+// préservant la position de lecture (pas de saut visuel après le prepend).
+async function loadOlder() {
+  if (chatHistoryState.loadingOlder || !chatHistoryState.hasMore || chatHistoryState.oldestId == null) return;
+  chatHistoryState.loadingOlder = true;
+  const feed = document.getElementById("chat-feed");
+  const prevHeight = feed.scrollHeight;
+  try {
+    const data = await fetchHistory(50, chatHistoryState.oldestId);
+    const older = (data.messages || []).map(m => ({
+      id: m.id, role: m.role, text: m.content, createdAt: m.created_at,
+    }));
+    if (older.length) {
+      chatHistory.unshift(...older);
+      chatHistoryState.oldestId = older[0].id;
+    }
+    chatHistoryState.hasMore = !!data.has_more;
+    renderChatFeed({ scrollToBottom: false });
+    feed.scrollTop = feed.scrollHeight - prevHeight;  // conserve la vue
+  } catch {
+    // silencieux : on réessaiera au prochain scroll vers le haut.
+  } finally {
+    chatHistoryState.loadingOlder = false;
+  }
+}
+
+function bindFeedScroll() {
+  if (scrollBound) return;
+  const feed = document.getElementById("chat-feed");
+  feed.addEventListener("scroll", () => {
+    if (feed.scrollTop < 40) loadOlder();
+  });
+  scrollBound = true;
+}
+
+function renderChatFeed({ scrollToBottom = true } = {}) {
   const feed = document.getElementById("chat-feed");
   feed.innerHTML = "";
   if (chatHistory.length === 0) {
+    // Avant la fin de l'hydratation, on laisse le fil vide pour éviter un
+    // flash du message d'accueil suivi de l'historique rechargé.
+    if (!chatHistoryState.loaded) return;
     const row = el("div", "row bot");
     const avatar = el("div", "avatar-sm");
     avatar.appendChild(lucideNode("bot", 16));
@@ -33,8 +95,22 @@ function renderChatFeed() {
     feed.appendChild(row);
     return;
   }
-  chatHistory.forEach(m => feed.appendChild(makeChatRow(m.role, m.text, m.imgSrc, m.error)));
-  feed.scrollTop = feed.scrollHeight;
+  let lastDay = null;
+  chatHistory.forEach(m => {
+    const d = m.createdAt ? new Date(m.createdAt) : new Date();
+    if (!isNaN(d.getTime()) && (!lastDay || !sameDay(d, lastDay))) {
+      feed.appendChild(makeDaySeparator(formatDaySeparator(d)));
+      lastDay = d;
+    }
+    feed.appendChild(makeChatRow(m.role, m.text, m.imgSrc, m.error));
+  });
+  if (scrollToBottom) feed.scrollTop = feed.scrollHeight;
+}
+
+function makeDaySeparator(label) {
+  const sep = el("div", "chat-day-sep");
+  sep.appendChild(el("span", null, label));
+  return sep;
 }
 function makeChatRow(role, text, imgSrc, error) {
   const row = el("div", `row ${role === "user" ? "user" : "bot"}`);
@@ -102,7 +178,7 @@ export async function chatSend() {
   // Snapshot la pièce jointe avant de reset, pour pouvoir l'afficher
   // dans la bulle utilisateur et la transmettre à callImage.
   const att = chatAttachment;
-  chatHistory.push({ role: "user", text, imgSrc: att?.preview ?? null });
+  chatHistory.push({ role: "user", text, imgSrc: att?.preview ?? null, createdAt: new Date().toISOString() });
   removeChatAttachment();
   renderChatFeed();
   input.value = ""; autoResize(input); updateChatSendBtn();
@@ -122,13 +198,13 @@ export async function chatSend() {
   if (att) {
     try {
       const body = await callImage(text, att);
-      chatHistory.push({ role: "assistant", text: body.response });
+      chatHistory.push({ role: "assistant", text: body.response, createdAt: new Date().toISOString() });
       if (body.refresh_cards && body.refresh_cards.length > 0) {
         invalidateCards(body.refresh_cards);
         loadDashboard();
       }
     } catch (e) {
-      chatHistory.push({ role: "assistant", text: "Impossible de joindre Copain.", error: true });
+      chatHistory.push({ role: "assistant", text: "Impossible de joindre Copain.", error: true, createdAt: new Date().toISOString() });
     } finally {
       setLoading(false, "chat");
       document.getElementById("chat-typing")?.remove();
@@ -174,12 +250,12 @@ export async function chatSend() {
       onError(t) { streamError = t || "Impossible de joindre Copain."; }
     });
     if (streamError) {
-      chatHistory.push({ role: "assistant", text: streamError, error: true });
+      chatHistory.push({ role: "assistant", text: streamError, error: true, createdAt: new Date().toISOString() });
     } else {
-      chatHistory.push({ role: "assistant", text: acc });
+      chatHistory.push({ role: "assistant", text: acc, createdAt: new Date().toISOString() });
     }
   } catch (e) {
-    chatHistory.push({ role: "assistant", text: "Impossible de joindre Copain.", error: true });
+    chatHistory.push({ role: "assistant", text: "Impossible de joindre Copain.", error: true, createdAt: new Date().toISOString() });
   } finally {
     setLoading(false, "chat");
     document.getElementById("chat-typing")?.remove();

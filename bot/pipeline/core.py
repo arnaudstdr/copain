@@ -27,6 +27,7 @@ from bot.pipeline.side_effects import (
 
 if TYPE_CHECKING:
     from bot.calendar.client import ICloudCalendarClient
+    from bot.chat.manager import ChatHistoryManager
     from bot.config import Settings
     from bot.finance.manager import ExpenseManager
     from bot.fuel.client import FuelClient
@@ -123,6 +124,11 @@ class BotDeps:
     location_events: LocationEventStore
     proactivity: ProactivityService
     history: deque[str]
+    # Persistance d'affichage du mode dialogue (`/ask/stream` uniquement).
+    # None = pas d'historisation (tests, ou chemin non streamé) : c'est un
+    # canal d'affichage non critique, l'absence ne doit jamais bloquer une
+    # réponse.
+    chat_history: ChatHistoryManager | None = None
 
 
 @dataclass
@@ -258,6 +264,7 @@ async def process_message_stream(
         yield {"type": "delta", "text": suffix}
 
     _record_history(deps, user_text, text)
+    await _persist_chat_exchange(deps, user_text, text)
 
     yield {"type": "done", "meta": meta}
 
@@ -309,6 +316,23 @@ def _record_history(deps: BotDeps, user_entry: str, assistant_text: str) -> None
     """
     deps.history.append(f"user: {user_entry}")
     deps.history.append(f"assistant: {assistant_text}")
+
+
+async def _persist_chat_exchange(deps: BotDeps, user_text: str, assistant_text: str) -> None:
+    """Persiste l'échange du mode dialogue pour réafficher les bulles (fail-soft).
+
+    Appelé seulement par `process_message_stream` (le mode dialogue de la
+    PWA) : Siri / photos / bulle éphémère passent par `process_message` et ne
+    sont pas historisés. Une erreur de persistance ne doit jamais empêcher la
+    réponse d'aboutir — on loggue et on continue.
+    """
+    if deps.chat_history is None:
+        return
+    try:
+        await deps.chat_history.add_exchange(user_text, assistant_text)
+    except Exception:
+        # Canal d'affichage non critique : on loggue et on laisse passer.
+        log.warning("chat_history_persist_failed", exc_info=True)
 
 
 async def _build_prompt(user_text: str, deps: BotDeps, voice_mode: bool) -> str:

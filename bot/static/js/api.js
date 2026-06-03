@@ -30,6 +30,21 @@ export async function callImage(message, att) {
 }
 
 /**
+ * Historique des bulles du mode dialogue (GET /history).
+ * `beforeId` (optionnel) = curseur de pagination pour remonter dans le passé.
+ * Renvoie { messages: [{id, role, content, created_at}], has_more }.
+ */
+export async function fetchHistory(limit = 50, beforeId = null) {
+  const params = new URLSearchParams({ limit: String(limit) });
+  if (beforeId != null) params.set("before_id", String(beforeId));
+  const res = await fetch(`${API_BASE}/history?${params}`, {
+    headers: { "X-API-Key": API_KEY }
+  });
+  if (!res.ok) throw new Error(`${res.status}`);
+  return await res.json();
+}
+
+/**
  * Appel streamé de /ask/stream (SSE sur POST via fetch + ReadableStream).
  * `handlers` : { onDelta(text), onReplace(text), onDone(intent, refreshCards), onError(text) }.
  * Les frames sont de la forme `data: {json}\n\n` (cf. bot/api.py).

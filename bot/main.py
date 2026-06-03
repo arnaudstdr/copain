@@ -20,6 +20,7 @@ import uvicorn
 
 from bot.api import AppState, create_app
 from bot.calendar.client import ICloudCalendarClient, ICloudCalendarError
+from bot.chat.manager import ChatHistoryManager
 from bot.config import Settings, load_settings
 from bot.db import create_shared_engine, enable_wal_mode
 from bot.finance.cron import FinanceReminderJob
@@ -85,6 +86,7 @@ async def _build_state(
     engine = create_shared_engine(settings.db_path)
     tasks = TaskManager(engine, scheduler=scheduler)
     thoughts = ThoughtManager(engine)
+    chat_history = ChatHistoryManager(engine)
     expenses = ExpenseManager(engine)
     rss = FeedManager(engine)
     rss_fetcher = RssFetcher()
@@ -158,12 +160,18 @@ async def _build_state(
         location_events=location_events,
         proactivity=proactivity,
         history=deque(maxlen=settings.max_history),
+        chat_history=chat_history,
     )
 
     # Initialisations asynchrones — équivalent de l'ancien `post_init` PTB.
     await enable_wal_mode(engine)
     await tasks.init_schema()
     await thoughts.init_schema()
+    await chat_history.init_schema()
+    # Fenêtre glissante : purge des bulles trop vieilles à chaque démarrage
+    # (single-user, le serveur redémarre régulièrement ; suffisant sans cron
+    # dédié — au-delà, la mémoire sémantique ChromaDB couvre le rappel).
+    await chat_history.purge_older_than(settings.chat_history_retention_days)
     await expenses.init_schema()
     await rss.init_schema()
     await notifications.init_schema()

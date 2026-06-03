@@ -201,6 +201,21 @@ class ThoughtCloseResponse(BaseModel):
     thought_id: int
 
 
+# --- Chat history schemas --------------------------------------------------
+
+
+class ChatMessageItem(BaseModel):
+    id: int
+    role: str  # "user" | "assistant"
+    content: str
+    created_at: str  # ISO 8601
+
+
+class ChatHistoryResponse(BaseModel):
+    messages: list[ChatMessageItem]  # ordre chronologique croissant
+    has_more: bool  # des bulles plus anciennes existent (curseur = messages[0].id)
+
+
 # --- News schemas ----------------------------------------------------------
 
 
@@ -886,6 +901,38 @@ def create_app(state: AppState) -> FastAPI:
                 detail="Thought not found",
             )
         return ThoughtCloseResponse(closed=True, thought_id=thought_id)
+
+    @app.get(
+        "/history",
+        response_model=ChatHistoryResponse,
+        dependencies=[Depends(verify_api_key)],
+    )
+    async def chat_history(
+        deps: BotDeps = Depends(get_deps),
+        limit: int = 50,
+        before_id: int | None = None,
+    ) -> ChatHistoryResponse:
+        """Historique des bulles du mode dialogue (réaffichage PWA).
+
+        Renvoie les `limit` derniers messages (plafonné à 200), ordre
+        chronologique croissant. Scroll infini : passer `before_id` =
+        `messages[0].id` de la page courante pour récupérer les plus anciens.
+        `has_more` signale qu'il en reste à charger. Si la persistance est
+        désactivée (pas de `chat_history`), renvoie une page vide.
+        """
+        if deps.chat_history is None:
+            return ChatHistoryResponse(messages=[], has_more=False)
+        page = await deps.chat_history.page(limit=limit, before_id=before_id)
+        items = [
+            ChatMessageItem(
+                id=m.id,
+                role=m.role,
+                content=m.content,
+                created_at=m.created_at.isoformat(),
+            )
+            for m in page.messages
+        ]
+        return ChatHistoryResponse(messages=items, has_more=page.has_more)
 
     @app.get(
         "/budget",

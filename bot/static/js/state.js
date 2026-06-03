@@ -14,7 +14,13 @@ export const PROFILE_NAME = "Arnaud";
 export let loading      = false;
 export let attachment   = null;   // { b64, mediaType, preview }
 export let dashboardData = null;
-export const chatHistory  = [];     // [{role, text}]
+export const chatHistory  = [];     // [{role, text, createdAt?, imgSrc?, error?}]
+// Curseur du scroll infini de l'historique dialogue (persisté côté serveur,
+// hydraté depuis GET /history). `loaded` passe à true après la 1re hydratation
+// (on ne recharge pas à chaque ouverture du chat dans la même session) ;
+// `oldestId` = id de la bulle la plus ancienne en mémoire (curseur before_id) ;
+// `hasMore` = des bulles plus anciennes restent à charger.
+export const chatHistoryState = { loaded: false, hasMore: false, oldestId: null, loadingOlder: false };
 // Pièce jointe spécifique au mode chat (séparée de `attachment` utilisée
 // par la barre principale, pour que les deux vues ne s'écrasent pas).
 export let chatAttachment = null;
