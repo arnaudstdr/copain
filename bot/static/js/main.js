@@ -40,35 +40,41 @@ function renderGreeting() {
   document.getElementById("greeting-date").textContent = d.toLocaleDateString("fr-FR", opts);
 }
 
-// Pilote --app-h depuis window.visualViewport.height (fallback innerHeight).
-// Sur iOS 26 PWA standalone, 100dvh peut renvoyer une valeur qui ne reflète
-// pas la viewport visuelle réelle, ce qui laissait apparaître une bande
-// vide sous la composer bar. visualViewport remonte la vraie hauteur
-// utilisable (et s'ajuste quand le clavier s'ouvre/se ferme).
+// Pilote la hauteur du #app en distinguant deux états (le bug venait de les
+// traiter pareil avec visualViewport.height) :
+//
+//  • Clavier FERMÉ → --app-h = 100% du web view (layout viewport). En PWA
+//    standalone iOS, visualViewport.height au repos exclut une bande en bas,
+//    ce qui laissait le #app trop court → bande vide sous la composer. 100%
+//    remplit tout l'écran ; la safe-area-inset-bottom de la composer gère le
+//    home indicator.
+//  • Clavier OUVERT → --app-h = visualViewport.height + translate de
+//    offsetTop. Le #app rétrécit pile à la zone visible au-dessus du clavier,
+//    donc la composer reste visible. Figer la hauteur (ancien comportement)
+//    laissait le #app plus grand que la zone visible → la barre passait
+//    derrière le clavier et iOS sur-scrollait (il fallait swiper pour la voir).
+//
+// Détection clavier : un écart > 150px entre innerHeight (stable en standalone)
+// et la hauteur visuelle = clavier ouvert.
 function setupAppHeight() {
   const vv = window.visualViewport;
-  // On re-mesure à chaque resize visualViewport pour rattraper les cas où la
-  // valeur au boot est sous-dimensionnée (viewport pas encore stabilisée en
-  // PWA standalone iOS 26, ou barre Safari encore déployée) — c'était la
-  // cause de la bande vide sous la composer.
-  //
-  // MAIS on ignore les resize provoqués par le clavier : il fait chuter la
-  // hauteur visuelle de plusieurs centaines de px ; si on répercutait ça sur
-  // --app-h, le #app serait écrasé en haut de l'écran. En gardant --app-h
-  // figé quand le clavier est ouvert, iOS translate automatiquement le visual
-  // viewport pour amener l'input au-dessus du clavier. Heuristique : un écart
-  // > 150px entre innerHeight et la hauteur visuelle = clavier ouvert.
-  const measure = () => {
-    const h = vv?.height || window.innerHeight;
+  const root = document.documentElement;
+  const app = document.getElementById("app");
+  const update = () => {
     const keyboardOpen = vv && window.innerHeight - vv.height > 150;
-    if (!keyboardOpen) {
-      document.documentElement.style.setProperty("--app-h", `${h}px`);
+    if (vv && keyboardOpen) {
+      root.style.setProperty("--app-h", `${vv.height}px`);
+      app.style.transform = `translateY(${vv.offsetTop}px)`;
+    } else {
+      root.style.setProperty("--app-h", "100%");
+      app.style.transform = "";
     }
   };
-  measure();
-  vv?.addEventListener("resize", measure);
+  update();
+  vv?.addEventListener("resize", update);
+  vv?.addEventListener("scroll", update);
   // Petit délai pour laisser iOS finir sa rotation avant de mesurer.
-  window.addEventListener("orientationchange", () => setTimeout(measure, 150));
+  window.addEventListener("orientationchange", () => setTimeout(update, 150));
 }
 
 // ── Bindings DOM ──────────────────────────────────────────────────────────

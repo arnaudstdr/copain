@@ -1,10 +1,11 @@
 html, body { height: 100%; background: var(--bg); color: var(--text); font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, sans-serif; overflow: hidden; -webkit-font-smoothing: antialiased; }
 
-/* Hauteur du #app pilotée par JS via window.visualViewport (cf. setupAppHeight).
-   Fallback 100dvh pour les chargements pré-JS / navigateurs sans visualViewport.
-   Sur iOS 26 PWA standalone, 100dvh peut renvoyer une valeur trop petite — on
-   remplace par la vraie hauteur visuelle mesurée. */
-:root { --app-h: 100dvh; }
+/* Hauteur du #app pilotée par JS (cf. setupAppHeight) :
+   - clavier fermé → 100% (du web view, via body height:100%) ;
+   - clavier ouvert → visualViewport.height en px + translate.
+   Fallback 100% pour le rendu pré-JS / navigateurs sans visualViewport :
+   #app remplit alors tout le web view, composer collée en bas. */
+:root { --app-h: 100%; }
 
 #app { display: flex; flex-direction: column; height: var(--app-h); max-width: 480px; margin: 0 auto; background: var(--bg); position: relative; overflow: hidden; }
 
