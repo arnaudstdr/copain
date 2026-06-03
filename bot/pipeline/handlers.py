@@ -12,6 +12,7 @@ au runtime, jamais l'inverse (DAG d'imports du package).
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from typing import TYPE_CHECKING
 from zoneinfo import ZoneInfo
@@ -230,6 +231,37 @@ async def handle_event(meta: Meta, deps: BotDeps, intro: str) -> str:
     return intro
 
 
+@dataclass(frozen=True, slots=True)
+class ResolvedLocation:
+    """Lieu résolu pour les handlers géolocalisés (fuel / weather)."""
+
+    center: GeoPoint
+    label: str
+
+
+async def _resolve_location(location_query: str | None, deps: BotDeps) -> ResolvedLocation | str:
+    """Résout un lieu : géocode `location_query`, ou retombe sur le domicile.
+
+    Partagé par `handle_fuel` et `handle_weather`. Retourne une
+    `ResolvedLocation` en cas de succès, ou un message d'erreur FR (à
+    renvoyer tel quel à l'utilisateur) si le géocodage échoue ou ne trouve
+    rien. Sans `location_query`, retombe sur `HOME_*` sans appel réseau.
+    """
+    if not location_query:
+        return ResolvedLocation(
+            center=GeoPoint(lat=deps.settings.home_lat, lon=deps.settings.home_lon),
+            label=deps.settings.home_city,
+        )
+    try:
+        geocoded = await deps.geocoder.geocode_fr(location_query)
+    except NominatimError:
+        log.exception("geocode_failed", location=location_query)
+        return "Désolé, impossible de localiser ce lieu pour l'instant."
+    if geocoded is None:
+        return f"Je n'ai pas trouvé « {location_query} » sur la carte."
+    return ResolvedLocation(center=geocoded, label=location_query)
+
+
 async def handle_fuel(meta: Meta, deps: BotDeps, intro: str) -> str:
     raw_type = meta["fuel"]["fuel_type"]
     fuel_type = normalize_fuel_type(raw_type)
@@ -248,19 +280,10 @@ async def handle_fuel(meta: Meta, deps: BotDeps, intro: str) -> str:
         location=location_query,
     )
 
-    if location_query:
-        try:
-            geocoded = await deps.geocoder.geocode_fr(location_query)
-        except NominatimError:
-            log.exception("geocode_failed")
-            return "Désolé, impossible de localiser ce lieu pour l'instant."
-        if geocoded is None:
-            return f"Je n'ai pas trouvé « {location_query} » sur la carte."
-        center = geocoded
-        place_label = location_query
-    else:
-        center = GeoPoint(lat=deps.settings.home_lat, lon=deps.settings.home_lon)
-        place_label = deps.settings.home_city
+    resolved = await _resolve_location(location_query, deps)
+    if isinstance(resolved, str):
+        return resolved
+    center, place_label = resolved.center, resolved.label
 
     try:
         stations = await deps.fuel.find_cheapest(
@@ -295,19 +318,10 @@ async def handle_weather(meta: Meta, deps: BotDeps, intro: str) -> str:
     when_str = meta["weather"]["when"]
     log.info("weather_action", location=location_query, when=when_str)
 
-    if location_query:
-        try:
-            geocoded = await deps.geocoder.geocode_fr(location_query)
-        except NominatimError:
-            log.exception("weather_geocode_failed")
-            return "Désolé, impossible de localiser ce lieu pour l'instant."
-        if geocoded is None:
-            return f"Je n'ai pas trouvé « {location_query} » sur la carte."
-        lat, lon, label = geocoded.lat, geocoded.lon, location_query
-    else:
-        lat = deps.settings.home_lat
-        lon = deps.settings.home_lon
-        label = deps.settings.home_city
+    resolved = await _resolve_location(location_query, deps)
+    if isinstance(resolved, str):
+        return resolved
+    lat, lon, label = resolved.center.lat, resolved.center.lon, resolved.label
 
     tz = ZoneInfo(deps.settings.timezone)
     start_offset, end_offset = parse_weather_range(when_str, tz)

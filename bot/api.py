@@ -345,6 +345,34 @@ def _sse_frame(payload: dict[str, object]) -> str:
     return f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
 
 
+# Messages FR renvoyés tels quels au client iOS quand le LLM flanche. Le
+# timeout est nuancé selon le canal (réponse vs analyse d'image) ; l'erreur
+# serveur est commune. Centralisés ici pour rester cohérents entre `/ask`,
+# `/ask/stream` et `/ask/image`.
+LLM_TIMEOUT_TEXT = (
+    "Le modèle met trop longtemps à répondre pour l'instant. Réessaie dans quelques secondes."
+)
+LLM_TIMEOUT_IMAGE_TEXT = (
+    "Le modèle met trop longtemps à analyser l'image. Réessaie dans quelques secondes."
+)
+LLM_ERROR_TEXT = "Le modèle LLM a un souci côté serveur pour l'instant. Réessaie dans un moment."
+
+
+def _llm_error_reply(exc: LLMError, *, kind: str, timeout_text: str = LLM_TIMEOUT_TEXT) -> str:
+    """Log l'erreur LLM et retourne le message FR à afficher au client.
+
+    `LLMTimeoutError` (sous-classe de `LLMError`) → message de timeout
+    (`timeout_text`, paramétrable pour le cas image) ; toute autre `LLMError`
+    → message d'erreur serveur. Le canal (`ask` / `stream` / `image`) est
+    journalisé via `kind`.
+    """
+    if isinstance(exc, LLMTimeoutError):
+        log.warning("llm_timeout", kind=kind)
+        return timeout_text
+    log.error("llm_error", kind=kind, error=str(exc))
+    return LLM_ERROR_TEXT
+
+
 # --- Container des dépendances vivantes attaché à app.state ------------------
 
 
@@ -475,21 +503,8 @@ def create_app(state: AppState) -> FastAPI:
         log.info("ask_received", preview=payload.message[:80], voice_mode=voice_mode)
         try:
             reply, meta = await process_message(payload.message, deps, voice_mode=voice_mode)
-        except LLMTimeoutError:
-            log.warning("llm_timeout")
-            return AskResponse(
-                response=(
-                    "Le modèle met trop longtemps à répondre pour l'instant. "
-                    "Réessaie dans quelques secondes."
-                )
-            )
         except LLMError as exc:
-            log.error("llm_error", error=str(exc))
-            return AskResponse(
-                response=(
-                    "Le modèle LLM a un souci côté serveur pour l'instant. Réessaie dans un moment."
-                )
-            )
+            return AskResponse(response=_llm_error_reply(exc, kind="ask"))
         except Exception as exc:
             log.exception("ask_failed", error=str(exc))
             capture_exception(exc, source="api_ask")
@@ -532,28 +547,8 @@ def create_app(state: AppState) -> FastAPI:
                         )
                     else:
                         yield _sse_frame({"type": event["type"], "text": event.get("text", "")})
-            except LLMTimeoutError:
-                log.warning("llm_timeout", kind="stream")
-                yield _sse_frame(
-                    {
-                        "type": "error",
-                        "text": (
-                            "Le modèle met trop longtemps à répondre pour l'instant. "
-                            "Réessaie dans quelques secondes."
-                        ),
-                    }
-                )
             except LLMError as exc:
-                log.error("llm_error", kind="stream", error=str(exc))
-                yield _sse_frame(
-                    {
-                        "type": "error",
-                        "text": (
-                            "Le modèle LLM a un souci côté serveur pour l'instant. "
-                            "Réessaie dans un moment."
-                        ),
-                    }
-                )
+                yield _sse_frame({"type": "error", "text": _llm_error_reply(exc, kind="stream")})
             except Exception as exc:
                 log.exception("ask_stream_failed", error=str(exc))
                 capture_exception(exc, source="api_ask_stream")
@@ -607,20 +602,9 @@ def create_app(state: AppState) -> FastAPI:
             reply, meta = await process_message(
                 payload.message, deps, images=[image_bytes], voice_mode=voice_mode
             )
-        except LLMTimeoutError:
-            log.warning("llm_timeout", kind="image")
-            return AskResponse(
-                response=(
-                    "Le modèle met trop longtemps à analyser l'image. "
-                    "Réessaie dans quelques secondes."
-                )
-            )
         except LLMError as exc:
-            log.error("llm_error", kind="image", error=str(exc))
             return AskResponse(
-                response=(
-                    "Le modèle LLM a un souci côté serveur pour l'instant. Réessaie dans un moment."
-                )
+                response=_llm_error_reply(exc, kind="image", timeout_text=LLM_TIMEOUT_IMAGE_TEXT)
             )
         except Exception as exc:
             log.exception("ask_image_failed", error=str(exc))
