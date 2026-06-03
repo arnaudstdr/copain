@@ -46,23 +46,29 @@ function renderGreeting() {
 // vide sous la composer bar. visualViewport remonte la vraie hauteur
 // utilisable (et s'ajuste quand le clavier s'ouvre/se ferme).
 function setupAppHeight() {
-  // Mesure unique au boot : la viewport disponible (= sans clavier).
-  // On ne ré-écoute PAS les resize / visualViewport.resize : sur iOS,
-  // ces events se déclenchent aussi à l'ouverture du clavier, ce qui
-  // ferait chuter --app-h et écraserait le #app en haut de l'écran.
-  // En gardant la valeur initiale, iOS translate automatiquement le
-  // visual viewport pour amener l'input au-dessus du clavier.
+  const vv = window.visualViewport;
+  // On re-mesure à chaque resize visualViewport pour rattraper les cas où la
+  // valeur au boot est sous-dimensionnée (viewport pas encore stabilisée en
+  // PWA standalone iOS 26, ou barre Safari encore déployée) — c'était la
+  // cause de la bande vide sous la composer.
+  //
+  // MAIS on ignore les resize provoqués par le clavier : il fait chuter la
+  // hauteur visuelle de plusieurs centaines de px ; si on répercutait ça sur
+  // --app-h, le #app serait écrasé en haut de l'écran. En gardant --app-h
+  // figé quand le clavier est ouvert, iOS translate automatiquement le visual
+  // viewport pour amener l'input au-dessus du clavier. Heuristique : un écart
+  // > 150px entre innerHeight et la hauteur visuelle = clavier ouvert.
   const measure = () => {
-    const h = window.visualViewport?.height || window.innerHeight;
-    document.documentElement.style.setProperty("--app-h", `${h}px`);
+    const h = vv?.height || window.innerHeight;
+    const keyboardOpen = vv && window.innerHeight - vv.height > 150;
+    if (!keyboardOpen) {
+      document.documentElement.style.setProperty("--app-h", `${h}px`);
+    }
   };
   measure();
-  // Seul l'orientationchange justifie une nouvelle mesure : c'est un
-  // vrai changement de viewport, indépendant du clavier.
-  window.addEventListener("orientationchange", () => {
-    // Petit délai pour laisser iOS finir sa rotation avant de mesurer.
-    setTimeout(measure, 150);
-  });
+  vv?.addEventListener("resize", measure);
+  // Petit délai pour laisser iOS finir sa rotation avant de mesurer.
+  window.addEventListener("orientationchange", () => setTimeout(measure, 150));
 }
 
 // ── Bindings DOM ──────────────────────────────────────────────────────────

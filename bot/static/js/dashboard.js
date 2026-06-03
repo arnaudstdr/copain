@@ -32,18 +32,22 @@ function renderDashboard(d) {
   const root = document.getElementById("dashboard");
   root.innerHTML = "";
 
-  // Météo
-  root.appendChild(weatherCard(d.weather));
-  // Prochain évent
-  root.appendChild(eventCard(d.next_event));
-  // Tâches
+  // Rangée compacte : météo + prochain évent (deux tuiles côte à côte)
+  root.appendChild(gridRow(weatherCard(d.weather, true), eventCard(d.next_event, true)));
+  // Tâches (pleine largeur)
   root.appendChild(tasksCard(d.today_tasks, d.overdue_tasks || 0));
-  // Budget (restant ce mois)
+  // Budget (pleine largeur, restant ce mois)
   root.appendChild(budgetCard(d.budget));
-  // Actu (vraie card avec fetch au clic)
-  root.appendChild(newsCard());
-  // Pour toi (restitution des dépôts, fetch au tap)
-  root.appendChild(foryouCard());
+  // Rangée compacte : actu + pour toi (fetch au tap dans les deux cas)
+  root.appendChild(gridRow(newsCard(true), foryouCard(true)));
+}
+
+// Enveloppe deux cards dans une rangée grille 2 colonnes.
+function gridRow(left, right) {
+  const row = el("div", "card-grid");
+  row.appendChild(left);
+  row.appendChild(right);
+  return row;
 }
 
 function renderDashboardError() {
@@ -55,8 +59,9 @@ function renderDashboardError() {
     </div>`;
 }
 
-function weatherCard(w) {
+function weatherCard(w, compact) {
   const card = el("div", "card");
+  if (compact) card.classList.add("compact");
   if (!w) {
     card.classList.add("empty");
     card.appendChild(makeHead("cloud-sun", "Météo"));
@@ -74,8 +79,9 @@ function weatherCard(w) {
   return card;
 }
 
-function eventCard(e) {
+function eventCard(e, compact) {
   const card = el("div", "card");
+  if (compact) card.classList.add("compact");
   if (!e) {
     card.classList.add("empty");
     card.appendChild(makeHead("calendar", "Prochain évènement"));
@@ -337,8 +343,9 @@ function renderBudgetMarkdown(b) {
   return lines.join("\n");
 }
 
-function newsCard() {
+function newsCard(compact) {
   const card = el("div", "card tappable");
+  if (compact) card.classList.add("compact");
   card.onclick = openNews;
   card.appendChild(makeHead("newspaper", "Actu"));
   if (newsState.loading) {
@@ -387,12 +394,13 @@ async function openNews() {
   }
 }
 
-function foryouCard() {
+function foryouCard(compact) {
   // Card volontairement neutre : aucun badge ni compteur « N choses
   // t'attendent » (ce serait une charge mentale entrante, contraire au
   // positionnement produit). Toujours le même libellé apaisant, idle/loading
   // gérés dans l'overlay au tap.
   const card = el("div", "card tappable empty");
+  if (compact) card.classList.add("compact");
   card.onclick = openForYou;
   card.appendChild(makeHead("inbox", "Pour toi"));
   card.appendChild(el("div", "card-primary", "Tape pour faire le point"));

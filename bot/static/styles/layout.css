@@ -28,6 +28,12 @@ header { display: flex; align-items: center; gap: 12px; padding: 12px 16px; padd
 #dashboard::-webkit-scrollbar { width: 3px; }
 #dashboard::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 4px; }
 
+/* Rangée de deux cards compactes côte à côte (météo + prochain évent,
+   actu + pour toi). min-width: 0 sur les enfants pour que l'ellipsis des
+   textes compacts fonctionne dans la grille. */
+.card-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.card-grid > .card { min-width: 0; }
+
 /* ── Composer wrap (preview + input bar) ── */
 /* Composer dans le flow flexbox du #app : flex-shrink: 0 la garde à sa
    taille naturelle, et comme c'est le dernier enfant après #dashboard

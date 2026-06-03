@@ -20,6 +20,18 @@
 
 .card-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 
+/* ── Card compacte (tuile de grille 2 colonnes) ──
+   Padding resserré et chaque ligne de texte tronquée sur une seule ligne :
+   sur une demi-largeur (~210px), météo/évent/actu/pour toi tiennent sans
+   déborder ni casser l'alignement vertical de la rangée. */
+.card.compact { padding: 13px 14px; gap: 3px; }
+.card.compact .card-head { gap: 8px; }
+.card.compact .card-label { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.card.compact .card-primary { font-size: 15px; }
+.card.compact .card-primary,
+.card.compact .card-secondary,
+.card.compact .card-meta { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
 /* Enveloppes budgétaires : progress bar inline dans la card Budget. */
 .envelope-track { height: 4px; border-radius: 2px; background: var(--track-bg); margin-top: 2px; overflow: hidden; }
 .envelope-fill { height: 100%; background: var(--green); transition: width 0.2s ease; }
