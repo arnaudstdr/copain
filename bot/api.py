@@ -18,6 +18,7 @@ dependencies `get_deps` / `get_notifications`.
 from __future__ import annotations
 
 import base64
+import hmac
 import json
 import pathlib
 from collections.abc import AsyncIterator
@@ -51,14 +52,26 @@ STATIC_DIR = pathlib.Path(__file__).parent / "static"
 
 # --- Schémas Pydantic --------------------------------------------------------
 
+# Bornes de taille des entrées. Mono-utilisateur derrière Tailscale, donc pas
+# une défense anti-DoS publique : juste un garde-fou pour qu'un payload
+# aberrant (texte de plusieurs Mo, image géante) soit rejeté par un 422 net
+# avant d'atteindre le LLM ou le décodage base64, plutôt que de faire planter
+# le process. ~20 Mo de base64 ≈ 15 Mo d'image décodée, large pour une photo.
+MAX_MESSAGE_CHARS = 10_000
+MAX_IMAGE_B64_CHARS = 20_000_000
+
 
 class AskRequest(BaseModel):
-    message: str
+    message: str = Field(min_length=1, max_length=MAX_MESSAGE_CHARS)
 
 
 class AskImageRequest(BaseModel):
-    message: str
-    image_b64: str = Field(description="Image encodée en base64 (sans préfixe data:).")
+    message: str = Field(min_length=1, max_length=MAX_MESSAGE_CHARS)
+    image_b64: str = Field(
+        min_length=1,
+        max_length=MAX_IMAGE_B64_CHARS,
+        description="Image encodée en base64 (sans préfixe data:).",
+    )
     media_type: str = Field(
         description="Type MIME (ex: image/jpeg, image/png). Informatif pour les logs.",
     )
@@ -368,7 +381,10 @@ async def verify_api_key(
     settings: Settings = Depends(get_settings_dep),
 ) -> None:
     """Vérifie le header `X-API-Key`. Log un warning avec l'IP source si invalide."""
-    if x_api_key != settings.api_key:
+    # Comparaison à temps constant : évite de fuiter la clé caractère par
+    # caractère via le temps de réponse (timing attack). `compare_digest`
+    # exige deux chaînes non None, d'où le fallback "" sur header absent.
+    if not hmac.compare_digest(x_api_key or "", settings.api_key):
         client_ip = request.client.host if request.client else None
         log.warning(
             "api_access_denied",
@@ -836,9 +852,9 @@ def create_app(state: AppState) -> FastAPI:
     ) -> ThoughtsListResponse:
         """Liste les dépôts cognitifs récents (intent `depot`).
 
-        Filtre optionnel `since` (ISO 8601). `limit` plafonné à 200 pour
-        éviter les payloads trop gros. Tri chronologique inverse (les
-        dépôts les plus récents en premier).
+        Filtre optionnel `since` (ISO 8601). `limit` plafonné à 200 (clamp
+        tolérant plutôt que rejet) pour éviter les payloads trop gros. Tri
+        chronologique inverse (les dépôts les plus récents en premier).
         """
         capped_limit = max(1, min(limit, 200))
         if since is not None:

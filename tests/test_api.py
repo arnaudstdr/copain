@@ -191,6 +191,24 @@ async def test_notifications_without_api_key_returns_403(client: AsyncClient) ->
     assert response.status_code == 403
 
 
+async def test_ask_empty_message_returns_422(client: AsyncClient) -> None:
+    response = await client.post(
+        "/ask",
+        headers={"X-API-Key": API_KEY},
+        json={"message": ""},
+    )
+    assert response.status_code == 422
+
+
+async def test_ask_oversized_message_returns_422(client: AsyncClient) -> None:
+    response = await client.post(
+        "/ask",
+        headers={"X-API-Key": API_KEY},
+        json={"message": "a" * 10_001},
+    )
+    assert response.status_code == 422
+
+
 # --- /ask -------------------------------------------------------------------
 
 
@@ -546,6 +564,21 @@ async def test_ask_image_rejects_invalid_base64(client: AsyncClient) -> None:
         },
     )
     assert response.status_code == 400
+
+
+async def test_ask_image_rejects_oversized_payload(client: AsyncClient, state: AppState) -> None:
+    # Au-delà de MAX_IMAGE_B64_CHARS : rejet Pydantic (422) avant tout décodage.
+    response = await client.post(
+        "/ask/image",
+        headers={"X-API-Key": API_KEY},
+        json={
+            "message": "décris",
+            "image_b64": "A" * 20_000_001,
+            "media_type": "image/jpeg",
+        },
+    )
+    assert response.status_code == 422
+    state.deps.llm.call.assert_not_awaited()
 
 
 # --- /notifications ---------------------------------------------------------
