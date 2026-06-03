@@ -21,6 +21,11 @@ export let chatAttachment = null;
 // Card Actu : état persistant en mémoire (la card reste « fraîche » tant
 // que la PWA est ouverte ; un reload de la page remet à zéro).
 export const newsState   = { fetchedAt: null, loading: false, markdown: null };
+// Card "Pour toi" : restitution des dépôts, fetch au tap (canal pull).
+// `items` null = jamais chargé (la card reste neutre, sans signal entrant) ;
+// [] = chargé mais rien à restituer ; [...] = items en attente d'action.
+// Invalidé (remis à null) quand un dépôt/clôture remonte refresh_cards:["foryou"].
+export const foryouState = { fetchedAt: null, items: null };
 
 // ── Setters (réassignation depuis les autres modules) ─────────────────────
 export function setApiKey(v) { API_KEY = v; }

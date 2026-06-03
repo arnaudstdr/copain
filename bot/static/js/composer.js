@@ -9,7 +9,7 @@ import {
 } from "./state.js";
 import { el, lucideNode, showToast, showEphemeral } from "./ui.js";
 import { callText, callImage } from "./api.js";
-import { loadDashboard, flashCards } from "./dashboard.js";
+import { loadDashboard, flashCards, invalidateCards } from "./dashboard.js";
 
 // ── État local du module ──────────────────────────────────────────────────
 // Instance SpeechRecognition partagée entre les deux micros (dashboard et
@@ -47,6 +47,7 @@ function handleAskResponse(body, userText) {
   // Mode action : toast court + rafraîchissement des cards concernées
   if (refresh.length > 0) {
     showToast(actionToast(intent));
+    invalidateCards(refresh);
     loadDashboard().then(() => flashCards(refresh));
   } else {
     // Mode question : on affiche la réponse texte en éphémère

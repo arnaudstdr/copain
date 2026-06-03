@@ -7,7 +7,7 @@ import { showToast, hideEphemeral } from "./ui.js";
 import { fetchConfig } from "./api.js";
 import { loadDashboard } from "./dashboard.js";
 import { closeMarkdownView } from "./markdown.js";
-import { openNotifs, closeNotifs, closeTasks, closeWeather, closeEvents } from "./overlays.js";
+import { openNotifs, closeNotifs, closeTasks, closeWeather, closeEvents, closeForYou } from "./overlays.js";
 import {
   send, handleKey, updateSendBtn, updateChatSendBtn, autoResize,
   handleFileChange, removeAttachment, toggleMic, toggleChatMic,
@@ -102,6 +102,8 @@ function bindStaticHandlers() {
   $("#weather-overlay .close-btn").addEventListener("click", closeWeather);
   $("#events-overlay").addEventListener("click", closeOnBackdrop(closeEvents));
   $("#events-overlay .close-btn").addEventListener("click", closeEvents);
+  $("#foryou-overlay").addEventListener("click", closeOnBackdrop(closeForYou));
+  $("#foryou-overlay .close-btn").addEventListener("click", closeForYou);
 
   // Vue markdown
   $("#markdown-view header .header-btn").addEventListener("click", closeMarkdownView);

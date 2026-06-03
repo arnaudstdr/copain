@@ -2,7 +2,7 @@
 // Cycle d'import dashboard ↔ overlays accepté (cf. PROGRESS.md) : les cards
 // tappables ouvrent les overlays, et les overlays rafraîchissent le
 // dashboard à la fermeture. Bénin : fonctions hoistées, appelées au runtime.
-import { API_KEY, API_BASE, dashboardData } from "./state.js";
+import { API_KEY, API_BASE, dashboardData, foryouState } from "./state.js";
 import {
   el,
   lucideNode,
@@ -219,6 +219,104 @@ function makeEventItem(e) {
   }
   item.appendChild(el("div", "event-calendar", e.calendar_name));
   return item;
+}
+
+// ── Pour toi (restitution des dépôts) ─────────────────────────────────────
+export async function openForYou() {
+  document.getElementById("foryou-overlay").classList.remove("hidden");
+  // Déjà chargé dans cette session → on réaffiche le cache sans refetch
+  // (canal pull, on ne sollicite le serveur qu'au premier tap ou après
+  // invalidation par un dépôt/clôture).
+  if (foryouState.items !== null) {
+    renderForYou(foryouState.items);
+    return;
+  }
+  const list = document.getElementById("foryou-list");
+  list.innerHTML = '<div class="panel-empty">Chargement…</div>';
+  try {
+    const res = await fetch(`${API_BASE}/foryou`, { headers: { "X-API-Key": API_KEY } });
+    if (!res.ok) throw new Error(`${res.status}`);
+    const data = await res.json();
+    foryouState.items = data.items || [];
+    foryouState.fetchedAt = data.fetched_at;
+    renderForYou(foryouState.items);
+  } catch (e) {
+    // On laisse items à null pour permettre un nouveau tap (la card reste idle).
+    list.innerHTML = '<div class="panel-empty">Impossible de charger</div>';
+    showToast("Impossible de charger");
+  }
+}
+
+export function closeForYou() {
+  document.getElementById("foryou-overlay").classList.add("hidden");
+  loadDashboard();
+}
+
+function renderForYou(items) {
+  const list = document.getElementById("foryou-list");
+  list.innerHTML = "";
+  if (!items || items.length === 0) {
+    // État apaisant, jamais une erreur : c'est une bonne nouvelle.
+    list.innerHTML = '<div class="panel-empty">Rien en attente — tout est rangé.</div>';
+    return;
+  }
+  items.forEach(item => list.appendChild(makeForYouItem(item)));
+}
+
+function makeForYouItem(item) {
+  const row = el("div", "foryou-item");
+  row.appendChild(el("div", "foryou-message", item.message));
+  const actions = el("div", "foryou-actions");
+  const done = el("button", "foryou-btn primary", "C'est réglé");
+  done.onclick = () => resolveForYou(item, row);
+  const keep = el("button", "foryou-btn ghost", "Garder");
+  keep.onclick = () => removeForYouItem(item, row);
+  actions.appendChild(done);
+  actions.appendChild(keep);
+  row.appendChild(actions);
+  return row;
+}
+
+async function resolveForYou(item, row) {
+  if (row.classList.contains("foryou-resolving")) return;
+  row.classList.add("foryou-resolving");
+  const ids = item.thought_ids || [];
+  // Un item « boucle » porte plusieurs dépôts ouverts : on les clôt tous.
+  // /close est idempotent → un retour après échec partiel est sans danger.
+  const results = await Promise.allSettled(
+    ids.map(id =>
+      fetch(`${API_BASE}/thoughts/${id}/close`, {
+        method: "POST",
+        headers: { "X-API-Key": API_KEY },
+      }).then(r => { if (!r.ok) throw new Error(`${r.status}`); })
+    )
+  );
+  const failed = results.filter(r => r.status === "rejected").length;
+  if (failed > 0) {
+    row.classList.remove("foryou-resolving");
+    showToast("Certains dépôts n'ont pas pu être clôturés");
+    return;
+  }
+  removeForYouItem(item, row);
+}
+
+function removeForYouItem(item, row) {
+  // Retire de l'état en mémoire pour qu'il ne réapparaisse pas cette session
+  // (« Garder » = masquage local sans réseau ; « C'est réglé » = après clôture).
+  if (foryouState.items) {
+    foryouState.items = foryouState.items.filter(i => i !== item);
+  }
+  row.style.transition = "opacity 0.25s, max-height 0.25s, padding 0.25s, margin 0.25s";
+  row.style.opacity = "0";
+  row.style.maxHeight = "0";
+  row.style.padding = "0";
+  row.style.margin = "0";
+  setTimeout(() => {
+    row.remove();
+    if (foryouState.items && foryouState.items.length === 0) {
+      renderForYou([]); // bascule sur l'état apaisant
+    }
+  }, 260);
 }
 
 function renderTasks(tasks) {

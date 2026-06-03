@@ -7,7 +7,7 @@ import {
 import { el, lucideNode } from "./ui.js";
 import { callImage, callTextStream } from "./api.js";
 import { renderMarkdown } from "./markdown.js";
-import { loadDashboard } from "./dashboard.js";
+import { loadDashboard, invalidateCards } from "./dashboard.js";
 import { setLoading, autoResize, updateChatSendBtn } from "./composer.js";
 
 // ── Mode chat (overlay) ───────────────────────────────────────────────────
@@ -123,7 +123,10 @@ export async function chatSend() {
     try {
       const body = await callImage(text, att);
       chatHistory.push({ role: "assistant", text: body.response });
-      if (body.refresh_cards && body.refresh_cards.length > 0) loadDashboard();
+      if (body.refresh_cards && body.refresh_cards.length > 0) {
+        invalidateCards(body.refresh_cards);
+        loadDashboard();
+      }
     } catch (e) {
       chatHistory.push({ role: "assistant", text: "Impossible de joindre Copain.", error: true });
     } finally {
@@ -163,7 +166,10 @@ export async function chatSend() {
       onDelta(t) { acc += t; renderLive(); },
       onReplace(t) { acc = t; renderLive(); },
       onDone(intent, refreshCards) {
-        if (refreshCards && refreshCards.length > 0) loadDashboard();
+        if (refreshCards && refreshCards.length > 0) {
+          invalidateCards(refreshCards);
+          loadDashboard();
+        }
       },
       onError(t) { streamError = t || "Impossible de joindre Copain."; }
     });

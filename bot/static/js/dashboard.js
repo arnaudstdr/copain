@@ -2,7 +2,7 @@
 import {
   API_KEY, API_BASE,
   dashboardData, setDashboardData,
-  newsState,
+  newsState, foryouState,
 } from "./state.js";
 import {
   el, makeHead,
@@ -13,7 +13,7 @@ import { openMarkdownView } from "./markdown.js";
 // Cycle d'import dashboard ↔ overlays accepté (cf. PROGRESS.md) : les cards
 // tappables ouvrent les overlays, et les overlays rafraîchissent le
 // dashboard à la fermeture. Bénin : fonctions hoistées, appelées au runtime.
-import { openWeather, openEvents, openTasks } from "./overlays.js";
+import { openWeather, openEvents, openTasks, openForYou } from "./overlays.js";
 
 // ── Dashboard ─────────────────────────────────────────────────────────────
 export async function loadDashboard() {
@@ -42,6 +42,8 @@ function renderDashboard(d) {
   root.appendChild(budgetCard(d.budget));
   // Actu (vraie card avec fetch au clic)
   root.appendChild(newsCard());
+  // Pour toi (restitution des dépôts, fetch au tap)
+  root.appendChild(foryouCard());
 }
 
 function renderDashboardError() {
@@ -385,12 +387,35 @@ async function openNews() {
   }
 }
 
+function foryouCard() {
+  // Card volontairement neutre : aucun badge ni compteur « N choses
+  // t'attendent » (ce serait une charge mentale entrante, contraire au
+  // positionnement produit). Toujours le même libellé apaisant, idle/loading
+  // gérés dans l'overlay au tap.
+  const card = el("div", "card tappable empty");
+  card.onclick = openForYou;
+  card.appendChild(makeHead("inbox", "Pour toi"));
+  card.appendChild(el("div", "card-primary", "Tape pour faire le point"));
+  card.appendChild(el("div", "card-meta", "Tes dépôts, remis en perspective"));
+  return card;
+}
+
 export function renderBellBadge(count) {
   const btn = document.getElementById("bell-btn");
   btn.querySelector(".badge")?.remove();
   if (count > 0) {
     const badge = el("span", "badge", count > 9 ? "9+" : String(count));
     btn.appendChild(badge);
+  }
+}
+
+export function invalidateCards(names) {
+  // Un dépôt ou une clôture en langage naturel (refresh_cards:["foryou"])
+  // rend la restitution obsolète : on remet l'état en cache à null pour
+  // forcer un nouveau fetch au prochain tap (canal pull, jamais poussé).
+  if (names && names.includes("foryou")) {
+    foryouState.items = null;
+    foryouState.fetchedAt = null;
   }
 }
 
