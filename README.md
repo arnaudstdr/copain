@@ -21,8 +21,9 @@ Single-user personal assistant driven by natural French language. Three
 entry points, all served by the same FastAPI core over Tailscale :
 
 1. **PWA dashboard** — Safari iOS opens `/` and gets a tableau-de-bord
-   web app with cards (weather, next event, tasks, notifications,
-   briefing) + an interactive task overlay (check / swipe-to-delete).
+   web app with cards (weather, next event, tasks, notifications, news,
+   budget, "pour toi") + interactive overlays (tasks, budget detail,
+   thought restitution). Optional chat mode (💬) with SSE streaming.
 2. **Siri voice shortcut** — "Dis à Copain…" sends the dictated text via
    `POST /ask` with `X-Source: siri`, gets back a TTS-friendly answer.
 3. **Geofence automations** — iOS Shortcuts post arrival/departure events
@@ -34,10 +35,16 @@ the cloud (Ollama Cloud).
 
 ## Features
 
+> **Positionnement produit** — copain n'est pas un assistant productiviste,
+> c'est un **cerveau d'appoint** pour quelqu'un avec TDA/H + anxiété : il
+> doit **absorber la charge mentale**, pas en rajouter. Pas de push spontané
+> non sollicité (le briefing matin a été retiré), priorité aux **dépôts**
+> (`intent=depot`) pour sortir des pensées parasites de la tête.
+
 ### Core conversation
 
 - LLM routing via a `<meta>` JSON block emitted at the end of every reply
-  (intent ∈ `answer | task | search | memory | feed | event | fuel | weather`).
+  (intent ∈ `answer | task | search | memory | feed | event | fuel | weather | depot | expense`).
 - Automatic **semantic memory** (ChromaDB HNSW + batch embeddings).
 - **User profile** (`data/profile.yaml`, hand-edited) injected as stable
   facts into the system prompt — the LLM knows your name, family, work,
@@ -45,6 +52,22 @@ the cloud (Ollama Cloud).
 - **Photo analysis** via `POST /ask/image` (multimodal LLM).
 - **TTS-friendly mode** when the request carries `X-Source: siri` (1-2
   sentence answers, no markdown, no emoji).
+- **SSE streaming** (`POST /ask/stream`) for the PWA chat mode : the reply
+  streams token by token, the `<meta>` block is filtered on the fly.
+
+### Décharge cognitive
+
+- **Dépôts (`intent=depot`)** — drop a parasitic thought ("j'ai peur pour
+  X", "idée Y", "note Z"), the LLM acknowledges soberly (1-3 words).
+  Persisted in `thoughts` (`worry | idea | note`) + indexed in ChromaDB.
+  At deposit time, **rumination loop detection** (≥ N similar deposits over
+  30 days) adds a sober suffix. Open worries can be **closed in natural
+  language** (`depot.action=close`).
+- **Restitution — card "Pour toi" (`GET /foryou`)** — 100 % pull channel
+  (fetched on tap, never pushed) that gently surfaces deposits worth a
+  look : a worry closable against a past event, a rumination loop, an old
+  idea. The dashboard card stays neutral (no inbound counter) ; soothing
+  state when there's nothing to surface.
 
 ### Productivity
 
@@ -54,9 +77,20 @@ the cloud (Ollama Cloud).
   see all pending tasks → tap to complete, swipe left to delete.
 - **iCloud calendar** (CalDAV) : create + list events, fuzzy match on
   calendar name, overlap detection at creation time with a warning.
+- **Budget / finances (`intent=expense`)** — natural-language entry of
+  punctual spends (`spend`), incomes (`income`, can anchor a new budget
+  cycle via `starts_cycle`) and recurring ticks (`tick_recurring`, rent /
+  PEL from the YAML profile). Budget cycle anchored on the salary date
+  (fallback civil month). Dashboard Budget card (forecast remaining),
+  detail overlay (`GET /budget`), spreadsheet export
+  (`GET /expenses/export.csv`), daily Pushover reminder for due unticked
+  recurrings (`FinanceReminderJob`).
 - **RSS feeds** : add / list / summarize latest news on demand.
+- **News card "Actu" (`GET /news/latest`)** — IA curation fetched on tap :
+  SearXNG (news 24h) + LLM summary per the profile's `news_topics`.
 - **Web search** via self-hosted SearXNG, summarised in French.
-- **Fuel prices** around `HOME_CITY` (`data.economie.gouv.fr` open data).
+- **Fuel prices** around `HOME_CITY` (`data.economie.gouv.fr` open data) —
+  LLM intent only, no dashboard card.
 - **Weather** via Open-Meteo (up to 16 days, FR expressions like
   `demain` / `ce weekend`). Dashboard card auto-switches to `WORK_*`
   coordinates when geofence says you're at work.
@@ -71,12 +105,12 @@ Strictly opt-in via `PROACTIVITY_ENABLED=true`. Two channels :
 - **Event-driven** (on `POST /event/location`) — "briefing retour" when
   you leave work after 5pm (cooldown 4h, same safeguards).
 
-### Automation & briefing
+### iOS integration
 
-- **Morning briefing** every day at 8am : weather + today's tasks +
-  today's events + top-5 RSS, pushed into the queue + via Pushover.
 - **iOS Shortcuts integration** : see [`docs/ios-shortcuts.md`](./docs/ios-shortcuts.md)
   for the Siri voice command and the four geofence automations.
+- No automatic morning briefing (intentionally removed — no unsolicited
+  inbound info ; the dashboard is pull-only).
 
 ### Resilience & monitoring
 
@@ -96,12 +130,21 @@ from `.env`). Missing or invalid → **403**.
 | GET    | `/`                        | — (serves the PWA HTML)                                                |
 | GET    | `/config`                  | — (returns `api_key` for the PWA, no auth required, Tailscale-only)    |
 | POST   | `/ask`                     | `{ "message": str }` (header `X-Source: siri` → voice mode)            |
+| POST   | `/ask/stream`              | `{ "message": str }` → SSE `text/event-stream` (PWA chat mode)         |
 | POST   | `/ask/image`               | `{ "message": str, "image_b64": str, "media_type": str }`              |
 | GET    | `/notifications`           | — (returns + marks as read)                                            |
-| GET    | `/dashboard`               | — (weather + next event + today tasks + unread count + briefing)       |
+| GET    | `/dashboard`               | — (weather + next event + today tasks + unread count + budget)         |
+| GET    | `/news/latest`             | — (curated news card, fetched on tap)                                  |
+| GET    | `/thoughts`                | `?since=<ISO>&limit=<int>` (optionnels) — cognitive deposits           |
+| POST   | `/thoughts/{id}/close`     | — (close a worry, idempotent, 404 if unknown)                          |
+| GET    | `/foryou`                  | — (card "pour toi", restitution, fail-soft)                            |
 | GET    | `/tasks`                   | — (all pending tasks)                                                  |
 | POST   | `/tasks/{id}/complete`     | — (mark task as done)                                                  |
 | DELETE | `/tasks/{id}`              | — (delete task)                                                        |
+| GET    | `/budget`                  | — (current cycle detail : transactions + pending recurrings)           |
+| GET    | `/expenses/export.csv`     | `?from=YYYY-MM-DD&to=YYYY-MM-DD` → CSV FR (`;`, comma decimal, BOM)     |
+| GET    | `/weather/forecast`        | `?days=<int>&hours=<int>` — raw Open-Meteo, location-aware             |
+| GET    | `/events`                  | `?days=<int>` (default 7, max 60) — upcoming iCloud events             |
 | POST   | `/event/location`          | `{ "event": "arrived"\|"left", "place": str, "lat"?, "lon"?, "at"? }`  |
 
 Quick smoke test :
@@ -128,7 +171,7 @@ JS PWA served by FastAPI.
 cp .env.example .env          # then fill in the variables (see below)
 cp data/profile.example.yaml data/profile.yaml  # then edit with your info
 make install                  # creates .venv, installs deps, pre-commit
-make test                     # ~294 tests, fully mocked (no external services)
+make test                     # 660+ tests, fully mocked (no external services)
 make lint typecheck           # ruff + mypy strict
 make run                      # uvicorn on API_PORT (real Ollama + SearXNG required)
 ```
@@ -152,7 +195,7 @@ See [`.env.example`](./.env.example) for the full list. The essentials :
 - `PUSHOVER_TOKEN` / `PUSHOVER_USER` — optional, enables iOS push notifs.
 - `SENTRY_DSN` — optional, enables error monitoring.
 
-The other variables (`TZ`, `BRIEFING_*`, `OLLAMA_*`, `PROACTIVITY_*`,
+The other variables (`TZ`, `OLLAMA_*`, `PROACTIVITY_*`, `FINANCE_REMINDER_*`,
 etc.) have reasonable defaults and can stay as-is for usage in Sélestat.
 
 ### Create an iCloud App-Specific Password
@@ -209,7 +252,7 @@ startup env=... port=8000
 profile_loaded path=/app/data/profile.yaml top_keys=[...]
 calendars_discovered count=N names=[...]
 calendar_connected calendar=...
-cron_job_scheduled job_id=daily-briefing hour=8
+cron_job_scheduled job_id=finance-recurring-reminder hour=9
 api_lifespan_startup port=8000
 ```
 
