@@ -20,8 +20,8 @@
 Single-user personal assistant driven by natural French language. Three
 entry points, all served by the same FastAPI core over Tailscale :
 
-1. **PWA dashboard** — Safari iOS opens `/` and gets a tableau-de-bord
-   web app with cards (weather, next event, tasks, notifications, news,
+1. **PWA dashboard** — Safari iOS opens `/` and gets a dashboard web
+   app with cards (weather, next event, tasks, notifications, news,
    budget, "pour toi") + interactive overlays (tasks, budget detail,
    thought restitution). Optional chat mode (💬) with SSE streaming.
 2. **Siri voice shortcut** — "Dis à Copain…" sends the dictated text via
@@ -35,11 +35,10 @@ the cloud (Ollama Cloud).
 
 ## Features
 
-> **Positionnement produit** — copain n'est pas un assistant productiviste,
-> c'est un **cerveau d'appoint** pour quelqu'un avec TDA/H + anxiété : il
-> doit **absorber la charge mentale**, pas en rajouter. Pas de push spontané
-> non sollicité (le briefing matin a été retiré), priorité aux **dépôts**
-> (`intent=depot`) pour sortir des pensées parasites de la tête.
+> **Product positioning** — copain is not a productivity assistant, it's a
+> **backup brain**: it must **absorb mental load**, not pile more on. No
+> unsolicited spontaneous pushes; priority goes to **deposits**
+> (`intent=depot`) to get intrusive thoughts out of your head.
 
 ### Core conversation
 
@@ -55,9 +54,9 @@ the cloud (Ollama Cloud).
 - **SSE streaming** (`POST /ask/stream`) for the PWA chat mode : the reply
   streams token by token, the `<meta>` block is filtered on the fly.
 
-### Décharge cognitive
+### Cognitive offloading
 
-- **Dépôts (`intent=depot`)** — drop a parasitic thought ("j'ai peur pour
+- **Deposits (`intent=depot`)** — drop a parasitic thought ("j'ai peur pour
   X", "idée Y", "note Z"), the LLM acknowledges soberly (1-3 words).
   Persisted in `thoughts` (`worry | idea | note`) + indexed in ChromaDB.
   At deposit time, **rumination loop detection** (≥ N similar deposits over
@@ -86,7 +85,7 @@ the cloud (Ollama Cloud).
   (`GET /expenses/export.csv`), daily Pushover reminder for due unticked
   recurrings (`FinanceReminderJob`).
 - **RSS feeds** : add / list / summarize latest news on demand.
-- **News card "Actu" (`GET /news/latest`)** — IA curation fetched on tap :
+- **News card "Actu" (`GET /news/latest`)** — AI curation fetched on tap :
   SearXNG (news 24h) + LLM summary per the profile's `news_topics`.
 - **Web search** via self-hosted SearXNG, summarised in French.
 - **Fuel prices** around `HOME_CITY` (`data.economie.gouv.fr` open data) —
@@ -102,7 +101,7 @@ Strictly opt-in via `PROACTIVITY_ENABLED=true`. Two channels :
 - **Cron tick** (every 30 min) — rain alert in the next hour,
   appointment reminder ~1h before. Five safeguards : window, daily
   budget (3), per-kind cooldown, dedup by event UID.
-- **Event-driven** (on `POST /event/location`) — "briefing retour" when
+- **Event-driven** (on `POST /event/location`) — a "return briefing" when
   you leave work after 5pm (cooldown 4h, same safeguards).
 
 ### iOS integration
@@ -135,7 +134,7 @@ from `.env`). Missing or invalid → **403**.
 | GET    | `/notifications`           | — (returns + marks as read)                                            |
 | GET    | `/dashboard`               | — (weather + next event + today tasks + unread count + budget)         |
 | GET    | `/news/latest`             | — (curated news card, fetched on tap)                                  |
-| GET    | `/thoughts`                | `?since=<ISO>&limit=<int>` (optionnels) — cognitive deposits           |
+| GET    | `/thoughts`                | `?since=<ISO>&limit=<int>` (optional) — cognitive deposits             |
 | POST   | `/thoughts/{id}/close`     | — (close a worry, idempotent, 404 if unknown)                          |
 | GET    | `/foryou`                  | — (card "pour toi", restitution, fail-soft)                            |
 | GET    | `/tasks`                   | — (all pending tasks)                                                  |
