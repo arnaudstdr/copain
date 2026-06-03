@@ -29,6 +29,9 @@ document.addEventListener("DOMContentLoaded", async () => {
     showToast("Configuration indisponible");
   }
   await loadDashboard();
+  // Après la 1re révélation échelonnée des cards, on fige : les refresh
+  // périodiques ne doivent pas rejouer l'animation (cf. animations.css).
+  document.getElementById("dashboard").classList.add("revealed");
   // Refresh périodique léger pour le count notif et la météo (toutes les 2 min).
   setInterval(loadDashboard, 120_000);
 });

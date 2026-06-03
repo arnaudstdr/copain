@@ -7,3 +7,21 @@
 @keyframes slideUpFade { from{opacity:0;transform:translateY(8px)} to{opacity:1;transform:translateY(0)} }
 @keyframes fadeIn { from{opacity:0} to{opacity:1} }
 @keyframes toastIn { from{opacity:0;transform:translateX(-50%) translateY(8px)} to{opacity:1;transform:translateX(-50%) translateY(0)} }
+@keyframes cardIn { from{opacity:0;transform:translateY(10px)} to{opacity:1;transform:translateY(0)} }
+
+/* Révélation douce et échelonnée des cards — UNIQUEMENT au premier rendu :
+   main.js pose .revealed sur #dashboard après le 1er load, donc les refresh
+   périodiques (toutes les 2 min) ne rejouent pas l'animation. */
+#dashboard:not(.revealed) > * { animation: cardIn 0.5s cubic-bezier(0.22,0.61,0.36,1) both; }
+#dashboard:not(.revealed) > *:nth-child(1){animation-delay:.03s}
+#dashboard:not(.revealed) > *:nth-child(2){animation-delay:.09s}
+#dashboard:not(.revealed) > *:nth-child(3){animation-delay:.15s}
+#dashboard:not(.revealed) > *:nth-child(4){animation-delay:.21s}
+#dashboard:not(.revealed) > *:nth-child(5){animation-delay:.27s}
+#dashboard:not(.revealed) > *:nth-child(6){animation-delay:.33s}
+
+/* Produit anti-charge mentale : on coupe tout mouvement si l'utilisateur a
+   demandé la réduction des animations. */
+@media (prefers-reduced-motion: reduce) {
+  #dashboard:not(.revealed) > * { animation: none; }
+}

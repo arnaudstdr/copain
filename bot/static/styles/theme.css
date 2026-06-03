@@ -1,56 +1,68 @@
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
 :root {
-  /* Palette sombre — défaut (le rendu pré-iOS-prefers ne change pas). */
-  --bg: #0f0f11;
-  --bg2: #13131a;
-  --bg3: #1e1e2e;
-  --bg4: #26263a;
-  --border: #1e1e24;
-  --border2: #2a2a3a;
-  --text: #e8e8ec;
-  --text2: #9999aa;
-  --text3: #6b6b80;
-  --accent: #5b5bd6;
-  --accent2: #7a7ae8;
-  --green: #4ade80;
-  --red: #ef4444;
-  --orange: #f59e0b;
-  --purple: #a855f7;
-  --blue: #60a5fa;
-  /* Couleurs dérivées (fond de flash, overlays, shadows) — résolues à
-     partir du mode courant pour rester cohérentes entre les thèmes. */
-  --flash-bg: rgba(91, 91, 214, 0.18);
+  /* ── Typographie « Papier doux » ──
+     Fraunces (serif optique, caractérielle) pour les titres et les données
+     mises en avant ; Mulish (humaniste douce) pour le corps et la donnée fine. */
+  --font-display: 'Fraunces', Georgia, 'Times New Roman', serif;
+  --font-body: 'Mulish', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+
+  /* ── Palette sombre « nuit sépia » — défaut ──
+     Pas de noir froid : des charbons chauds, une terre cuite plus lumineuse
+     pour rester lisible sur fond foncé. */
+  --bg: #1b1714;
+  --bg2: #241e18;
+  --bg3: #2e271e;
+  --bg4: #393026;
+  --border: #2a2219;
+  --border2: #3b3127;
+  --text: #ece1d0;
+  --text2: #b3a690;
+  --text3: #847a68;
+  --accent: #d77a55;
+  --accent2: #e69873;
+  --green: #8fae7c;
+  --red: #d56a4f;
+  --orange: #d99a52;
+  --purple: #a98aa3;
+  --blue: #80a0bd;
+  /* Couleurs dérivées (flash, overlays, ombres, textures). */
+  --flash-bg: rgba(215, 122, 85, 0.16);
   --overlay-bg: rgba(0, 0, 0, 0.55);
-  --shadow-strong: 0 8px 32px rgba(0, 0, 0, 0.4);
-  --track-bg: rgba(255, 255, 255, 0.1);
-  --on-accent: #fff;
+  --shadow-strong: 0 12px 34px rgba(0, 0, 0, 0.46);
+  --card-shadow: 0 1px 2px rgba(0, 0, 0, 0.30), 0 6px 18px rgba(0, 0, 0, 0.24);
+  --track-bg: rgba(255, 255, 255, 0.09);
+  --on-accent: #221c16;
+  --grain-opacity: 0.05;
 }
 
-/* Palette claire — alignée sur le system iOS (fonds quasi-blanc, accents
-   conservés). Active dès que l'iPhone est en mode clair. */
+/* ── Palette claire « papier ivoire » ──
+   Fonds crème/ivoire comme une page de carnet, encre chaude, accent terre
+   cuite. Active dès que l'iPhone est en mode clair. */
 @media (prefers-color-scheme: light) {
   :root {
-    --bg: #f2f2f7;
-    --bg2: #ffffff;
-    --bg3: #efeff3;
-    --bg4: #e5e5ea;
-    --border: #e5e5ea;
-    --border2: #d1d1d6;
-    --text: #1c1c1e;
-    --text2: #4a4a4f;
-    --text3: #8e8e93;
-    --accent: #5b5bd6;
-    --accent2: #4c4ad6;
-    --green: #34c759;
-    --red: #ff3b30;
-    --orange: #ff9500;
-    --purple: #af52de;
-    --blue: #007aff;
-    --flash-bg: rgba(91, 91, 214, 0.12);
-    --overlay-bg: rgba(0, 0, 0, 0.35);
-    --shadow-strong: 0 8px 24px rgba(0, 0, 0, 0.12);
-    --track-bg: rgba(0, 0, 0, 0.08);
-    --on-accent: #fff;
+    --bg: #f1e8d8;
+    --bg2: #fdf9f0;
+    --bg3: #ece1cd;
+    --bg4: #e3d5bd;
+    --border: #e7dcc6;
+    --border2: #d8c8aa;
+    --text: #36302a;
+    --text2: #6b6253;
+    --text3: #9b9080;
+    --accent: #c2643f;
+    --accent2: #a64a28;
+    --green: #6f9163;
+    --red: #b23322;
+    --orange: #cc8a3c;
+    --purple: #8c6f86;
+    --blue: #5f7d97;
+    --flash-bg: rgba(194, 100, 63, 0.12);
+    --overlay-bg: rgba(54, 40, 28, 0.38);
+    --shadow-strong: 0 12px 30px rgba(90, 60, 30, 0.16);
+    --card-shadow: 0 1px 2px rgba(80, 55, 25, 0.05), 0 6px 16px rgba(80, 55, 25, 0.07);
+    --track-bg: rgba(54, 48, 42, 0.10);
+    --on-accent: #fdf9f0;
+    --grain-opacity: 0.06;
   }
 }
