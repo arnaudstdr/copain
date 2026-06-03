@@ -196,6 +196,20 @@ class NewsLatestResponse(BaseModel):
     fetched_at: str  # ISO 8601 UTC
 
 
+# --- For you (restitution des dépôts) schemas ------------------------------
+
+
+class ForYouItemResponse(BaseModel):
+    type: str  # closable_worry | loop | stale_idea
+    message: str
+    thought_ids: list[int]
+
+
+class ForYouResponse(BaseModel):
+    items: list[ForYouItemResponse]
+    fetched_at: str  # ISO 8601 UTC
+
+
 # --- Budget schemas --------------------------------------------------------
 
 
@@ -776,6 +790,38 @@ def create_app(state: AppState) -> FastAPI:
         return NewsLatestResponse(
             markdown=markdown or "Aucune actu pertinente sur les dernières 24h.",
             fetched_at=datetime.now(UTC).isoformat(),
+        )
+
+    @app.get(
+        "/foryou",
+        response_model=ForYouResponse,
+        dependencies=[Depends(verify_api_key)],
+    )
+    async def foryou(deps: BotDeps = Depends(get_deps)) -> ForYouResponse:
+        """Card "Pour toi" : restitution des dépôts (clôture, boucle, idée ancienne).
+
+        Canal 100 % pull, fetch au tap. L'orchestrateur est fail-soft : une
+        dépendance externe down dégrade la card sans jamais la faire échouer.
+        Un garde-fou supplémentaire ici garantit qu'aucune exception inattendue
+        ne remonte en 500 — au pire la card est vide.
+        """
+        try:
+            result = await deps.foryou.build()
+        except Exception as exc:  # défense en profondeur : la card ne 500 jamais
+            log.exception("foryou_failed", error=str(exc))
+            capture_exception(exc, source="api_foryou")
+            return ForYouResponse(items=[], fetched_at=datetime.now(UTC).isoformat())
+
+        return ForYouResponse(
+            items=[
+                ForYouItemResponse(
+                    type=item.type,
+                    message=item.message,
+                    thought_ids=list(item.thought_ids),
+                )
+                for item in result.items
+            ],
+            fetched_at=result.fetched_at.isoformat(),
         )
 
     @app.get(

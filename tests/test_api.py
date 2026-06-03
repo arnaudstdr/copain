@@ -130,6 +130,7 @@ def _build_deps() -> BotDeps:
         geocoder=MagicMock(),
         weather=MagicMock(),
         news=MagicMock(),
+        foryou=MagicMock(),
         profile=UserProfile(raw_yaml="", is_loaded=False),
         location_events=location_events,
         proactivity=proactivity,
@@ -304,6 +305,42 @@ async def test_ask_depot_intent_refreshes_foryou_card(client: AsyncClient, state
     body = response.json()
     assert body["intent"] == "depot"
     assert body["refresh_cards"] == ["foryou"]
+
+
+# --- GET /foryou ------------------------------------------------------------
+
+
+async def test_foryou_without_api_key_returns_403(client: AsyncClient) -> None:
+    response = await client.get("/foryou")
+    assert response.status_code == 403
+
+
+async def test_foryou_returns_items_and_fetched_at(client: AsyncClient, state: AppState) -> None:
+    from datetime import UTC, datetime
+
+    from bot.thoughts.foryou import ForYouItem, ForYouResult
+
+    state.deps.foryou.build = AsyncMock(
+        return_value=ForYouResult(
+            items=[ForYouItem(type="closable_worry", message="C'est réglé ?", thought_ids=(12,))],
+            fetched_at=datetime(2026, 6, 2, 14, 30, tzinfo=UTC),
+        )
+    )
+    response = await client.get("/foryou", headers={"X-API-Key": API_KEY})
+    assert response.status_code == 200
+    body = response.json()
+    assert body["items"] == [
+        {"type": "closable_worry", "message": "C'est réglé ?", "thought_ids": [12]}
+    ]
+    assert body["fetched_at"] == "2026-06-02T14:30:00+00:00"
+
+
+async def test_foryou_never_500_when_build_raises(client: AsyncClient, state: AppState) -> None:
+    """Une exception inattendue de l'orchestrateur → card vide, jamais de 500."""
+    state.deps.foryou.build = AsyncMock(side_effect=RuntimeError("boom"))
+    response = await client.get("/foryou", headers={"X-API-Key": API_KEY})
+    assert response.status_code == 200
+    assert response.json()["items"] == []
 
 
 async def test_ask_without_x_source_uses_default_mode(client: AsyncClient, state: AppState) -> None:

@@ -73,6 +73,7 @@ def deps() -> BotDeps:
         geocoder=MagicMock(),
         weather=MagicMock(),
         news=MagicMock(),
+        foryou=MagicMock(),
         profile=UserProfile(raw_yaml="", is_loaded=False),
         location_events=location_events,
         proactivity=MagicMock(),

@@ -44,6 +44,7 @@ from bot.search.searxng import SearxngClient
 from bot.sentry_setup import configure_sentry
 from bot.tasks.manager import TaskManager
 from bot.tasks.scheduler import ReminderScheduler
+from bot.thoughts.foryou import ForYouBuilder
 from bot.thoughts.manager import ThoughtManager
 from bot.weather.client import OpenMeteoClient
 
@@ -127,10 +128,19 @@ async def _build_state(
 
     location_events = LocationEventStore(engine)
 
+    memory = MemoryManager(settings.chroma_dir, embedder)
+    foryou = ForYouBuilder(
+        thoughts=thoughts,
+        memory=memory,
+        calendar=calendar,
+        llm=llm,
+        similarity_max_distance=settings.foryou_similarity_max_distance,
+    )
+
     deps = BotDeps(
         settings=settings,
         llm=llm,
-        memory=MemoryManager(settings.chroma_dir, embedder),
+        memory=memory,
         tasks=tasks,
         thoughts=thoughts,
         expenses=expenses,
@@ -143,6 +153,7 @@ async def _build_state(
         geocoder=geocoder,
         weather=weather,
         news=news,
+        foryou=foryou,
         profile=profile,
         location_events=location_events,
         proactivity=proactivity,

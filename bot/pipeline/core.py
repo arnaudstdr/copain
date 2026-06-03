@@ -42,6 +42,7 @@ if TYPE_CHECKING:
     from bot.search.searxng import SearchResult, SearxngClient
     from bot.tasks.manager import TaskManager
     from bot.tasks.scheduler import ReminderScheduler
+    from bot.thoughts.foryou import ForYouBuilder
     from bot.thoughts.manager import ThoughtManager
     from bot.weather.client import OpenMeteoClient
 
@@ -119,6 +120,7 @@ class BotDeps:
     geocoder: NominatimClient
     weather: OpenMeteoClient
     news: NewsCurator
+    foryou: ForYouBuilder
     profile: UserProfile
     location_events: LocationEventStore
     proactivity: ProactivityService
