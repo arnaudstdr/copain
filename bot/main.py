@@ -34,7 +34,7 @@ from bot.memory.manager import MemoryManager
 from bot.news.client import NewsCurator
 from bot.notifications.pushover import PushoverClient
 from bot.notifications.store import NotificationStore
-from bot.pipeline import MAX_HISTORY, BotDeps
+from bot.pipeline import BotDeps
 from bot.proactivity import models as _proactivity_models  # noqa: F401 — enregistre la table
 from bot.proactivity.service import ProactivityService
 from bot.profile import load_profile
@@ -157,7 +157,7 @@ async def _build_state(
         profile=profile,
         location_events=location_events,
         proactivity=proactivity,
-        history=deque(maxlen=MAX_HISTORY),
+        history=deque(maxlen=settings.max_history),
     )
 
     # Initialisations asynchrones — équivalent de l'ancien `post_init` PTB.

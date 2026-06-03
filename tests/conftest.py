@@ -144,6 +144,8 @@ def make_settings(**overrides: Any) -> MagicMock:
     settings.work_city = "Obernai"
     settings.fuel_default_radius_km = 10.0
     settings.foryou_similarity_max_distance = 0.35
+    settings.max_history = 6
+    settings.open_worries_prompt_limit = 10
     for key, value in overrides.items():
         setattr(settings, key, value)
     return settings
@@ -242,7 +244,7 @@ def build_mock_deps() -> BotDeps:
         profile=MagicMock(),
         location_events=MagicMock(),
         proactivity=MagicMock(),
-        history=deque(maxlen=6),
+        history=deque(maxlen=settings.max_history),
     )
 
 

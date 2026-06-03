@@ -7,7 +7,6 @@ Le détail vit dans les sous-modules (`core`, `dates`, `handlers`,
 """
 
 from bot.pipeline.core import (
-    MAX_HISTORY,
     BotDeps,
     StreamEvent,
     process_message,
@@ -17,7 +16,6 @@ from bot.pipeline.handlers import FALLBACK_TEXT
 
 __all__ = [
     "FALLBACK_TEXT",
-    "MAX_HISTORY",
     "BotDeps",
     "StreamEvent",
     "process_message",

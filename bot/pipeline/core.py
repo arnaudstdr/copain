@@ -48,8 +48,6 @@ if TYPE_CHECKING:
 
 log = get_logger(__name__)
 
-MAX_HISTORY = 6
-
 # Meta neutre renvoyé quand le bloc <meta> est absent / invalide. Intent
 # "answer" + tous les sous-objets vides : aucun side effect n'est déclenché
 # et le client (API) considère qu'aucune card ne doit être rafraîchie.

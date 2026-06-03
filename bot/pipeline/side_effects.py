@@ -34,10 +34,6 @@ CLOSE_NOT_FOUND_TEXT = (
     "Hmm, je n'ai pas retrouvé ce souci dans tes dépôts ouverts — rien n'a été clos."
 )
 
-# Nombre max de soucis ouverts injectés dans le system prompt (les plus
-# récents) : borne la taille du prompt et le périmètre désignable par le LLM.
-OPEN_WORRIES_PROMPT_LIMIT = 10
-
 
 @dataclass(frozen=True, slots=True)
 class SideEffectsOutcome:
@@ -141,7 +137,7 @@ async def _close_thought_from_meta(meta: Meta, deps: BotDeps) -> SideEffectsOutc
     thought_id = meta["depot"]["thought_id"]
     if thought_id is not None:
         open_worries = await deps.thoughts.list_open(
-            kinds=["worry"], limit=OPEN_WORRIES_PROMPT_LIMIT
+            kinds=["worry"], limit=deps.settings.open_worries_prompt_limit
         )
         if any(t.id == thought_id for t in open_worries):
             await deps.thoughts.close(thought_id)
@@ -158,7 +154,9 @@ async def safe_open_worries(deps: BotDeps) -> Sequence[Thought]:
     sans la section (pattern `safe_pending_recurring`).
     """
     try:
-        return await deps.thoughts.list_open(kinds=["worry"], limit=OPEN_WORRIES_PROMPT_LIMIT)
+        return await deps.thoughts.list_open(
+            kinds=["worry"], limit=deps.settings.open_worries_prompt_limit
+        )
     except Exception as exc:
         log.warning("open_worries_skipped", error=str(exc))
         return ()

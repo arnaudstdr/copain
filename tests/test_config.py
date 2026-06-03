@@ -113,6 +113,24 @@ def test_ollama_num_ctx_custom(monkeypatch: pytest.MonkeyPatch) -> None:
     assert settings.ollama_num_ctx == 16384
 
 
+def test_pipeline_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
+    _minimal_env(monkeypatch)
+    monkeypatch.delenv("MAX_HISTORY", raising=False)
+    monkeypatch.delenv("OPEN_WORRIES_PROMPT_LIMIT", raising=False)
+    settings = load_settings()
+    assert settings.max_history == 6
+    assert settings.open_worries_prompt_limit == 10
+
+
+def test_pipeline_custom_values(monkeypatch: pytest.MonkeyPatch) -> None:
+    _minimal_env(monkeypatch)
+    monkeypatch.setenv("MAX_HISTORY", "12")
+    monkeypatch.setenv("OPEN_WORRIES_PROMPT_LIMIT", "5")
+    settings = load_settings()
+    assert settings.max_history == 12
+    assert settings.open_worries_prompt_limit == 5
+
+
 def test_cache_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
     _minimal_env(monkeypatch)
     for var in (
