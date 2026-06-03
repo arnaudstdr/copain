@@ -18,6 +18,7 @@ from bot.calendar.client import ICloudCalendarError
 from bot.llm.client import LLMError
 from bot.memory.manager import DepotMatch
 from bot.thoughts.foryou import ForYouBuilder, ForYouItem, ForYouResult, match_worries_to_events
+from bot.thoughts.restitution import ThoughtFacts
 
 NOW = datetime(2026, 6, 1, 12, 0, tzinfo=UTC)
 
@@ -97,15 +98,32 @@ def _build(
 # --- helper lexical worry ↔ évent ------------------------------------------
 
 
+def _facts(thought_id: int, content: str) -> ThoughtFacts:
+    """Fabrique un `ThoughtFacts` (la forme réellement reçue par le helper).
+
+    Contrairement à `_thought` qui mime une ligne SQLite (champ `id`),
+    `match_worries_to_events` consomme des `ThoughtFacts` (champ `thought_id`)
+    — utiliser ici la vraie forme aurait attrapé la régression `worry.id`.
+    """
+    return ThoughtFacts(
+        thought_id=thought_id,
+        kind="worry",
+        created_at=NOW,
+        surfaced_at=None,
+        is_open=True,
+        content=content,
+    )
+
+
 def test_match_worries_to_events_matches_on_shared_token() -> None:
-    worries = [_thought(1, kind="worry", age_days=3, content="angoisse pour le dentiste")]
+    worries = [_facts(1, "angoisse pour le dentiste")]
     events = [SimpleNamespace(title="Rendez-vous dentiste")]
     matched = match_worries_to_events(worries, events)
     assert matched == {1: "Rendez-vous dentiste"}
 
 
 def test_match_worries_to_events_ignores_stopwords_and_short_tokens() -> None:
-    worries = [_thought(1, kind="worry", age_days=3, content="peur pour le truc")]
+    worries = [_facts(1, "peur pour le truc")]
     events = [SimpleNamespace(title="pour avec dans")]
     assert match_worries_to_events(worries, events) == {}
 
@@ -187,6 +205,23 @@ async def test_calendar_down_degrades_to_age_only() -> None:
     builder, _t, _m, _c, _llm = _build(
         open_thoughts=open_thoughts,
         events=ICloudCalendarError("caldav down"),
+    )
+
+    result = await builder.build(now=NOW)
+
+    assert [it.type for it in result.items] == ["closable_worry"]
+    assert result.items[0].thought_ids == (1,)
+
+
+async def test_build_matches_recent_worry_to_past_event() -> None:
+    # Régression : un souci récent (5j, non surfaçable par âge) doit ressortir
+    # via le rapprochement lexical à un évent passé. Exerce le chemin que les
+    # autres tests build() esquivent (events=()) — il levait AttributeError
+    # (worry.id sur un ThoughtFacts) avant le correctif, avalé en items:[].
+    open_thoughts = [_thought(1, kind="worry", age_days=5, content="angoisse pour le dentiste")]
+    builder, _t, _m, _c, _llm = _build(
+        open_thoughts=open_thoughts,
+        events=[SimpleNamespace(title="Rendez-vous dentiste")],
     )
 
     result = await builder.build(now=NOW)

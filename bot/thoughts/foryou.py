@@ -290,8 +290,8 @@ class ForYouBuilder:
 
 
 def match_worries_to_events(
-    worries: Iterable[Any],
-    events: Iterable[Any],
+    worries: Iterable[ThoughtFacts],
+    events: Iterable[CalendarEvent],
 ) -> dict[int, str]:
     """Rapproche chaque souci d'un évent passé par tokens significatifs partagés.
 
@@ -307,7 +307,7 @@ def match_worries_to_events(
             continue
         for title, tokens in event_tokens:
             if worry_tokens & tokens:
-                matched[worry.id] = title
+                matched[worry.thought_id] = title
                 break
     return matched
 
