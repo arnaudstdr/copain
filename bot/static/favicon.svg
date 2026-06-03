@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="tile" x1="256" y1="0" x2="256" y2="512" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#1c2026"/>
+      <stop offset="0.45" stop-color="#0f0f11"/>
+      <stop offset="1" stop-color="#0f0f11"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="256" cy="104" r="330" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#649ac9" stop-opacity="0.22"/>
+      <stop offset="1" stop-color="#649ac9" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+
+  <!-- Tuile near-black + halo bleu acier, dans l'esprit des surfaces de Copain. -->
+  <rect width="512" height="512" rx="112" fill="url(#tile)"/>
+  <rect width="512" height="512" rx="112" fill="url(#glow)"/>
+  <rect x="2" y="2" width="508" height="508" rx="110" fill="none" stroke="#ffffff" stroke-opacity="0.08" stroke-width="3"/>
+
+  <!-- Monogramme « C » : arc geometrique epais, ouvert a droite, accent acier. -->
+  <path fill="none" stroke="#82b2db" stroke-width="76" stroke-linecap="round"
+        d="M330 161 A120 120 0 1 0 330 351"/>
+</svg>
