@@ -20,7 +20,6 @@ import {
 // ── Init ──────────────────────────────────────────────────────────────────
 document.addEventListener("DOMContentLoaded", async () => {
   setupAppHeight();
-  setupViewportDebug(); // DEBUG temporaire — à retirer après diagnostic
   renderGreeting();
   try {
     const cfg = await fetchConfig();
@@ -76,50 +75,6 @@ function setupAppHeight() {
   vv?.addEventListener("scroll", update);
   // Petit délai pour laisser iOS finir sa rotation avant de mesurer.
   window.addEventListener("orientationchange", () => setTimeout(update, 150));
-}
-
-// ── DEBUG temporaire : sondes de viewport iOS ───────────────────────────────
-// À RETIRER après diagnostic (cet appel + cette fonction).
-// Sonde 1 : fond html en vert vif → si la bande vide devient verte, c'est le
-//   fond de page qui transparaît (=#app trop court, réparable CSS) ; si elle
-//   reste neutre, c'est une zone système iOS hors web view.
-// Sonde 2 : encart chiffré avec les vraies hauteurs de viewport.
-function setupViewportDebug() {
-  document.documentElement.style.background = "#00ff00";
-
-  const box = document.createElement("div");
-  box.id = "vp-debug";
-  box.style.cssText =
-    "position:fixed;top:env(safe-area-inset-top);left:0;z-index:9999;" +
-    "background:rgba(0,0,0,.82);color:#0f0;font:11px/1.35 monospace;" +
-    "padding:6px 8px;white-space:pre;pointer-events:none;max-width:100vw;";
-  document.body.appendChild(box);
-
-  // Élément sonde pour lire la valeur résolue de safe-area-inset-bottom.
-  const probe = document.createElement("div");
-  probe.style.cssText =
-    "position:fixed;bottom:0;height:env(safe-area-inset-bottom);width:0;";
-  document.body.appendChild(probe);
-
-  const refresh = () => {
-    const vv = window.visualViewport;
-    const app = document.getElementById("app");
-    const sab = getComputedStyle(probe).height;
-    box.textContent = [
-      `standalone=${window.navigator.standalone}`,
-      `innerH=${window.innerHeight} outerH=${window.outerHeight}`,
-      `clientH=${document.documentElement.clientHeight}`,
-      `screenH=${window.screen.height} avail=${window.screen.availHeight}`,
-      `vv.h=${vv ? Math.round(vv.height) : "?"} vv.top=${vv ? Math.round(vv.offsetTop) : "?"}`,
-      `appH=${app ? Math.round(app.getBoundingClientRect().height) : "?"}`,
-      `appBottom=${app ? Math.round(app.getBoundingClientRect().bottom) : "?"}`,
-      `safeBottom=${sab} dpr=${window.devicePixelRatio}`,
-    ].join("\n");
-  };
-  refresh();
-  window.visualViewport?.addEventListener("resize", refresh);
-  window.visualViewport?.addEventListener("scroll", refresh);
-  setInterval(refresh, 500);
 }
 
 // ── Bindings DOM ──────────────────────────────────────────────────────────
