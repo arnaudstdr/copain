@@ -21,20 +21,14 @@ from bot.pipeline import BotDeps
 from bot.profile import UserProfile
 from bot.tasks.models import Task
 from bot.weather.client import WeatherError, WeatherSummary
+from tests.conftest import make_settings
 
 TZ = ZoneInfo("Europe/Paris")
 
 
 @pytest.fixture
 def deps() -> BotDeps:
-    settings = MagicMock()
-    settings.timezone = "Europe/Paris"
-    settings.home_lat = 48.26
-    settings.home_lon = 7.45
-    settings.home_city = "Sélestat"
-    settings.work_lat = 48.46
-    settings.work_lon = 7.48
-    settings.work_city = "Obernai"
+    settings = make_settings()
 
     location_events = MagicMock()
     location_events.get_current_location = AsyncMock(return_value=None)

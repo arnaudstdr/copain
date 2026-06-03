@@ -19,6 +19,7 @@ import pytest
 from bot.memory.manager import DepotMatch
 from bot.pipeline import FALLBACK_TEXT, BotDeps, StreamEvent, process_message_stream
 from bot.profile import UserProfile
+from tests.conftest import make_settings
 
 
 def _meta_block(
@@ -79,13 +80,7 @@ def _visible_text(events: list[StreamEvent]) -> str:
 @pytest.fixture
 def deps() -> BotDeps:
     """BotDeps mocké, calqué sur la fixture de test_pipeline_process."""
-    settings = MagicMock()
-    settings.timezone = "Europe/Paris"
-    settings.home_lat = 48.26
-    settings.home_lon = 7.45
-    settings.home_city = "Sélestat"
-    settings.fuel_default_radius_km = 10.0
-    settings.foryou_similarity_max_distance = 0.35
+    settings = make_settings()
 
     memory = MagicMock()
     memory.retrieve_context = AsyncMock(return_value=[])

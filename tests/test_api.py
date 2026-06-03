@@ -25,6 +25,7 @@ from bot.locations.store import LocationEventStore
 from bot.notifications.store import NotificationStore
 from bot.pipeline import BotDeps
 from bot.profile import UserProfile
+from tests.conftest import make_settings
 
 API_KEY = "test-secret"
 
@@ -64,13 +65,7 @@ _NEUTRAL_META: dict[str, object] = {
 
 
 def _build_deps() -> BotDeps:
-    settings = MagicMock()
-    settings.api_key = API_KEY
-    settings.timezone = "Europe/Paris"
-    settings.home_lat = 48.26
-    settings.home_lon = 7.45
-    settings.home_city = "Sélestat"
-    settings.fuel_default_radius_km = 10.0
+    settings = make_settings(api_key=API_KEY)
 
     memory = MagicMock()
     memory.retrieve_context = AsyncMock(return_value=[])

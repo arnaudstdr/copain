@@ -15,6 +15,7 @@ import pytest
 from bot.memory.manager import DepotMatch
 from bot.pipeline import BotDeps, process_message
 from bot.profile import UserProfile
+from tests.conftest import make_settings
 
 
 def _meta_block(
@@ -106,13 +107,7 @@ def _meta_block(
 @pytest.fixture
 def deps() -> BotDeps:
     """BotDeps entièrement mocké pour isoler process_message des vraies dépendances."""
-    settings = MagicMock()
-    settings.timezone = "Europe/Paris"
-    settings.home_lat = 48.26
-    settings.home_lon = 7.45
-    settings.home_city = "Sélestat"
-    settings.fuel_default_radius_km = 10.0
-    settings.foryou_similarity_max_distance = 0.35
+    settings = make_settings()
 
     memory = MagicMock()
     memory.retrieve_context = AsyncMock(return_value=[])
@@ -865,7 +860,7 @@ async def test_process_weather_intent_home_default(deps: BotDeps) -> None:
 
     day = DailyWeather(
         city="Sélestat",
-        date=date.today(),
+        date=date(2026, 6, 3),
         temp_min=10.0,
         temp_max=20.0,
         precipitation_mm=0.0,
@@ -905,7 +900,7 @@ async def test_process_weather_intent_with_location_calls_geocoder(
         return_value=[
             DailyWeather(
                 city="Strasbourg",
-                date=date.today(),
+                date=date(2026, 6, 3),
                 temp_min=8.0,
                 temp_max=18.0,
                 precipitation_mm=2.0,
@@ -936,7 +931,7 @@ async def test_process_weather_demain_requests_two_days_returns_single(
 
     from bot.weather.client import DailyWeather
 
-    today = date.today()
+    today = date(2026, 6, 3)
     tomorrow = today + timedelta(days=1)
     forecast = [
         DailyWeather(

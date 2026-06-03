@@ -122,6 +122,33 @@ def make_meta_factory() -> Any:
     return make_meta
 
 
+# --- Settings mocké partagé --------------------------------------------------
+
+
+def make_settings(**overrides: Any) -> MagicMock:
+    """`Settings` mocké aux valeurs de référence des tests (domicile à Sélestat,
+    bureau à Obernai, fuseau Europe/Paris).
+
+    Centralise le bloc dupliqué dans les fixtures `deps` de la suite. Les
+    `overrides` permettent à un test de surcharger un champ précis (ex.
+    `make_settings(api_key=API_KEY)` pour `test_api`).
+    """
+    settings = MagicMock()
+    settings.api_key = "test-api-key"
+    settings.timezone = "Europe/Paris"
+    settings.home_lat = 48.26
+    settings.home_lon = 7.45
+    settings.home_city = "Sélestat"
+    settings.work_lat = 48.46
+    settings.work_lon = 7.48
+    settings.work_city = "Obernai"
+    settings.fuel_default_radius_km = 10.0
+    settings.foryou_similarity_max_distance = 0.35
+    for key, value in overrides.items():
+        setattr(settings, key, value)
+    return settings
+
+
 # --- BotDeps mocké pour les handlers / side effects --------------------------
 
 
@@ -134,13 +161,7 @@ def build_mock_deps() -> BotDeps:
     """
     from bot.pipeline.core import BotDeps
 
-    settings = MagicMock()
-    settings.timezone = "Europe/Paris"
-    settings.home_lat = 48.26
-    settings.home_lon = 7.45
-    settings.home_city = "Sélestat"
-    settings.fuel_default_radius_km = 10.0
-    settings.foryou_similarity_max_distance = 0.35
+    settings = make_settings()
 
     memory = MagicMock()
     memory.store = AsyncMock()
