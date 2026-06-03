@@ -26,10 +26,23 @@ pour vider des pensées parasites sans tenter de les traiter.
 - **Décharge cognitive (`intent=depot`)** : l'utilisateur dépose une pensée
   parasite ("j'ai peur pour X", "j'ai eu une idée Y", "note Z") et le LLM
   l'accuse sobrement (1-3 mots). Persistée dans la table `thoughts`
-  (`id, content, kind, created_at, processed_at`) + indexée dans ChromaDB
-  avec tag `{kind: "depot", thought_kind, thought_id}` pour préparer une
-  future détection de boucles. `kind` ∈ `worry | idea | note`. Consultable
-  via `GET /thoughts?since=&limit=`.
+  (`id, content, kind, created_at, processed_at, surfaced_at`) + indexée
+  dans ChromaDB avec tag `{kind: "depot", thought_kind, thought_id}`.
+  `kind` ∈ `worry | idea | note`. Consultable via `GET /thoughts?since=&limit=`.
+  Au dépôt, détection de **boucle de rumination** (≥ N dépôts similaires sur
+  30 j via embeddings) → suffixe sobre dans l'accusé. La **clôture en langage
+  naturel** d'un souci ouvert est possible (`depot.action=close`, le LLM ne
+  peut clore que ce qu'il a vu dans la section « Soucis ouverts » du prompt).
+- **Restitution des dépôts (card « Pour toi », `GET /foryou`)** : canal
+  100 % pull (fetch au tap, jamais poussé) qui ressort sobrement les dépôts
+  méritant un regard — souci rapprochable d'un évent passé (« closable »),
+  boucle de rumination, idée ancienne. L'orchestrateur (`ForYouBuilder`,
+  `bot/thoughts/foryou.py`) collecte en fail-soft, applique les heuristiques
+  pures de `bot/thoughts/restitution.py` (priorités, fenêtres, cooldown via
+  `surfaced_at`) puis fait formuler chaque item par le LLM. La card du
+  dashboard reste **neutre** (pas de compteur entrant) ; l'overlay porte une
+  action par item (« C'est réglé » → `POST /thoughts/{id}/close` sur chaque
+  dépôt membre · « Garder » → masquage local). État apaisant si rien à sortir.
 - **Web search** via self-hosted SearXNG with FR summary
 - **RSS feeds**: add/list/remove + summary of the latest news on demand
 - **Card Actu (curation IA, fetch au tap)** : `GET /news/latest` interroge
@@ -124,6 +137,8 @@ FastAPI app (bot/api.py, served by uvicorn)
         │     ├── GET  /dashboard     → build_dashboard(): météo + next évent + tâches du jour + count notifs + budget
         │     ├── GET  /news/latest   → NewsCurator.fetch_top_news() → { markdown, fetched_at } (card Actu)
         │     ├── GET  /thoughts      → ThoughtManager.list_recent/list_since → liste des dépôts cognitifs
+        │     ├── POST /thoughts/{id}/close → ThoughtManager.close(id) → tap "C'est réglé" (404 si inconnu)
+        │     ├── GET  /foryou        → ForYouBuilder.build() → card "Pour toi" (restitution, fail-soft)
         │     ├── GET  /tasks         → TaskManager.list_pending() → overlay tâches PWA (cochage)
         │     ├── POST /tasks/{id}/complete → TaskManager.complete(id)
         │     ├── GET  /budget        → compute_budget() détaillé (transactions + pending) → overlay Budget
@@ -168,7 +183,13 @@ FastAPI app (bot/api.py, served by uvicorn)
         │           └── MemoryJobStore     → cron (non-serialisable closures)
         │
         ├── Thought Manager (SQLite — table `thoughts`)
-        │     └── create / list_recent / list_since (intent `depot`)
+        │     └── create / list_recent / list_since / list_open / close /
+        │         mark_surfaced (intent `depot` + restitution)
+        │
+        ├── Restitution des dépôts (card "Pour toi" — bot/thoughts/)
+        │     ├── restitution.py → heuristiques pures (select_candidates, is_loop)
+        │     └── foryou.py      → ForYouBuilder.build (collecte fail-soft +
+        │                          rapprochement worry↔évent lexical + LLM)
         │
         ├── NotificationStore (bot/notifications/store.py)
         │     ├── add(text, title, priority, sound) → SQLite row + Pushover push
@@ -252,6 +273,8 @@ Missing or invalid → 403 with a warning logged (source IP included).
 | GET    | `/dashboard`       | —                                                                 | `{ "weather": …, "next_event": …, "today_tasks": […], "unread_notifications": int }`                    |
 | GET    | `/news/latest`     | —                                                                 | `{ "markdown": str, "fetched_at": str }`                                                                |
 | GET    | `/thoughts`        | `?since=<ISO>&limit=<int>` (optionnels)                           | `{ "thoughts": [ { "id": int, "content": str, "kind": str\|null, "created_at": str } ] }`              |
+| POST   | `/thoughts/{id}/close` | —                                                             | `{ "closed": bool, "thought_id": int }` (idempotent, 404 si id inconnu)                                 |
+| GET    | `/foryou`          | —                                                                 | `{ "items": [ { "type": str, "message": str, "thought_ids": [int] } ], "fetched_at": str }`             |
 | GET    | `/tasks`           | —                                                                 | `{ "tasks": [ { "id": int, "content": str, "due_at": str\|null } ] }` (tâches en cours)                |
 | POST   | `/tasks/{task_id}/complete` | —                                                        | tâche marquée terminée (overlay PWA)                                                                    |
 | GET    | `/budget`          | —                                                                 | détail du cycle courant : transactions + récurrentes pending (overlay Budget)                           |

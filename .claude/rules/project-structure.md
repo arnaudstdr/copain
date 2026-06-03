@@ -92,7 +92,9 @@ copain/
 │   │
 │   ├── thoughts/
 │   │   ├── models.py            # Thought (intent depot — shares Base with tasks)
-│   │   └── manager.py           # ThoughtManager (create / list_recent / list_since)
+│   │   ├── manager.py           # ThoughtManager (create / list_* / close / mark_surfaced)
+│   │   ├── restitution.py       # heuristiques pures (select_candidates, is_loop)
+│   │   └── foryou.py            # ForYouBuilder.build (card "Pour toi", fail-soft + LLM)
 │   │
 │   ├── locations/
 │   │   ├── models.py            # LocationEvent (shares Base with tasks)
@@ -116,7 +118,7 @@ copain/
 │   │       ├── state.js         # état global partagé (API_KEY, loading, caches…)
 │   │       ├── api.js           # fetch wrappers : callText, callImage, stream SSE
 │   │       ├── dashboard.js     # loadDashboard + renderers de cards + budget
-│   │       ├── overlays.js      # notifs, tâches (swipe), météo, évents
+│   │       ├── overlays.js      # notifs, tâches (swipe), météo, évents, pour toi
 │   │       ├── chat.js          # mode chat (feed, envoi, bulle SSE live)
 │   │       ├── composer.js      # envoi /ask, photos, micro (SpeechRecognition)
 │   │       ├── markdown.js      # renderMarkdown + vue markdown plein écran
