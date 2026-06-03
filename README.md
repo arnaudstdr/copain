@@ -1,7 +1,7 @@
 # copain — personal HTTP assistant
 
 <p align="center">
-  <img src="copain_bot.png" alt="Logo copain" width="200">
+  <img src="bot/static/favicon.svg" alt="Logo copain" width="160">
 </p>
 
 <p align="center">
