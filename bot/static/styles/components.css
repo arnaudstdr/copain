@@ -1,10 +1,15 @@
-.card { background: var(--bg2); border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px; display: flex; flex-direction: column; gap: 4px; box-shadow: var(--card-shadow); transition: background 0.2s, transform 0.15s, box-shadow 0.2s; }
+/* ── Carte de verre « Liquid Glass » ──
+   Surface translucide givrée : les blooms du fond transparaissent, liseré
+   spéculaire diagonal via ::before, ombre douce + reflet interne (glass-inset). */
+.card { position: relative; background: var(--glass-fill); -webkit-backdrop-filter: var(--glass-blur); backdrop-filter: var(--glass-blur); border: 1px solid var(--glass-edge); border-radius: 20px; padding: 15px 16px; display: flex; flex-direction: column; gap: 4px; box-shadow: var(--glass-shadow), var(--glass-inset); transition: background 0.2s, transform 0.15s, box-shadow 0.2s; }
+.card::before { content: ""; position: absolute; inset: 0; border-radius: inherit; pointer-events: none; background: linear-gradient(140deg, var(--glass-rim) 0%, transparent 24%, transparent 80%, var(--glass-rim-lo) 100%); opacity: 0.55; }
+.card > * { position: relative; z-index: 1; }
 .card.tappable { cursor: pointer; }
-.card.tappable:active { transform: scale(0.985); box-shadow: var(--card-shadow), 0 0 0 1px var(--border2) inset; }
+.card.tappable:active { transform: scale(0.98); }
 .card.flash { animation: flash 0.6s ease; }
 
 .card-head { display: flex; align-items: center; gap: 10px; }
-.card-icon { width: 28px; height: 28px; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 15px; background: var(--bg3); flex-shrink: 0; color: var(--text2); }
+.card-icon { width: 30px; height: 30px; border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 15px; background: var(--glass-fill-2); border: 1px solid var(--glass-edge); box-shadow: inset 0 1px 1px var(--glass-rim); flex-shrink: 0; color: var(--accent); }
 .card-icon .lucide { width: 16px; height: 16px; }
 
 /* ── Icônes Lucide ── */
@@ -58,19 +63,21 @@
 .envelope-fill.shared { background: var(--text3); }
 
 
-/* ── Bulle de réponse éphémère ── */
-#ephemeral { position: absolute; bottom: 70px; left: 14px; right: 14px; background: var(--bg3); border: 1px solid var(--border2); border-radius: 14px; padding: 12px 14px; font-size: 13.5px; line-height: 1.5; color: var(--text); z-index: 8; box-shadow: var(--shadow-strong); animation: slideUpFade 0.2s ease; cursor: pointer; white-space: pre-wrap; max-height: 50dvh; overflow-y: auto; }
+/* ── Bulle de réponse éphémère ── (verre, flotte au-dessus du dock) */
+#ephemeral { position: absolute; bottom: 92px; left: 14px; right: 14px; background: var(--glass-fill-2); -webkit-backdrop-filter: var(--glass-blur); backdrop-filter: var(--glass-blur); border: 1px solid var(--glass-edge); border-radius: 18px; padding: 13px 15px; font-size: 13.5px; line-height: 1.5; color: var(--text); z-index: 8; box-shadow: var(--glass-shadow), var(--glass-inset); animation: slideUpFade 0.2s ease; cursor: pointer; white-space: pre-wrap; max-height: 50dvh; overflow-y: auto; }
 #ephemeral.hidden { display: none; }
 
-/* ── Toast ── */
-#toast { position: absolute; bottom: 76px; left: 50%; transform: translateX(-50%); background: var(--bg4); border: 1px solid var(--border2); border-radius: 20px; padding: 8px 18px; font-size: 13px; color: var(--text); white-space: nowrap; z-index: 20; animation: toastIn 0.2s ease; pointer-events: none; max-width: 86%; overflow: hidden; text-overflow: ellipsis; }
+/* ── Toast ── (verre) */
+#toast { position: absolute; bottom: 100px; left: 50%; transform: translateX(-50%); background: var(--glass-fill-2); -webkit-backdrop-filter: var(--glass-blur); backdrop-filter: var(--glass-blur); border: 1px solid var(--glass-edge); border-radius: 20px; padding: 9px 18px; font-size: 13px; color: var(--text); white-space: nowrap; z-index: 20; box-shadow: var(--glass-shadow); animation: toastIn 0.2s ease; pointer-events: none; max-width: 86%; overflow: hidden; text-overflow: ellipsis; }
 .toast-content { display: inline-flex; align-items: center; gap: 6px; }
 .toast-content .lucide { color: var(--green); }
 
 /* ── Notifications overlay ── */
 .overlay { position: absolute; inset: 0; background: var(--overlay-bg); z-index: 15; display: flex; flex-direction: column; justify-content: flex-end; animation: fadeIn 0.15s ease; }
 .overlay.hidden { display: none; }
-.panel { background: var(--bg2); border-top: 1px solid var(--border2); border-radius: 20px 20px 0 0; padding-bottom: max(20px, env(safe-area-inset-bottom)); animation: slideUp 0.25s ease; max-height: 75dvh; display: flex; flex-direction: column; }
+.panel { position: relative; background: var(--glass-fill-2); -webkit-backdrop-filter: blur(30px) saturate(190%); backdrop-filter: blur(30px) saturate(190%); border-top: 1px solid var(--glass-edge); border-radius: 24px 24px 0 0; padding-bottom: max(20px, env(safe-area-inset-bottom)); box-shadow: 0 -10px 40px -12px rgba(0,0,0,0.3), var(--glass-inset); animation: slideUp 0.25s ease; max-height: 75dvh; display: flex; flex-direction: column; }
+.panel::before { content: ""; position: absolute; inset: 0; border-radius: inherit; pointer-events: none; background: linear-gradient(180deg, var(--glass-rim) 0%, transparent 6%); opacity: 0.6; }
+.panel > * { position: relative; z-index: 1; }
 .panel-head { display: flex; align-items: center; justify-content: space-between; padding: 16px 20px 12px; }
 .panel-title { font-family: var(--font-display); font-weight: 600; font-size: 16px; letter-spacing: -0.1px; }
 .close-btn { background: var(--bg3); border: 1px solid var(--border2); color: var(--text2); width: 28px; height: 28px; border-radius: 50%; cursor: pointer; font-size: 11px; display: flex; align-items: center; justify-content: center; }
@@ -153,7 +160,7 @@ select.budget-input { cursor: pointer; }
 .budget-export:active { transform: scale(0.98); }
 
 /* ── Chat overlay (mode conversation) ── */
-.chat-feed { flex: 1; overflow-y: auto; padding: 12px 14px; display: flex; flex-direction: column; gap: 10px; }
+.chat-feed { flex: 1; overflow-y: auto; padding: 12px 14px 96px; display: flex; flex-direction: column; gap: 10px; }
 .chat-feed::-webkit-scrollbar { width: 3px; }
 .chat-feed::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 4px; }
 .row { display: flex; align-items: flex-end; gap: 8px; animation: fadeUp 0.2s ease; }
@@ -184,13 +191,24 @@ select.budget-input { cursor: pointer; }
 .dot:nth-child(2) { animation-delay: 0.2s; }
 .dot:nth-child(3) { animation-delay: 0.4s; }
 
-/* Chat overlay = full-app */
-#chat-view { position: absolute; inset: 0; background: var(--bg); z-index: 12; display: flex; flex-direction: column; animation: slideRight 0.2s ease; }
+/* Chat overlay = full-app (mêmes blooms que le dashboard derrière le verre) */
+#chat-view { position: absolute; inset: 0; background: var(--bg); z-index: 12; display: flex; flex-direction: column; overflow: hidden; animation: slideRight 0.2s ease; }
 #chat-view.hidden { display: none; }
 
 /* Markdown full-screen view (briefings, actu, …) */
-#markdown-view { position: absolute; inset: 0; background: var(--bg); z-index: 12; display: flex; flex-direction: column; animation: slideRight 0.2s ease; }
+#markdown-view { position: absolute; inset: 0; background: var(--bg); z-index: 12; display: flex; flex-direction: column; overflow: hidden; animation: slideRight 0.2s ease; }
 #markdown-view.hidden { display: none; }
+
+/* Fond vivant (blooms) derrière le contenu de ces vues plein écran. */
+#chat-view::before, #markdown-view::before {
+  content: ""; position: absolute; inset: -12%; z-index: 0; pointer-events: none;
+  opacity: var(--bloom-opacity);
+  background:
+    radial-gradient(560px 560px at 8% -8%, var(--bloom-1), transparent 70%),
+    radial-gradient(520px 520px at 100% 38%, var(--bloom-2), transparent 70%),
+    radial-gradient(600px 600px at 14% 108%, var(--bloom-3), transparent 72%);
+}
+#chat-view > *, #markdown-view > * { position: relative; z-index: 1; }
 .markdown-body { flex: 1; overflow-y: auto; padding: 16px 18px max(20px, env(safe-area-inset-bottom)); font-size: 14.5px; line-height: 1.6; color: var(--text); }
 .markdown-body h1 { font-family: var(--font-display); font-size: 21px; font-weight: 700; letter-spacing: -0.3px; margin: 14px 0 10px; color: var(--text); }
 .markdown-body h2 { font-family: var(--font-display); font-size: 18px; font-weight: 700; letter-spacing: -0.2px; margin: 16px 0 8px; color: var(--text); }

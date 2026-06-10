@@ -35,6 +35,24 @@
   --track-bg: rgba(255, 255, 255, 0.08);
   --on-accent: #0e1116;
   --grain-opacity: 0.03;
+
+  /* ── Liquid Glass (mode sombre) ──
+     Blooms = halos colorés dérivant en fond, ce que le verre réfracte.
+     Dégradé dominé VIOLET : bleu profond (haut) → indigo → violet (bas).
+     glass-* = surfaces translucides givrées + liseré spéculaire. */
+  --bloom-1: #3a5fae;
+  --bloom-2: #6a4fc0;
+  --bloom-3: #9148c0;
+  --bloom-opacity: 0.6;
+  --glass-fill:   rgba(255, 255, 255, 0.07);
+  --glass-fill-2: rgba(255, 255, 255, 0.12);
+  --glass-rim:    rgba(255, 255, 255, 0.28);
+  --glass-rim-lo: rgba(255, 255, 255, 0.04);
+  --glass-edge:   rgba(255, 255, 255, 0.14);
+  --glass-blur:   blur(22px) saturate(180%);
+  --glass-shadow: 0 14px 40px -12px rgba(0, 0, 0, 0.6), 0 2px 10px -4px rgba(0, 0, 0, 0.5);
+  --glass-inset:  inset 0 1px 1px rgba(255, 255, 255, 0.22), inset 0 -12px 26px -20px rgba(0, 0, 0, 0.5);
+  --dock-shadow:  0 18px 44px -14px rgba(0, 0, 0, 0.65), var(--glass-inset);
 }
 
 /* ── Palette claire « béton froid » ──
@@ -65,5 +83,21 @@
     --track-bg: rgba(20, 28, 38, 0.10);
     --on-accent: #ffffff;
     --grain-opacity: 0.03;
+
+    /* ── Liquid Glass (mode clair) ──
+       Dégradé CYAN → ORANGE : cyan (haut-gauche) → corail → orange (bas). */
+    --bloom-1: #6fd3dc;
+    --bloom-2: #ffc6a0;
+    --bloom-3: #ffae84;
+    --bloom-opacity: 0.72;
+    --glass-fill:   rgba(255, 255, 255, 0.46);
+    --glass-fill-2: rgba(255, 255, 255, 0.62);
+    --glass-rim:    rgba(255, 255, 255, 0.85);
+    --glass-rim-lo: rgba(255, 255, 255, 0.10);
+    --glass-edge:   rgba(255, 255, 255, 0.55);
+    --glass-blur:   blur(22px) saturate(180%);
+    --glass-shadow: 0 10px 30px -10px rgba(26, 40, 64, 0.28), 0 2px 8px -4px rgba(26, 40, 64, 0.18);
+    --glass-inset:  inset 0 1px 1px rgba(255, 255, 255, 0.85), inset 0 -10px 24px -18px rgba(40, 60, 90, 0.22);
+    --dock-shadow:  0 18px 40px -14px rgba(20, 30, 50, 0.4), var(--glass-inset);
   }
 }
