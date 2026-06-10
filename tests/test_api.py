@@ -1576,3 +1576,18 @@ async def test_create_expense_bad_date_returns_400(client: AsyncClient) -> None:
         json={"action": "spend", "amount_eur": 10, "occurred_on": "10/06/2026"},
     )
     assert response.status_code == 400
+
+
+# --- Cache statique (revalidation des modules ES) --------------------------
+
+
+async def test_static_assets_sent_with_no_cache(client: AsyncClient) -> None:
+    """Les modules ES internes doivent revalider (sinon import cassé après deploy).
+
+    `index.html` ne versionne que `main.js?v=N` ; les imports internes sont des
+    chemins nus. Sans revalidation, Safari peut servir un module périmé et
+    casser tout le graphe ES. On verrouille donc `Cache-Control: no-cache`.
+    """
+    response = await client.get("/static/js/main.js")
+    assert response.status_code == 200
+    assert "no-cache" in response.headers.get("cache-control", "")

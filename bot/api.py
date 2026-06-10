@@ -20,6 +20,7 @@ from __future__ import annotations
 import base64
 import hmac
 import json
+import os
 import pathlib
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -32,6 +33,7 @@ from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request, sta
 from fastapi.responses import FileResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
+from starlette.types import Scope
 
 from bot.dashboard import DashboardSnapshot, build_dashboard
 from bot.finance.csv_export import build_expenses_csv
@@ -49,6 +51,35 @@ if TYPE_CHECKING:
 log = get_logger(__name__)
 
 STATIC_DIR = pathlib.Path(__file__).parent / "static"
+
+
+class RevalidateStaticFiles(StaticFiles):
+    """`StaticFiles` qui force la revalidation conditionnelle du cache.
+
+    La PWA est un graphe de modules ES natifs (zéro build step) : `index.html`
+    (servi en `no-store`) ne versionne que l'entrée `main.js?v=N`, mais les
+    imports internes (`import … from "./dashboard.js"`) sont des chemins nus.
+    Sans `Cache-Control`, Safari applique un cache heuristique et peut servir
+    un module interne périmé tout en chargeant un `main.js` neuf : si une API
+    inter-module a changé (export ajouté/retiré), l'import échoue et toute la
+    PWA reste blanche.
+
+    `no-cache` n'interdit pas la mise en cache : il impose juste une
+    revalidation (`If-None-Match` / `If-Modified-Since`) avant réutilisation.
+    Le coût reste un 304 quand le fichier n'a pas bougé, et le client récupère
+    toujours la version fraîche après un déploiement.
+    """
+
+    def file_response(
+        self,
+        full_path: str | os.PathLike[str],
+        stat_result: os.stat_result,
+        scope: Scope,
+        status_code: int = 200,
+    ) -> Response:
+        response = super().file_response(full_path, stat_result, scope, status_code)
+        response.headers["Cache-Control"] = "no-cache"
+        return response
 
 
 # --- Schémas Pydantic --------------------------------------------------------
@@ -528,7 +559,7 @@ def create_app(state: AppState) -> FastAPI:
     # `allow_origins=["*"]` permettrait à n'importe quelle page web ouverte
     # sur un appareil du Tailnet de lire `GET /config` (et donc l'API key)
     # via un fetch cross-origin.
-    app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+    app.mount("/static", RevalidateStaticFiles(directory=STATIC_DIR), name="static")
 
     @app.get("/", response_class=FileResponse, include_in_schema=False)
     async def chat_ui() -> FileResponse:
