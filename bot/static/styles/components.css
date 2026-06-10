@@ -160,7 +160,11 @@ select.budget-input { cursor: pointer; }
 .budget-export:active { transform: scale(0.98); }
 
 /* ── Chat overlay (mode conversation) ── */
-.chat-feed { flex: 1; overflow-y: auto; padding: 12px 14px 96px; display: flex; flex-direction: column; gap: 10px; }
+/* mask-image : « scroll edge » iOS 26 — le contenu se dissout en fondu vers le
+   bas au lieu d'être coupé net au bord du dock flottant, pour que les bulles
+   passent fluidement derrière la zone de saisie (combiné au backdrop-filter
+   du dock qui les floute). Le masque suit le bas du viewport scrollable. */
+.chat-feed { flex: 1; overflow-y: auto; padding: 12px 14px 96px; display: flex; flex-direction: column; gap: 10px; -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 118px), transparent); mask-image: linear-gradient(to bottom, #000 calc(100% - 118px), transparent); }
 .chat-feed::-webkit-scrollbar { width: 3px; }
 .chat-feed::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 4px; }
 .row { display: flex; align-items: flex-end; gap: 8px; animation: fadeUp 0.2s ease; }

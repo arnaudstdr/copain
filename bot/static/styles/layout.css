@@ -65,7 +65,7 @@ header { display: flex; align-items: center; gap: 12px; padding: 12px 16px; padd
 /* ── Dashboard feed ──
    padding-bottom large : le dock flotte par-dessus (position absolute), les
    dernières cards doivent pouvoir scroller au-dessus sans rester masquées. */
-#dashboard { flex: 1; overflow-y: auto; padding: 12px 14px 96px; display: flex; flex-direction: column; gap: 10px; scroll-behavior: smooth; }
+#dashboard { flex: 1; overflow-y: auto; padding: 12px 14px 96px; display: flex; flex-direction: column; gap: 10px; scroll-behavior: smooth; -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 118px), transparent); mask-image: linear-gradient(to bottom, #000 calc(100% - 118px), transparent); }
 #dashboard::-webkit-scrollbar { width: 3px; }
 #dashboard::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 4px; }
 
