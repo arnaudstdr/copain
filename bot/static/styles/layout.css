@@ -114,6 +114,29 @@ header { display: flex; align-items: center; gap: 12px; padding: 12px 16px; padd
 .send-btn:active { transform: scale(0.9); }
 .send-btn:disabled { opacity: 0.4; cursor: default; }
 
+/* ── Bord bas iOS 26 (#edge-glass) ──
+   Safari/WebKit 26 IGNORE theme-color : pour peindre la bande système
+   (~59px) sous le web view, il échantillonne les éléments position:fixed
+   collés au bord bas du viewport (leur background-color + backdrop-filter ;
+   les absolute, pseudo-éléments et fonds de page sont ignorés). Sans rien à
+   échantillonner, iOS retombe sur un aplat → bande morte visible. Cette
+   lame de verre fixed donne à iOS de quoi prolonger le fond en flou « scroll
+   edge » continu (même mécanique que la BottomNav fixed de domestique-ai).
+   Le masque ne fane que le haut : les ~3px du bas, zone d'échantillonnage,
+   restent pleins. Sous le clavier elle passe derrière lui, sans incidence. */
+#edge-glass {
+  position: fixed;
+  left: 0; right: 0; bottom: 0;
+  height: 20px;
+  z-index: 30;
+  pointer-events: none;
+  background: var(--glass-fill);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-mask-image: linear-gradient(to top, #000 55%, transparent);
+  mask-image: linear-gradient(to top, #000 55%, transparent);
+}
+
 /* ── Preview photo ── (pastille de verre posée au-dessus du dock) */
 #preview-bar, #chat-preview-bar { margin-bottom: 8px; padding: 8px 12px; border: 1px solid var(--glass-edge); border-radius: 18px; background: var(--glass-fill-2); -webkit-backdrop-filter: var(--glass-blur); backdrop-filter: var(--glass-blur); box-shadow: var(--glass-shadow); display: flex; align-items: center; gap: 12px; flex-shrink: 0; }
 #preview-bar.hidden, #chat-preview-bar.hidden { display: none; }

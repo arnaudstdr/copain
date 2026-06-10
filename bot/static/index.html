@@ -9,11 +9,10 @@
   <!-- Indique au système que la PWA supporte les deux modes ; ajuste les
        contrôles natifs (scrollbars, form inputs) en cohérence. -->
   <meta name="color-scheme" content="light dark" />
-  <!-- theme-color piloté par le mode courant (status bar PWA et browser chrome). -->
-  <!-- Le composer flotte désormais en dock de verre : sous lui on voit le fond
-       du dashboard (blooms). theme-color = couleur de BASE du fond (--bg), pour
-       que les ~59px système iOS réservés sous le web view prolongent ce fond et
-       que le dock paraisse léviter sur un fond continu. -->
+  <!-- theme-color : conservé pour la rétro-compatibilité (anciens Safari,
+       Android). Safari/WebKit 26 l'IGNORE : il peint les zones système en
+       échantillonnant les éléments position:fixed au bord du viewport
+       (cf. #edge-glass en bas de page + layout.css). -->
   <meta name="theme-color" content="#15181c" media="(prefers-color-scheme: dark)" />
   <meta name="theme-color" content="#e9edf1" media="(prefers-color-scheme: light)" />
   <title>Copain</title>
@@ -24,7 +23,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="/static/styles/theme.css?v=4" />
-  <link rel="stylesheet" href="/static/styles/layout.css?v=9" />
+  <link rel="stylesheet" href="/static/styles/layout.css?v=10" />
   <link rel="stylesheet" href="/static/styles/components.css?v=9" />
   <link rel="stylesheet" href="/static/styles/animations.css?v=3" />
 </head>
@@ -252,6 +251,11 @@
   </div>
 
 </div>
+
+<!-- Lame de verre échantillonnée par iOS 26 pour peindre la bande système
+     sous le web view (cf. #edge-glass dans layout.css). Hors de #app : un
+     transform sur #app (clavier ouvert) ferait d'un fixed un absolute. -->
+<div id="edge-glass" aria-hidden="true"></div>
 
 <script type="module" src="/static/js/main.js?v=13"></script>
 </body>
