@@ -3,17 +3,17 @@ import {
   API_KEY, API_BASE,
   dashboardData, setDashboardData,
   newsState, foryouState,
-} from "./state.js";
+} from "./state.js?v=13";
 import {
   el, makeHead,
   sameDay, formatHM, formatRelativeDay, formatRelativeAge, isAllDayEvent,
   showToast,
-} from "./ui.js";
-import { openMarkdownView, renderMarkdown } from "./markdown.js";
+} from "./ui.js?v=13";
+import { openMarkdownView, renderMarkdown } from "./markdown.js?v=13";
 // Cycle d'import dashboard ↔ overlays accepté (cf. PROGRESS.md) : les cards
 // tappables ouvrent les overlays, et les overlays rafraîchissent le
 // dashboard à la fermeture. Bénin : fonctions hoistées, appelées au runtime.
-import { openWeather, openEvents, openTasks, openForYou } from "./overlays.js";
+import { openWeather, openEvents, openTasks, openForYou } from "./overlays.js?v=13";
 
 // ── Dashboard ─────────────────────────────────────────────────────────────
 export async function loadDashboard() {

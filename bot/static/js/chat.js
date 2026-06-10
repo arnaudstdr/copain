@@ -3,12 +3,12 @@ import {
   loading,
   chatAttachment, setChatAttachment,
   chatHistory, chatHistoryState,
-} from "./state.js";
-import { el, lucideNode, sameDay, formatDaySeparator } from "./ui.js";
-import { callImage, callTextStream, fetchHistory } from "./api.js";
-import { renderMarkdown } from "./markdown.js";
-import { loadDashboard, invalidateCards } from "./dashboard.js";
-import { setLoading, autoResize, updateChatSendBtn } from "./composer.js";
+} from "./state.js?v=13";
+import { el, lucideNode, sameDay, formatDaySeparator } from "./ui.js?v=13";
+import { callImage, callTextStream, fetchHistory } from "./api.js?v=13";
+import { renderMarkdown } from "./markdown.js?v=13";
+import { loadDashboard, invalidateCards } from "./dashboard.js?v=13";
+import { setLoading, autoResize, updateChatSendBtn } from "./composer.js?v=13";
 
 // ── Mode chat (overlay) ───────────────────────────────────────────────────
 let scrollBound = false;

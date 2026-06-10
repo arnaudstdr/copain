@@ -1,7 +1,7 @@
 // ── Wrappers réseau : /config, /ask, /ask/image, /ask/stream (SSE) ────────
 // Tous les appels authentifiés portent le header X-API-Key (lecture vivante
 // du binding API_KEY, renseigné au boot par main.js via setApiKey).
-import { API_BASE, API_KEY } from "./state.js";
+import { API_BASE, API_KEY } from "./state.js?v=13";
 
 // Récupère la config publique servie par le backend (pas d'auth : /config
 // n'est accessible que sur le réseau privé Tailscale).

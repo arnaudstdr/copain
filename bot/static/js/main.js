@@ -2,20 +2,20 @@
 // Orchestre le boot (hauteur d'app, greeting, config, premier rendu du
 // dashboard) et centralise le câblage des listeners du DOM statique —
 // les listeners du DOM dynamique (cards, rows) restent dans les renderers.
-import { setApiKey, PROFILE_NAME } from "./state.js";
-import { showToast, hideEphemeral } from "./ui.js";
-import { fetchConfig } from "./api.js";
-import { loadDashboard, closeBudget } from "./dashboard.js";
-import { closeMarkdownView } from "./markdown.js";
-import { openNotifs, closeNotifs, closeTasks, closeWeather, closeEvents, closeForYou } from "./overlays.js";
+import { setApiKey, PROFILE_NAME } from "./state.js?v=13";
+import { showToast, hideEphemeral } from "./ui.js?v=13";
+import { fetchConfig } from "./api.js?v=13";
+import { loadDashboard, closeBudget } from "./dashboard.js?v=13";
+import { closeMarkdownView } from "./markdown.js?v=13";
+import { openNotifs, closeNotifs, closeTasks, closeWeather, closeEvents, closeForYou } from "./overlays.js?v=13";
 import {
   send, handleKey, updateSendBtn, updateChatSendBtn, autoResize,
   handleFileChange, removeAttachment, toggleMic, toggleChatMic,
-} from "./composer.js";
+} from "./composer.js?v=13";
 import {
   openChat, closeChat, chatSend, handleChatKey,
   handleChatFileChange, removeChatAttachment,
-} from "./chat.js";
+} from "./chat.js?v=13";
 
 // ── Init ──────────────────────────────────────────────────────────────────
 document.addEventListener("DOMContentLoaded", async () => {

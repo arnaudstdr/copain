@@ -6,10 +6,10 @@ import {
   loading, setLoadingFlag,
   attachment, setAttachment,
   chatAttachment,
-} from "./state.js";
-import { el, lucideNode, showToast, showEphemeral } from "./ui.js";
-import { callText, callImage } from "./api.js";
-import { loadDashboard, flashCards, invalidateCards } from "./dashboard.js";
+} from "./state.js?v=13";
+import { el, lucideNode, showToast, showEphemeral } from "./ui.js?v=13";
+import { callText, callImage } from "./api.js?v=13";
+import { loadDashboard, flashCards, invalidateCards } from "./dashboard.js?v=13";
 
 // ── État local du module ──────────────────────────────────────────────────
 // Instance SpeechRecognition partagée entre les deux micros (dashboard et

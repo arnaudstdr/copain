@@ -2,14 +2,14 @@
 // Cycle d'import dashboard ↔ overlays accepté (cf. PROGRESS.md) : les cards
 // tappables ouvrent les overlays, et les overlays rafraîchissent le
 // dashboard à la fermeture. Bénin : fonctions hoistées, appelées au runtime.
-import { API_KEY, API_BASE, dashboardData, foryouState } from "./state.js";
+import { API_KEY, API_BASE, dashboardData, foryouState } from "./state.js?v=13";
 import {
   el,
   lucideNode,
   formatHM, formatRelativeDay, formatDateTime, isAllDayEvent,
   showToast,
-} from "./ui.js";
-import { loadDashboard, renderBellBadge } from "./dashboard.js";
+} from "./ui.js?v=13";
+import { loadDashboard, renderBellBadge } from "./dashboard.js?v=13";
 
 // ── Notifications panel ───────────────────────────────────────────────────
 export async function openNotifs() {

@@ -2,7 +2,7 @@
 // Cycle d'import ui ↔ markdown accepté (cf. PROGRESS.md) : showEphemeral
 // rend du markdown, et renderMarkdown utilise escHtml/lucideSvg d'ici.
 // Bénin : fonctions hoistées, appelées uniquement au runtime.
-import { renderMarkdown } from "./markdown.js";
+import { renderMarkdown } from "./markdown.js?v=13";
 
 // ── UI helpers ────────────────────────────────────────────────────────────
 export function escHtml(s) {
