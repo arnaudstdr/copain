@@ -27,7 +27,7 @@
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="/static/styles/theme.css?v=3" />
   <link rel="stylesheet" href="/static/styles/layout.css?v=6" />
-  <link rel="stylesheet" href="/static/styles/components.css?v=6" />
+  <link rel="stylesheet" href="/static/styles/components.css?v=7" />
   <link rel="stylesheet" href="/static/styles/animations.css?v=2" />
 </head>
 <body>
@@ -169,6 +169,21 @@
     </div>
   </div>
 
+  <!-- Budget panel (formulaire de saisie + récap interactif) -->
+  <div id="budget-overlay" class="overlay hidden">
+    <div class="panel">
+      <div class="panel-head">
+        <span class="panel-title"><svg class="lucide lucide-wallet lucide-text" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 7V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-2"/><path d="M3 5v14a2 2 0 0 0 2 2h16v-5"/><path d="M18 12a2 2 0 0 0 0 4h4v-4Z"/></svg>Budget</span>
+        <button class="close-btn" aria-label="Fermer">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+        </button>
+      </div>
+      <div class="panel-list" id="budget-list">
+        <div class="panel-empty">Chargement…</div>
+      </div>
+    </div>
+  </div>
+
   <!-- Markdown full-screen view (réutilisé pour la card Actu) -->
   <div id="markdown-view" class="hidden">
     <header>
@@ -240,6 +255,6 @@
 
 </div>
 
-<script type="module" src="/static/js/main.js?v=11"></script>
+<script type="module" src="/static/js/main.js?v=12"></script>
 </body>
 </html>

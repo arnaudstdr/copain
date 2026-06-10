@@ -43,6 +43,7 @@ from bot.sentry_setup import capture_exception
 
 if TYPE_CHECKING:
     from bot.config import Settings
+    from bot.finance.models import Expense
     from bot.notifications.store import NotificationStore
 
 log = get_logger(__name__)
@@ -286,6 +287,60 @@ class BudgetMonthDetail(BaseModel):
     transactions: list[BudgetTransaction]
     pending: list[BudgetPendingItem]
     envelopes: list[BudgetEnvelopeDetail] = Field(default_factory=list)
+
+
+class ExpenseCreate(BaseModel):
+    """Saisie budgétaire directe (formulaire PWA, sans passer par le LLM).
+
+    Même surface que l'`intent=expense` du bot, réduite aux trois actions
+    saisissables à la main : `spend` (dépense ponctuelle), `income` (revenu)
+    et `tick_recurring` (pointage d'une récurrente déclarée dans le YAML).
+    L'endpoint réutilise les mêmes méthodes `ExpenseManager` que
+    `handle_expense_side_effect` — aucune divergence de calcul possible.
+    """
+
+    action: Literal["spend", "income", "tick_recurring"]
+    # Montant en euros. Requis pour spend/income ; optionnel pour
+    # tick_recurring (fallback sur le montant YAML de la récurrente).
+    amount_eur: float | None = None
+    label: str | None = None
+    category: str | None = None
+    # Date ISO YYYY-MM-DD ; None → aujourd'hui (fuseau du serveur).
+    occurred_on: str | None = None
+    shared: bool = False  # spend uniquement : compte joint, hors restant perso
+    recurring_key: str | None = None  # tick uniquement
+    # income uniquement : ancre un nouveau cycle budgétaire (= salaire reçu).
+    starts_cycle: bool = False
+
+
+class ExpenseCreateResponse(BaseModel):
+    """Réponse de `POST /expenses`.
+
+    `recorded=False` signale un pointage de récurrente ignoré car déjà pointé
+    dans le cycle courant (idempotent, comme côté bot) ; `transaction` est
+    alors `None`.
+    """
+
+    recorded: bool
+    transaction: BudgetTransaction | None = None
+
+
+def _expense_to_transaction(e: Expense) -> BudgetTransaction:
+    """Mappe une ligne `Expense` vers le schéma de réponse `BudgetTransaction`.
+
+    `bool(e.shared)` normalise un éventuel `None` (lignes pré-migration ou
+    objet construit en mémoire sans flush DB).
+    """
+    return BudgetTransaction(
+        id=e.id,
+        kind=e.kind,
+        amount_eur=e.amount_cents / 100,
+        label=e.label,
+        category=e.category,
+        recurring_key=e.recurring_key,
+        occurred_on=e.occurred_on.isoformat(),
+        shared=bool(e.shared),
+    )
 
 
 # --- Weather / Events detail schemas ---------------------------------------
@@ -980,21 +1035,7 @@ def create_app(state: AppState) -> FastAPI:
         else:
             cycle_end_inclusive = cycle_end - timedelta(days=1)
 
-        transactions = [
-            BudgetTransaction(
-                id=e.id,
-                kind=e.kind,
-                amount_eur=e.amount_cents / 100,
-                label=e.label,
-                category=e.category,
-                recurring_key=e.recurring_key,
-                occurred_on=e.occurred_on.isoformat(),
-                # bool(...) normalise un éventuel None (lignes pré-migration
-                # ou Expense construit en mémoire sans flush DB).
-                shared=bool(e.shared),
-            )
-            for e in month_rows
-        ]
+        transactions = [_expense_to_transaction(e) for e in month_rows]
         pending = [
             BudgetPendingItem(
                 key=p.key,
@@ -1034,6 +1075,112 @@ def create_app(state: AppState) -> FastAPI:
             pending=pending,
             envelopes=envelopes_detail,
         )
+
+    @app.post(
+        "/expenses",
+        response_model=ExpenseCreateResponse,
+        dependencies=[Depends(verify_api_key)],
+    )
+    async def create_expense(
+        body: ExpenseCreate,
+        deps: BotDeps = Depends(get_deps),
+    ) -> ExpenseCreateResponse:
+        """Saisie budgétaire directe par formulaire (sans LLM).
+
+        Équivalent transport de `handle_expense_side_effect` : réutilise les
+        mêmes méthodes `ExpenseManager` que le chemin bot, donc les deux vues
+        (formulaire PWA + `intent=expense`) partagent strictement la même
+        persistance et le même calcul de cycle.
+        """
+        from bot.finance.config import extract_finance_config
+        from bot.pipeline.side_effects import euros_to_cents
+
+        # « Aujourd'hui » calculé comme dans get_budget (fuseau du serveur).
+        tz = ZoneInfo(deps.settings.timezone)
+        if body.occurred_on is None:
+            occurred_on = datetime.now(tz).date()
+        else:
+            try:
+                occurred_on = date.fromisoformat(body.occurred_on)
+            except ValueError as exc:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Date invalide (attendu YYYY-MM-DD)",
+                ) from exc
+
+        override_cents = euros_to_cents(body.amount_eur)
+
+        if body.action == "spend":
+            if override_cents is None:
+                raise HTTPException(status_code=400, detail="Montant requis et > 0")
+            label = (body.label or "").strip() or "Dépense"
+            category = (body.category or "").strip() or None
+            expense = await deps.expenses.add_punctual(
+                amount_cents=override_cents,
+                label=label,
+                category=category,
+                occurred_on=occurred_on,
+                shared=body.shared,
+            )
+            log.info(
+                "expense_form_spend_recorded",
+                expense_id=expense.id,
+                amount_cents=override_cents,
+                shared=body.shared,
+            )
+            return ExpenseCreateResponse(
+                recorded=True, transaction=_expense_to_transaction(expense)
+            )
+
+        if body.action == "income":
+            if body.starts_cycle:
+                await deps.expenses.start_cycle(occurred_on)
+            if override_cents is None:
+                raise HTTPException(status_code=400, detail="Montant requis et > 0")
+            label = (body.label or "").strip() or "Revenu"
+            expense = await deps.expenses.add_income(
+                amount_cents=override_cents,
+                label=label,
+                occurred_on=occurred_on,
+            )
+            log.info(
+                "expense_form_income_recorded",
+                expense_id=expense.id,
+                amount_cents=override_cents,
+                starts_cycle=body.starts_cycle,
+            )
+            return ExpenseCreateResponse(
+                recorded=True, transaction=_expense_to_transaction(expense)
+            )
+
+        # action == "tick_recurring"
+        key = (body.recurring_key or "").strip()
+        if not key:
+            raise HTTPException(status_code=400, detail="recurring_key requis")
+        cfg = extract_finance_config(deps.profile.data)
+        item = cfg.find(key)
+        if item is None:
+            raise HTTPException(status_code=404, detail=f"Récurrente inconnue : {key}")
+        # Montant : override euros si fourni, sinon montant YAML de la récurrente.
+        amount_cents = override_cents if override_cents is not None else item.amount_cents
+        tick = await deps.expenses.tick_recurring_once(
+            recurring_key=item.key,
+            label=item.label,
+            amount_cents=amount_cents,
+            kind=item.kind,
+            occurred_on=occurred_on,
+            category=item.category,
+        )
+        if tick is None:
+            log.info("expense_form_tick_duplicate_ignored", key=item.key)
+            return ExpenseCreateResponse(recorded=False, transaction=None)
+        log.info(
+            "expense_form_recurring_ticked",
+            expense_id=tick.id,
+            key=item.key,
+            amount_cents=amount_cents,
+        )
+        return ExpenseCreateResponse(recorded=True, transaction=_expense_to_transaction(tick))
 
     @app.get(
         "/expenses/export.csv",

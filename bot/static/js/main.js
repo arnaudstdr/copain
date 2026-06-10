@@ -5,7 +5,7 @@
 import { setApiKey, PROFILE_NAME } from "./state.js";
 import { showToast, hideEphemeral } from "./ui.js";
 import { fetchConfig } from "./api.js";
-import { loadDashboard } from "./dashboard.js";
+import { loadDashboard, closeBudget } from "./dashboard.js";
 import { closeMarkdownView } from "./markdown.js";
 import { openNotifs, closeNotifs, closeTasks, closeWeather, closeEvents, closeForYou } from "./overlays.js";
 import {
@@ -119,6 +119,8 @@ function bindStaticHandlers() {
   $("#events-overlay .close-btn").addEventListener("click", closeEvents);
   $("#foryou-overlay").addEventListener("click", closeOnBackdrop(closeForYou));
   $("#foryou-overlay .close-btn").addEventListener("click", closeForYou);
+  $("#budget-overlay").addEventListener("click", closeOnBackdrop(closeBudget));
+  $("#budget-overlay .close-btn").addEventListener("click", closeBudget);
 
   // Vue markdown
   $("#markdown-view header .header-btn").addEventListener("click", closeMarkdownView);

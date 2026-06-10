@@ -9,7 +9,7 @@ import {
   sameDay, formatHM, formatRelativeDay, formatRelativeAge, isAllDayEvent,
   showToast,
 } from "./ui.js";
-import { openMarkdownView } from "./markdown.js";
+import { openMarkdownView, renderMarkdown } from "./markdown.js";
 // Cycle d'import dashboard ↔ overlays accepté (cf. PROGRESS.md) : les cards
 // tappables ouvrent les overlays, et les overlays rafraîchissent le
 // dashboard à la fermeture. Bénin : fonctions hoistées, appelées au runtime.
@@ -228,23 +228,224 @@ function formatEur(amount) {
   return `${rounded.toFixed(2).replace(".", ",")} €`;
 }
 
+// Overlay Budget interactif : formulaire de saisie directe (POST /expenses,
+// sans LLM) en haut, récap + transactions + export CSV en dessous. Le chemin
+// bot (intent=expense) reste un canal parallèle inchangé.
 async function openBudget() {
+  document.getElementById("budget-overlay").classList.remove("hidden");
+  const list = document.getElementById("budget-list");
+  list.innerHTML = '<div class="panel-empty">Chargement…</div>';
   try {
     const res = await fetch(`${API_BASE}/budget`, { headers: { "X-API-Key": API_KEY } });
     if (!res.ok) throw new Error(`${res.status}`);
     const data = await res.json();
-    openMarkdownView(
-      "Budget du cycle",
-      renderBudgetMarkdown(data),
-      null,
-      {
-        label: "Exporter CSV",
-        onClick: () => exportExpensesCsv(data.cycle_start || data.month, data.cycle_end),
-      }
-    );
+    renderBudgetPanel(data);
   } catch (e) {
-    showToast("Impossible de charger le budget");
+    list.innerHTML = '<div class="panel-empty">Impossible de charger</div>';
   }
+}
+
+export function closeBudget() {
+  document.getElementById("budget-overlay").classList.add("hidden");
+  // Rafraîchit la card du dashboard (restant + enveloppes ont pu bouger).
+  loadDashboard();
+}
+
+function renderBudgetPanel(data) {
+  const list = document.getElementById("budget-list");
+  list.innerHTML = "";
+  list.appendChild(renderBudgetForm(data));
+  list.appendChild(renderBudgetDetail(data));
+}
+
+function todayIso() {
+  const d = new Date();
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  return `${yyyy}-${mm}-${dd}`;
+}
+
+function budgetField(labelText, input, id) {
+  const wrap = el("div", "budget-field");
+  if (id) wrap.id = id;
+  wrap.appendChild(el("label", "budget-label", labelText));
+  wrap.appendChild(input);
+  return wrap;
+}
+
+function renderBudgetForm(data) {
+  const form = el("form", "budget-form");
+
+  const mode = el("select", "budget-input");
+  mode.id = "bf-action";
+  [["spend", "Dépense"], ["income", "Revenu"], ["tick_recurring", "Pointer une récurrente"]]
+    .forEach(([v, l]) => {
+      const o = el("option", null, l);
+      o.value = v;
+      mode.appendChild(o);
+    });
+  form.appendChild(budgetField("Type", mode));
+
+  // Récurrente (mode tick) — peuplée depuis les pending du cycle.
+  const recur = el("select", "budget-input");
+  recur.id = "bf-recurring";
+  const pending = data.pending || [];
+  if (pending.length === 0) {
+    const o = el("option", null, "Aucune récurrente à pointer");
+    o.value = "";
+    recur.appendChild(o);
+  } else {
+    pending.forEach((p) => {
+      const o = el("option", null, `${p.label} — ${formatEur(p.amount_eur)} (le ${p.day})`);
+      o.value = p.key;
+      recur.appendChild(o);
+    });
+  }
+  form.appendChild(budgetField("Récurrente", recur, "bf-recurring-field"));
+
+  const amount = el("input", "budget-input");
+  amount.id = "bf-amount";
+  amount.type = "number";
+  amount.step = "0.01";
+  amount.min = "0";
+  amount.inputMode = "decimal";
+  amount.placeholder = "0,00";
+  form.appendChild(budgetField("Montant (€)", amount, "bf-amount-field"));
+
+  const label = el("input", "budget-input");
+  label.id = "bf-label";
+  label.type = "text";
+  label.placeholder = "ex. courses";
+  form.appendChild(budgetField("Libellé", label, "bf-label-field"));
+
+  const cat = el("input", "budget-input");
+  cat.id = "bf-category";
+  cat.type = "text";
+  cat.placeholder = "ex. alimentation";
+  cat.setAttribute("list", "bf-category-list");
+  const dl = el("datalist");
+  dl.id = "bf-category-list";
+  (data.envelopes || []).forEach((env) => {
+    const o = el("option");
+    o.value = env.category;
+    dl.appendChild(o);
+  });
+  const catField = budgetField("Catégorie", cat, "bf-category-field");
+  catField.appendChild(dl);
+  form.appendChild(catField);
+
+  const dateInput = el("input", "budget-input");
+  dateInput.id = "bf-date";
+  dateInput.type = "date";
+  dateInput.value = todayIso();
+  form.appendChild(budgetField("Date", dateInput));
+
+  const sharedWrap = el("label", "budget-check");
+  sharedWrap.id = "bf-shared-field";
+  const shared = el("input");
+  shared.id = "bf-shared";
+  shared.type = "checkbox";
+  sharedWrap.appendChild(shared);
+  sharedWrap.appendChild(el("span", null, "Compte joint"));
+  form.appendChild(sharedWrap);
+
+  const cycleWrap = el("label", "budget-check");
+  cycleWrap.id = "bf-cycle-field";
+  const cycle = el("input");
+  cycle.id = "bf-cycle";
+  cycle.type = "checkbox";
+  cycleWrap.appendChild(cycle);
+  cycleWrap.appendChild(el("span", null, "C'est mon salaire (démarre un cycle)"));
+  form.appendChild(cycleWrap);
+
+  const submit = el("button", "budget-submit", "Enregistrer");
+  submit.type = "submit";
+  form.appendChild(submit);
+
+  mode.addEventListener("change", () => applyBudgetFormMode(form));
+  form.addEventListener("submit", (e) => {
+    e.preventDefault();
+    submitExpense(form);
+  });
+  applyBudgetFormMode(form);
+  return form;
+}
+
+function applyBudgetFormMode(form) {
+  const action = form.querySelector("#bf-action").value;
+  const show = (sel, on) => {
+    const node = form.querySelector(sel);
+    if (node) node.style.display = on ? "" : "none";
+  };
+  show("#bf-recurring-field", action === "tick_recurring");
+  // Montant optionnel en mode tick (override du montant YAML), requis sinon.
+  show("#bf-label-field", action !== "tick_recurring");
+  show("#bf-category-field", action === "spend");
+  show("#bf-shared-field", action === "spend");
+  show("#bf-cycle-field", action === "income");
+  const amountLabel = form.querySelector("#bf-amount-field .budget-label");
+  if (amountLabel) {
+    amountLabel.textContent = action === "tick_recurring" ? "Montant (€) — optionnel" : "Montant (€)";
+  }
+}
+
+async function submitExpense(form) {
+  const action = form.querySelector("#bf-action").value;
+  const rawAmount = form.querySelector("#bf-amount").value.trim().replace(",", ".");
+  const amountNum = rawAmount === "" ? null : Number(rawAmount);
+  const payload = {
+    action,
+    amount_eur: amountNum !== null && !Number.isNaN(amountNum) ? amountNum : null,
+    label: form.querySelector("#bf-label").value.trim() || null,
+    category: form.querySelector("#bf-category").value.trim() || null,
+    occurred_on: form.querySelector("#bf-date").value || null,
+    shared: form.querySelector("#bf-shared").checked,
+    recurring_key:
+      action === "tick_recurring" ? form.querySelector("#bf-recurring").value || null : null,
+    starts_cycle: action === "income" ? form.querySelector("#bf-cycle").checked : false,
+  };
+
+  // Garde-fous côté client (le backend reste l'autorité de validation).
+  if ((action === "spend" || action === "income") && (payload.amount_eur === null || payload.amount_eur <= 0)) {
+    showToast("Montant requis");
+    return;
+  }
+  if (action === "tick_recurring" && !payload.recurring_key) {
+    showToast("Aucune récurrente à pointer");
+    return;
+  }
+
+  const submitBtn = form.querySelector(".budget-submit");
+  submitBtn.disabled = true;
+  try {
+    const res = await fetch(`${API_BASE}/expenses`, {
+      method: "POST",
+      headers: { "X-API-Key": API_KEY, "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) throw new Error(`${res.status}`);
+    const result = await res.json();
+    showToast(result.recorded === false ? "Déjà pointé ce cycle" : "Saisie enregistrée");
+    // Recharge le budget complet : récap à jour + formulaire réinitialisé
+    // (date re-défaut à aujourd'hui).
+    await openBudget();
+  } catch (e) {
+    showToast("Enregistrement impossible");
+    submitBtn.disabled = false;
+  }
+}
+
+function renderBudgetDetail(data) {
+  const wrap = el("div", "budget-detail");
+  const body = el("div", "markdown-body budget-recap");
+  body.innerHTML = renderMarkdown(renderBudgetMarkdown(data));
+  wrap.appendChild(body);
+  const exportBtn = el("button", "budget-export", "Exporter CSV");
+  exportBtn.type = "button";
+  exportBtn.onclick = () => exportExpensesCsv(data.cycle_start || data.month, data.cycle_end);
+  wrap.appendChild(exportBtn);
+  return wrap;
 }
 
 async function exportExpensesCsv(startIso, endIso) {

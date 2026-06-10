@@ -12,6 +12,7 @@ from __future__ import annotations
 import base64
 from collections import deque
 from collections.abc import AsyncIterator
+from datetime import date
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
 
@@ -1371,3 +1372,207 @@ async def test_history_paginates_with_before_id(
     older_body = older.json()
     assert older_body["has_more"] is False
     assert [m["content"] for m in older_body["messages"]] == ["q0", "r0"]
+
+
+# --- POST /expenses (saisie directe par formulaire, sans LLM) ---------------
+
+
+def _profile_with_recurring() -> UserProfile:
+    """Profil minimal portant une récurrente `loyer` (pour les ticks)."""
+    return UserProfile(
+        raw_yaml="finances:\n  recurring:\n    - key: loyer",
+        is_loaded=True,
+        data={
+            "finances": {
+                "recurring": [
+                    {"key": "loyer", "label": "Loyer", "amount": 800, "day": 5, "kind": "expense"}
+                ]
+            }
+        },
+    )
+
+
+async def test_create_expense_without_api_key_returns_403(client: AsyncClient) -> None:
+    response = await client.post("/expenses", json={"action": "spend", "amount_eur": 10})
+    assert response.status_code == 403
+
+
+async def test_create_expense_spend_records_punctual(client: AsyncClient, state: AppState) -> None:
+    """Une dépense ponctuelle est persistée via add_punctual, date par défaut = aujourd'hui."""
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+
+    from bot.finance.models import Expense
+
+    fake = Expense(
+        kind="punctual",
+        amount_cents=1250,
+        label="courses",
+        category="alimentation",
+        occurred_on=date(2026, 6, 10),
+        shared=False,
+    )
+    fake.id = 7
+    state.deps.expenses.add_punctual = AsyncMock(return_value=fake)
+
+    response = await client.post(
+        "/expenses",
+        headers={"X-API-Key": API_KEY},
+        json={
+            "action": "spend",
+            "amount_eur": 12.5,
+            "label": "courses",
+            "category": "alimentation",
+        },
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["recorded"] is True
+    assert body["transaction"]["kind"] == "punctual"
+    assert body["transaction"]["amount_eur"] == 12.5
+    assert body["transaction"]["category"] == "alimentation"
+
+    kwargs = state.deps.expenses.add_punctual.call_args.kwargs
+    assert kwargs["amount_cents"] == 1250
+    assert kwargs["shared"] is False
+    today = datetime.now(ZoneInfo("Europe/Paris")).date()
+    assert kwargs["occurred_on"] == today
+
+
+async def test_create_expense_spend_shared_flag(client: AsyncClient, state: AppState) -> None:
+    from bot.finance.models import Expense
+
+    fake = Expense(
+        kind="punctual",
+        amount_cents=2000,
+        label="resto",
+        category=None,
+        occurred_on=date(2026, 6, 9),
+        shared=True,
+    )
+    fake.id = 8
+    state.deps.expenses.add_punctual = AsyncMock(return_value=fake)
+
+    response = await client.post(
+        "/expenses",
+        headers={"X-API-Key": API_KEY},
+        json={"action": "spend", "amount_eur": 20, "label": "resto", "shared": True},
+    )
+    assert response.status_code == 200
+    assert state.deps.expenses.add_punctual.call_args.kwargs["shared"] is True
+    assert response.json()["transaction"]["shared"] is True
+
+
+async def test_create_expense_income_starts_cycle(client: AsyncClient, state: AppState) -> None:
+    """Un revenu avec starts_cycle ancre un cycle puis enregistre la ligne income."""
+    from bot.finance.models import Expense
+
+    fake = Expense(
+        kind="income",
+        amount_cents=250000,
+        label="Salaire",
+        category=None,
+        occurred_on=date(2026, 6, 1),
+        shared=False,
+    )
+    fake.id = 9
+    state.deps.expenses.add_income = AsyncMock(return_value=fake)
+    state.deps.expenses.start_cycle = AsyncMock()
+
+    response = await client.post(
+        "/expenses",
+        headers={"X-API-Key": API_KEY},
+        json={
+            "action": "income",
+            "amount_eur": 2500,
+            "label": "Salaire",
+            "occurred_on": "2026-06-01",
+            "starts_cycle": True,
+        },
+    )
+    assert response.status_code == 200
+    assert response.json()["transaction"]["kind"] == "income"
+    state.deps.expenses.start_cycle.assert_awaited_once_with(date(2026, 6, 1))
+    assert state.deps.expenses.add_income.call_args.kwargs["amount_cents"] == 250000
+
+
+async def test_create_expense_tick_recurring_records_then_idempotent(
+    client: AsyncClient, state: AppState
+) -> None:
+    """Premier tick enregistré (recorded=True), second ignoré (recorded=False)."""
+    from bot.finance.models import Expense
+
+    state.deps.profile = _profile_with_recurring()
+    tick = Expense(
+        kind="recurring_tick",
+        amount_cents=80000,
+        label="Loyer",
+        recurring_key="loyer",
+        category=None,
+        occurred_on=date(2026, 6, 5),
+        shared=False,
+    )
+    tick.id = 10
+    # Premier appel → tick ; second → None (déjà pointé dans le cycle).
+    state.deps.expenses.tick_recurring_once = AsyncMock(side_effect=[tick, None])
+
+    first = await client.post(
+        "/expenses",
+        headers={"X-API-Key": API_KEY},
+        json={"action": "tick_recurring", "recurring_key": "loyer"},
+    )
+    assert first.status_code == 200
+    first_body = first.json()
+    assert first_body["recorded"] is True
+    assert first_body["transaction"]["recurring_key"] == "loyer"
+    # Montant repris du YAML (800€) faute d'override.
+    assert state.deps.expenses.tick_recurring_once.call_args.kwargs["amount_cents"] == 80000
+
+    second = await client.post(
+        "/expenses",
+        headers={"X-API-Key": API_KEY},
+        json={"action": "tick_recurring", "recurring_key": "loyer"},
+    )
+    assert second.status_code == 200
+    second_body = second.json()
+    assert second_body["recorded"] is False
+    assert second_body["transaction"] is None
+
+
+async def test_create_expense_tick_unknown_key_returns_404(
+    client: AsyncClient, state: AppState
+) -> None:
+    state.deps.profile = _profile_with_recurring()
+    response = await client.post(
+        "/expenses",
+        headers={"X-API-Key": API_KEY},
+        json={"action": "tick_recurring", "recurring_key": "inconnu"},
+    )
+    assert response.status_code == 404
+
+
+async def test_create_expense_spend_without_amount_returns_400(client: AsyncClient) -> None:
+    response = await client.post(
+        "/expenses",
+        headers={"X-API-Key": API_KEY},
+        json={"action": "spend", "label": "courses"},
+    )
+    assert response.status_code == 400
+
+
+async def test_create_expense_negative_amount_returns_400(client: AsyncClient) -> None:
+    response = await client.post(
+        "/expenses",
+        headers={"X-API-Key": API_KEY},
+        json={"action": "income", "amount_eur": -5},
+    )
+    assert response.status_code == 400
+
+
+async def test_create_expense_bad_date_returns_400(client: AsyncClient) -> None:
+    response = await client.post(
+        "/expenses",
+        headers={"X-API-Key": API_KEY},
+        json={"action": "spend", "amount_eur": 10, "occurred_on": "10/06/2026"},
+    )
+    assert response.status_code == 400
