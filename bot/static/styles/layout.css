@@ -7,7 +7,12 @@ html, body { height: 100%; background: var(--bg); color: var(--text); font-famil
    #app remplit alors tout le web view, composer collée en bas. */
 :root { --app-h: 100%; }
 
-#app { display: flex; flex-direction: column; height: var(--app-h); max-width: 480px; margin: 0 auto; background: var(--bg); position: relative; overflow: hidden; }
+/* isolation: isolate → #app devient son propre contexte d'empilement.
+   SANS lui, les pseudo-éléments blooms/grain en z-index négatif se peignent
+   derrière le fond opaque de #app (= masqués sur Safari : dashboard tout gris).
+   AVEC lui, ils se peignent au-dessus du fond mais sous le contenu, comme les
+   blooms du mode dialogue (#chat-view, déjà un contexte via son z-index). */
+#app { display: flex; flex-direction: column; height: var(--app-h); max-width: 480px; margin: 0 auto; background: var(--bg); position: relative; overflow: hidden; isolation: isolate; }
 /* Fond vivant « Liquid Glass » : trois halos colorés (blooms) qui dérivent
    lentement derrière tout le contenu (z-index -2). C'est ce que les surfaces
    de verre (cards, dock, panneaux) réfractent via backdrop-filter — sans ce
