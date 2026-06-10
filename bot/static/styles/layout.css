@@ -1,26 +1,25 @@
-html, body { height: 100%; background: var(--bg); color: var(--text); font-family: var(--font-body); overflow: hidden; -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility; }
+/* ── Modèle de scroll : le DOCUMENT est le scroller racine ──
+   Safari/iOS 26 accroche tout son rendu Liquid Glass au root scroller :
+   rétraction des barres en navigateur, clavier au-dessus des fixed, et
+   effet « scroll edge » (prolongement flouté du contenu dans la bande
+   système ~59px sous le web view en PWA). Un document verrouillé
+   (overflow hidden + hauteur figée + scrollers internes) désactivait tout
+   ça : bande morte plate en PWA, barres jamais rétractées en navigateur,
+   gestion clavier à la main. Même modèle que domestique-ai : body scrolle,
+   header sticky, dock fixed, zéro JS viewport. */
+html { background: var(--bg); }
+body { min-height: 100dvh; color: var(--text); font-family: var(--font-body); overscroll-behavior-y: none; -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility; }
 
-/* Hauteur du #app pilotée par JS (cf. setupAppHeight) :
-   - clavier fermé → 100% (du web view, via body height:100%) ;
-   - clavier ouvert → visualViewport.height en px + translate.
-   Fallback 100% pour le rendu pré-JS / navigateurs sans visualViewport :
-   #app remplit alors tout le web view, composer collée en bas. */
-:root { --app-h: 100%; }
-
-/* isolation: isolate → #app devient son propre contexte d'empilement.
-   SANS lui, les pseudo-éléments blooms/grain en z-index négatif se peignent
-   derrière le fond opaque de #app (= masqués sur Safari : dashboard tout gris).
-   AVEC lui, ils se peignent au-dessus du fond mais sous le contenu, comme les
-   blooms du mode dialogue (#chat-view, déjà un contexte via son z-index). */
-#app { display: flex; flex-direction: column; height: var(--app-h); max-width: 480px; margin: 0 auto; background: var(--bg); position: relative; overflow: hidden; isolation: isolate; }
 /* Fond vivant « Liquid Glass » : trois halos colorés (blooms) qui dérivent
-   lentement derrière tout le contenu (z-index -2). C'est ce que les surfaces
-   de verre (cards, dock, panneaux) réfractent via backdrop-filter — sans ce
-   fond le verre retombe en aplat gris. inset négatif = overscan pour que la
-   dérive ne révèle pas les bords. pointer-events none = purement décoratif. */
-#app::before {
+   lentement derrière tout le contenu, en FIXED sur le viewport (ils ne
+   suivent pas le scroll du document). z-index négatif sans fond opaque sur
+   body : ils se peignent au-dessus du fond de html, sous le contenu. C'est
+   ce que les surfaces de verre (cards, dock, panneaux) réfractent via
+   backdrop-filter — sans ce fond le verre retombe en aplat gris. inset
+   négatif = overscan pour que la dérive ne révèle pas les bords. */
+body::before {
   content: "";
-  position: absolute;
+  position: fixed;
   inset: -12%;
   z-index: -2;
   pointer-events: none;
@@ -33,9 +32,9 @@ html, body { height: 100%; background: var(--bg); color: var(--text); font-famil
 }
 /* Grain papier : voile de bruit fractal très subtil par-dessus les blooms
    (z-index -1, toujours derrière les cards), pour casser les dégradés. */
-#app::after {
+body::after {
   content: "";
-  position: absolute;
+  position: fixed;
   inset: 0;
   z-index: -1;
   pointer-events: none;
@@ -44,10 +43,13 @@ html, body { height: 100%; background: var(--bg); color: var(--text); font-famil
   background-size: 160px 160px;
 }
 
+/* Simple gabarit centré : la hauteur vient du contenu (le body scrolle). */
+#app { min-height: 100dvh; max-width: 480px; margin: 0 auto; position: relative; }
+
 /* ── Header ──
-   Transparent : les blooms du fond passent derrière le titre. Les boutons
-   deviennent des lozenges de verre. */
-header { display: flex; align-items: center; gap: 12px; padding: 12px 16px; padding-top: max(12px, env(safe-area-inset-top)); background: transparent; flex-shrink: 0; position: relative; z-index: 2; }
+   Sticky : reste collé en haut pendant que le document scrolle dessous,
+   voilé de verre (--chrome-fill + blur) pour rester lisible. */
+header { display: flex; align-items: center; gap: 12px; padding: 12px 16px; padding-top: max(12px, env(safe-area-inset-top)); position: sticky; top: 0; z-index: 5; background: var(--chrome-fill); -webkit-backdrop-filter: var(--glass-blur); backdrop-filter: var(--glass-blur); }
 .greeting { flex: 1; min-width: 0; }
 /* Greeting en label instrument : Plex Sans, capitales espacées, ossature. */
 .greeting-name { font-weight: 600; font-size: 15px; letter-spacing: 0.6px; text-transform: uppercase; line-height: 1.1; }
@@ -63,11 +65,11 @@ header { display: flex; align-items: center; gap: 12px; padding: 12px 16px; padd
 .badge { position: absolute; top: -3px; right: -3px; background: var(--red); color: #fff; font-size: 9px; font-weight: 700; min-width: 16px; height: 16px; padding: 0 4px; border-radius: 8px; display: flex; align-items: center; justify-content: center; }
 
 /* ── Dashboard feed ──
-   padding-bottom large : le dock flotte par-dessus (position absolute), les
-   dernières cards doivent pouvoir scroller au-dessus sans rester masquées. */
-#dashboard { flex: 1; overflow-y: auto; padding: 12px 14px 96px; display: flex; flex-direction: column; gap: 10px; scroll-behavior: smooth; -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 118px), transparent); mask-image: linear-gradient(to bottom, #000 calc(100% - 118px), transparent); }
-#dashboard::-webkit-scrollbar { width: 3px; }
-#dashboard::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 4px; }
+   Flux normal du document (plus de scroll interne : c'est le body qui
+   scrolle, Safari dessine lui-même le fade d'edge). padding-bottom large :
+   le dock fixed flotte par-dessus, les dernières cards doivent pouvoir
+   scroller au-dessus sans rester masquées. */
+#dashboard { padding: 12px 14px 110px; display: flex; flex-direction: column; gap: 10px; }
 
 /* Rangée de deux cards compactes côte à côte (météo + prochain évent,
    actu + pour toi). min-width: 0 sur les enfants pour que l'ellipsis des
@@ -78,17 +80,16 @@ header { display: flex; align-items: center; gap: 12px; padding: 12px 16px; padd
 /* ── Composer wrap (preview + input bar) — DOCK FLOTTANT ──
    En « Liquid Glass », la barre décolle du bas et flotte en capsule de verre
    par-dessus le contenu qui scrolle derrière (cf. le dock iOS 26 / Instagram).
-   Mécanique iOS préservée : positionné en absolute bottom:0 du #app, le dock
-   ride toujours le bas du #app — dont la hauteur (--app-h) suit visualViewport
-   quand le clavier s'ouvre (cf. setupAppHeight) — donc il reste au-dessus du
-   clavier exactement comme avant. La marge basse (env safe-area, min 14px)
-   laisse le dock léviter ; les ~59px système iOS sous le web view sont peints
-   par theme-color (= couleur de base du fond) et prolongent les blooms.
-   pointer-events none sur l'enveloppe : les marges transparentes laissent
-   passer les taps vers les cards ; les enfants réactivent les events. */
+   FIXED sur le viewport : le document scrolle derrière, et WebKit 26 garde
+   nativement les fixed au-dessus du clavier quand le document est le
+   scroller (plus de JS --app-h). max-width aligné sur #app pour rester
+   dans le gabarit centré. pointer-events none sur l'enveloppe : les marges
+   transparentes laissent passer les taps ; les enfants réactivent. */
 .composer-wrap {
-  position: absolute;
+  position: fixed;
   left: 0; right: 0; bottom: 0;
+  max-width: 480px;
+  margin: 0 auto;
   z-index: 9;
   padding: 8px 14px max(14px, env(safe-area-inset-bottom));
   background: transparent;

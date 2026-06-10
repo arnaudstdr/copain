@@ -64,16 +64,16 @@
 
 
 /* ── Bulle de réponse éphémère ── (verre, flotte au-dessus du dock) */
-#ephemeral { position: absolute; bottom: 92px; left: 14px; right: 14px; background: var(--glass-fill-2); -webkit-backdrop-filter: var(--glass-blur); backdrop-filter: var(--glass-blur); border: 1px solid var(--glass-edge); border-radius: 18px; padding: 13px 15px; font-size: 13.5px; line-height: 1.5; color: var(--text); z-index: 8; box-shadow: var(--glass-shadow), var(--glass-inset); animation: slideUpFade 0.2s ease; cursor: pointer; white-space: pre-wrap; max-height: 50dvh; overflow-y: auto; }
+#ephemeral { position: fixed; bottom: 92px; left: 14px; right: 14px; max-width: 452px; margin: 0 auto; background: var(--glass-fill-2); -webkit-backdrop-filter: var(--glass-blur); backdrop-filter: var(--glass-blur); border: 1px solid var(--glass-edge); border-radius: 18px; padding: 13px 15px; font-size: 13.5px; line-height: 1.5; color: var(--text); z-index: 8; box-shadow: var(--glass-shadow), var(--glass-inset); animation: slideUpFade 0.2s ease; cursor: pointer; white-space: pre-wrap; max-height: 50dvh; overflow-y: auto; }
 #ephemeral.hidden { display: none; }
 
 /* ── Toast ── (verre) */
-#toast { position: absolute; bottom: 100px; left: 50%; transform: translateX(-50%); background: var(--glass-fill-2); -webkit-backdrop-filter: var(--glass-blur); backdrop-filter: var(--glass-blur); border: 1px solid var(--glass-edge); border-radius: 20px; padding: 9px 18px; font-size: 13px; color: var(--text); white-space: nowrap; z-index: 20; box-shadow: var(--glass-shadow); animation: toastIn 0.2s ease; pointer-events: none; max-width: 86%; overflow: hidden; text-overflow: ellipsis; }
+#toast { position: fixed; bottom: 100px; left: 50%; transform: translateX(-50%); background: var(--glass-fill-2); -webkit-backdrop-filter: var(--glass-blur); backdrop-filter: var(--glass-blur); border: 1px solid var(--glass-edge); border-radius: 20px; padding: 9px 18px; font-size: 13px; color: var(--text); white-space: nowrap; z-index: 20; box-shadow: var(--glass-shadow); animation: toastIn 0.2s ease; pointer-events: none; max-width: 86%; overflow: hidden; text-overflow: ellipsis; }
 .toast-content { display: inline-flex; align-items: center; gap: 6px; }
 .toast-content .lucide { color: var(--green); }
 
 /* ── Notifications overlay ── */
-.overlay { position: absolute; inset: 0; background: var(--overlay-bg); z-index: 15; display: flex; flex-direction: column; justify-content: flex-end; animation: fadeIn 0.15s ease; }
+.overlay { position: fixed; inset: 0; background: var(--overlay-bg); z-index: 15; display: flex; flex-direction: column; justify-content: flex-end; animation: fadeIn 0.15s ease; }
 .overlay.hidden { display: none; }
 .panel { position: relative; background: var(--glass-fill-2); -webkit-backdrop-filter: blur(30px) saturate(190%); backdrop-filter: blur(30px) saturate(190%); border-top: 1px solid var(--glass-edge); border-radius: 24px 24px 0 0; padding-bottom: max(20px, env(safe-area-inset-bottom)); box-shadow: 0 -10px 40px -12px rgba(0,0,0,0.3), var(--glass-inset); animation: slideUp 0.25s ease; max-height: 75dvh; display: flex; flex-direction: column; }
 .panel::before { content: ""; position: absolute; inset: 0; border-radius: inherit; pointer-events: none; background: linear-gradient(180deg, var(--glass-rim) 0%, transparent 6%); opacity: 0.6; }
@@ -195,12 +195,14 @@ select.budget-input { cursor: pointer; }
 .dot:nth-child(2) { animation-delay: 0.2s; }
 .dot:nth-child(3) { animation-delay: 0.4s; }
 
-/* Chat overlay = full-app (mêmes blooms que le dashboard derrière le verre) */
-#chat-view { position: absolute; inset: 0; background: var(--bg); z-index: 12; display: flex; flex-direction: column; overflow: hidden; animation: slideRight 0.2s ease; }
+/* Chat overlay = full-app (mêmes blooms que le dashboard derrière le verre).
+   FIXED sur le viewport (le document scrolle derrière, eux gardent leur
+   scroll interne) ; max-width aligné sur le gabarit #app. */
+#chat-view { position: fixed; inset: 0; max-width: 480px; margin: 0 auto; background: var(--bg); z-index: 12; display: flex; flex-direction: column; overflow: hidden; animation: slideRight 0.2s ease; }
 #chat-view.hidden { display: none; }
 
 /* Markdown full-screen view (briefings, actu, …) */
-#markdown-view { position: absolute; inset: 0; background: var(--bg); z-index: 12; display: flex; flex-direction: column; overflow: hidden; animation: slideRight 0.2s ease; }
+#markdown-view { position: fixed; inset: 0; max-width: 480px; margin: 0 auto; background: var(--bg); z-index: 12; display: flex; flex-direction: column; overflow: hidden; animation: slideRight 0.2s ease; }
 #markdown-view.hidden { display: none; }
 
 /* Fond vivant (blooms) derrière le contenu de ces vues plein écran. */

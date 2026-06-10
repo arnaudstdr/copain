@@ -1,7 +1,7 @@
 /* ── Animations ── */
 @keyframes flash { 0% { background: var(--glass-fill); } 30% { background: var(--flash-bg); } 100% { background: var(--glass-fill); } }
 
-/* Dérive lente des blooms du fond (cf. #app::before). Très subtile, coupée
+/* Dérive lente des blooms du fond (cf. body::before). Très subtile, coupée
    si l'utilisateur a demandé la réduction des animations (plus bas). */
 @keyframes bloomDrift {
   0%, 100% { transform: translate(0, 0) scale(1); }
@@ -32,5 +32,5 @@
    demandé la réduction des animations. */
 @media (prefers-reduced-motion: reduce) {
   #dashboard:not(.revealed) > * { animation: none; }
-  #app::before { animation: none; }
+  body::before { animation: none; }
 }

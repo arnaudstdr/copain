@@ -19,7 +19,6 @@ import {
 
 // ── Init ──────────────────────────────────────────────────────────────────
 document.addEventListener("DOMContentLoaded", async () => {
-  setupAppHeight();
   renderGreeting();
   try {
     const cfg = await fetchConfig();
@@ -43,42 +42,9 @@ function renderGreeting() {
   document.getElementById("greeting-date").textContent = d.toLocaleDateString("fr-FR", opts);
 }
 
-// Pilote la hauteur du #app en distinguant deux états (le bug venait de les
-// traiter pareil avec visualViewport.height) :
-//
-//  • Clavier FERMÉ → --app-h = 100% du web view (layout viewport). En PWA
-//    standalone iOS, visualViewport.height au repos exclut une bande en bas,
-//    ce qui laissait le #app trop court → bande vide sous la composer. 100%
-//    remplit tout l'écran ; la safe-area-inset-bottom de la composer gère le
-//    home indicator.
-//  • Clavier OUVERT → --app-h = visualViewport.height + translate de
-//    offsetTop. Le #app rétrécit pile à la zone visible au-dessus du clavier,
-//    donc la composer reste visible. Figer la hauteur (ancien comportement)
-//    laissait le #app plus grand que la zone visible → la barre passait
-//    derrière le clavier et iOS sur-scrollait (il fallait swiper pour la voir).
-//
-// Détection clavier : un écart > 150px entre innerHeight (stable en standalone)
-// et la hauteur visuelle = clavier ouvert.
-function setupAppHeight() {
-  const vv = window.visualViewport;
-  const root = document.documentElement;
-  const app = document.getElementById("app");
-  const update = () => {
-    const keyboardOpen = vv && window.innerHeight - vv.height > 150;
-    if (vv && keyboardOpen) {
-      root.style.setProperty("--app-h", `${vv.height}px`);
-      app.style.transform = `translateY(${vv.offsetTop}px)`;
-    } else {
-      root.style.setProperty("--app-h", "100%");
-      app.style.transform = "";
-    }
-  };
-  update();
-  vv?.addEventListener("resize", update);
-  vv?.addEventListener("scroll", update);
-  // Petit délai pour laisser iOS finir sa rotation avant de mesurer.
-  window.addEventListener("orientationchange", () => setTimeout(update, 150));
-}
+// NB : plus de gestion JS de la hauteur (--app-h / visualViewport). Le
+// document est désormais le scroller racine (cf. layout.css) : WebKit 26
+// gère nativement le clavier au-dessus des éléments fixed dans ce modèle.
 
 // ── Bindings DOM ──────────────────────────────────────────────────────────
 // Remplacent les attributs on* inline du HTML statique : en
