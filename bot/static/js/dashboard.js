@@ -196,7 +196,7 @@ function envelopeRow(env) {
   const amounts = el(
     "span",
     "envelope-amounts",
-    `${formatEur(env.spent_eur)} / ${formatEur(env.allocated_eur)}`
+    `${formatEur(env.remaining_eur)} / ${formatEur(env.allocated_eur)}`
   );
   if (env.is_overrun) amounts.classList.add("envelope-amount-overrun");
   top.appendChild(labelWrap);

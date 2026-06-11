@@ -5,7 +5,7 @@
 import { setApiKey, PROFILE_NAME } from "./state.js?v=13";
 import { showToast, hideEphemeral } from "./ui.js?v=13";
 import { fetchConfig } from "./api.js?v=13";
-import { loadDashboard, closeBudget } from "./dashboard.js?v=13";
+import { loadDashboard, closeBudget } from "./dashboard.js?v=14";
 import { closeMarkdownView } from "./markdown.js?v=13";
 import { openNotifs, closeNotifs, closeTasks, closeWeather, closeEvents, closeForYou } from "./overlays.js?v=13";
 import {

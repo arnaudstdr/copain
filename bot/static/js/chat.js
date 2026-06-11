@@ -7,7 +7,7 @@ import {
 import { el, lucideNode, sameDay, formatDaySeparator } from "./ui.js?v=13";
 import { callImage, callTextStream, fetchHistory } from "./api.js?v=13";
 import { renderMarkdown } from "./markdown.js?v=13";
-import { loadDashboard, invalidateCards } from "./dashboard.js?v=13";
+import { loadDashboard, invalidateCards } from "./dashboard.js?v=14";
 import { setLoading, autoResize, updateChatSendBtn } from "./composer.js?v=13";
 
 // ── Mode chat (overlay) ───────────────────────────────────────────────────
