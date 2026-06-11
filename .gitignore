@@ -38,3 +38,7 @@ tmp/
 .DS_Store
 Thumbs.db
 tmp/
+
+# graphify
+graphify-out/
+.claude/settings.json
