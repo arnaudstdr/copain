@@ -109,7 +109,10 @@ header { display: flex; align-items: center; gap: 12px; padding: 12px 16px; padd
 .icon-btn.recording { background: var(--flash-bg); border-color: var(--accent); color: var(--accent); }
 /* font-size: 16px obligatoire — sinon iOS Safari déclenche un zoom auto
    sur focus de l'input et ne dézoome jamais à blur. */
-.msg-input { flex: 1; background: var(--glass-fill); border: 1px solid var(--glass-edge); border-radius: 22px; padding: 9px 15px; color: var(--text); font-size: 16px; resize: none; line-height: 1.4; font-family: inherit; max-height: 110px; overflow-y: auto; outline: none; transition: border-color 0.15s; }
+/* min-width: 0 obligatoire — sinon la largeur intrinsèque du textarea
+   (min-width: auto par défaut sur un form control) empêche le flex de
+   rétrécir et pousse le bouton d'envoi hors du padding droit de la barre. */
+.msg-input { flex: 1; min-width: 0; background: var(--glass-fill); border: 1px solid var(--glass-edge); border-radius: 22px; padding: 9px 15px; color: var(--text); font-size: 16px; resize: none; line-height: 1.4; font-family: inherit; max-height: 110px; overflow-y: auto; outline: none; transition: border-color 0.15s; }
 .msg-input:focus { border-color: var(--accent); }
 .send-btn { width: 42px; height: 42px; border-radius: 50%; background: linear-gradient(155deg, var(--accent2), var(--accent)); border: 1px solid rgba(255, 255, 255, 0.25); color: #fff; cursor: pointer; display: flex; align-items: center; justify-content: center; flex-shrink: 0; box-shadow: 0 6px 16px -4px var(--accent), inset 0 1px 1px rgba(255, 255, 255, 0.45); transition: opacity 0.15s, transform 0.1s; }
 .send-btn:active { transform: scale(0.9); }
