@@ -198,7 +198,12 @@ select.budget-input { cursor: pointer; }
 /* Chat overlay = full-app (mêmes blooms que le dashboard derrière le verre).
    FIXED sur le viewport (le document scrolle derrière, eux gardent leur
    scroll interne) ; max-width aligné sur le gabarit #app. */
-#chat-view { position: fixed; inset: 0; max-width: 480px; margin: 0 auto; background: var(--bg); z-index: 12; display: flex; flex-direction: column; overflow: hidden; animation: slideRight 0.2s ease; }
+/* Entrée en fondu SANS transform : un translateX sur #chat-view (ex-slideRight)
+   casse le position:fixed de la composer enfant sur WebKit iOS — l'élément
+   fixed reste figé là où le transform l'a déplacé (capsule décalée à droite).
+   fadeIn (opacity seule) évite ce piège tout en gardant la composer fixed
+   pour l'avoidance native du clavier. */
+#chat-view { position: fixed; inset: 0; max-width: 480px; margin: 0 auto; background: var(--bg); z-index: 12; display: flex; flex-direction: column; overflow: hidden; animation: fadeIn 0.2s ease; }
 #chat-view.hidden { display: none; }
 
 /* Markdown full-screen view (briefings, actu, …) */
