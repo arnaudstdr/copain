@@ -381,7 +381,7 @@ async def test_process_depot_loop_detected_suffixes_ack(deps: BotDeps) -> None:
 
     assert text == "Noté. — 3e fois que ça revient."
     call = deps.memory.find_similar_depots.await_args
-    assert call.kwargs["max_distance"] == 0.35
+    assert call.kwargs["max_distance"] == 0.25
     assert call.kwargs["top_k"] == 8
 
 

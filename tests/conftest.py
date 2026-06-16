@@ -143,7 +143,7 @@ def make_settings(**overrides: Any) -> MagicMock:
     settings.work_lon = 7.48
     settings.work_city = "Obernai"
     settings.fuel_default_radius_km = 10.0
-    settings.foryou_similarity_max_distance = 0.35
+    settings.foryou_similarity_max_distance = 0.25
     settings.max_history = 6
     settings.chat_history_retention_days = 30
     settings.open_worries_prompt_limit = 10

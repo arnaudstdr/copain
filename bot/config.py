@@ -204,7 +204,7 @@ def load_settings() -> Settings:
         proactivity_rain_cooldown_hours=_env_int("PROACTIVITY_RAIN_COOLDOWN_HOURS", 3),
         finance_reminder_hour=_env_int("FINANCE_REMINDER_HOUR", 9),
         finance_reminder_minute=_env_int("FINANCE_REMINDER_MINUTE", 0),
-        foryou_similarity_max_distance=_env_float("FORYOU_SIMILARITY_MAX_DISTANCE", 0.35),
+        foryou_similarity_max_distance=_env_float("FORYOU_SIMILARITY_MAX_DISTANCE", 0.25),
         max_history=_env_int("MAX_HISTORY", 6),
         chat_history_retention_days=_env_int("CHAT_HISTORY_RETENTION_DAYS", 30),
         open_worries_prompt_limit=_env_int("OPEN_WORRIES_PROMPT_LIMIT", 10),

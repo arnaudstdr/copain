@@ -210,7 +210,7 @@ def test_foryou_similarity_max_distance_default(monkeypatch: pytest.MonkeyPatch)
     _minimal_env(monkeypatch)
     monkeypatch.delenv("FORYOU_SIMILARITY_MAX_DISTANCE", raising=False)
     settings = load_settings()
-    assert settings.foryou_similarity_max_distance == 0.35
+    assert settings.foryou_similarity_max_distance == 0.25
 
 
 def test_foryou_similarity_max_distance_custom(monkeypatch: pytest.MonkeyPatch) -> None:

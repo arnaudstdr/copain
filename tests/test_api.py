@@ -296,7 +296,7 @@ async def test_ask_depot_intent_refreshes_foryou_card(client: AsyncClient, state
     state.deps.thoughts.list_since = AsyncMock(return_value=[])
     state.deps.memory.store_depot = AsyncMock()
     state.deps.memory.find_similar_depots = AsyncMock(return_value=[])
-    state.deps.settings.foryou_similarity_max_distance = 0.35
+    state.deps.settings.foryou_similarity_max_distance = 0.25
     state.deps.llm.call = AsyncMock(
         return_value=(
             "Noté.\n"
