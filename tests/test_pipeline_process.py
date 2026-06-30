@@ -1022,6 +1022,47 @@ async def test_process_expense_spend_propagates_shared_true(deps: BotDeps) -> No
     assert kwargs["category"] == "nourriture"
 
 
+async def test_process_image_expense_defers_write(deps: BotDeps) -> None:
+    """Une dépense lue depuis une IMAGE (capture Revolut) n'écrit RIEN.
+
+    Le chemin image diffère l'écriture : l'API renverra un brouillon que
+    l'utilisateur confirmera via POST /expenses. Aucun appel à add_punctual.
+    """
+    deps.llm.call = AsyncMock(
+        return_value=_meta_block(
+            intent="expense",
+            expense_action="spend",
+            expense_amount=23.4,
+            expense_label="Lidl",
+            expense_category="courses",
+            expense_when="hier",
+            response_text="Noté.",
+        )
+    )
+    text, meta = await process_message("", deps=deps, images=[b"fakepng"])
+    assert meta["intent"] == "expense"
+    assert "vérifie" in text.lower()
+    deps.expenses.add_punctual.assert_not_awaited()
+    # Pas d'entrée dans l'history non plus (aucun effet acté).
+    assert len(deps.history) == 0
+
+
+async def test_process_text_expense_still_writes(deps: BotDeps) -> None:
+    """Non-régression : sans image, le chemin texte écrit toujours immédiatement."""
+    deps.llm.call = AsyncMock(
+        return_value=_meta_block(
+            intent="expense",
+            expense_action="spend",
+            expense_amount=23.4,
+            expense_label="Lidl",
+            expense_category="courses",
+            response_text="Noté.",
+        )
+    )
+    await process_message("j'ai dépensé 23,40€ chez Lidl", deps=deps)
+    deps.expenses.add_punctual.assert_awaited_once()
+
+
 async def test_process_expense_income_calls_add_income(deps: BotDeps) -> None:
     deps.llm.call = AsyncMock(
         return_value=_meta_block(

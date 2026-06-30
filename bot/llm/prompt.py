@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING
 from zoneinfo import ZoneInfo
 
 from bot.finance.budget import PendingRecurring
+from bot.finance.config import EnvelopeItem
 from bot.locations.presence import LocationPresence
 from bot.profile import UserProfile
 
@@ -232,6 +233,19 @@ Si l'utilisateur envoie une image (avec ou sans légende), analyse-la visuelleme
 - Tu PEUX choisir intent=task ou memory selon le contenu extrait (ex: photo de reçu
   → memory pour garder la trace du montant/date ; photo d'une note "appeler le
   plombier demain 14h" → task avec due_str)
+- CAS SPÉCIAL — capture d'écran d'une transaction bancaire (app Revolut, détail
+  d'une opération) : route en intent=expense, action=spend. Recopie le montant
+  EUR effectivement débité dans expense.amount, le marchand dans expense.label,
+  et la DATE affichée à l'écran dans expense.when (recopie-la telle quelle, ex.
+  "5 juin", "hier"). Mappe la catégorie de la transaction sur l'une des
+  enveloppes listées dans « Enveloppes budgétaires » si elle existe (sinon laisse
+  une catégorie libre courte). Laisse TOUJOURS shared=false : c'est l'utilisateur
+  qui décidera s'il s'agit d'un compte joint au moment de confirmer.
+  EXCEPTION : si la transaction correspond clairement à une récurrente listée
+  dans « Récurrentes en attente ce mois » (même marchand/libellé, ex. Netflix,
+  Spotify), utilise action=tick_recurring avec son recurring_key (et NON spend),
+  pour éviter de compter deux fois une dépense déjà provisionnée. Recopie quand
+  même le montant débité dans expense.amount (utile si le prélèvement a changé).
 
 Exemples pour intent=feed :
 
@@ -374,7 +388,7 @@ Réponse attendue :
 Noté.
 <meta>{{"intent":"expense","store_memory":false,"memory_content":null,"task":{{"content":null,"due_str":null}},"feed":{{"action":null,"name":null,"url":null}},"event":{{"action":null,"title":null,"start_str":null,"end_str":null,"location":null,"description":null,"range_str":null,"calendar_name":null}},"fuel":{{"fuel_type":null,"radius_km":null,"location":null}},"weather":{{"location":null,"when":null}},"depot":{{"content":null,"kind":null}},"expense":{{"action":"spend","amount":15,"label":"Lidl","category":"nourriture","recurring_key":null,"when":null,"shared":false,"starts_cycle":false}},"search_query":null}}</meta>
 
-{profile_section}{location_section}{pending_recurring_section}{open_worries_section}--- Contexte mémoire (notes et conversations passées pertinentes) ---
+{profile_section}{location_section}{pending_recurring_section}{envelopes_section}{open_worries_section}--- Contexte mémoire (notes et conversations passées pertinentes) ---
 {memory_context}
 
 --- Historique récent de la conversation ---
@@ -444,6 +458,24 @@ def _format_pending_recurring_section(pending: Sequence[PendingRecurring]) -> st
     return "\n".join(lines) + "\n\n"
 
 
+def _format_envelopes_section(envelopes: Sequence[EnvelopeItem]) -> str:
+    """Construit le bloc des enveloppes budgétaires (uniquement si non-vide).
+
+    Ce bloc liste les catégories d'enveloppes disponibles pour que le LLM
+    produise un `expense.category` qui matche une enveloppe existante (mapping
+    stable d'une catégorie bancaire — ex. capture Revolut « Groceries » — vers
+    le slug exact attendu côté code). Le marqueur « (compte joint) » signale
+    les enveloppes partagées.
+    """
+    if not envelopes:
+        return ""
+    lines = ["--- Enveloppes budgétaires (catégories disponibles) ---"]
+    for env in envelopes:
+        joint = " (compte joint)" if env.shared else ""
+        lines.append(f"- {env.category} ({env.label}){joint}")
+    return "\n".join(lines) + "\n\n"
+
+
 def _format_open_worries_section(worries: Sequence[Thought], timezone: str) -> str:
     """Construit le bloc des soucis ouverts (uniquement si non-vide).
 
@@ -472,6 +504,7 @@ def build_system_prompt(
     current_location: LocationPresence | None = None,
     timezone: str = "Europe/Paris",
     pending_recurring: Sequence[PendingRecurring] | None = None,
+    envelopes: Sequence[EnvelopeItem] | None = None,
     open_worries: Sequence[Thought] | None = None,
 ) -> str:
     """Formate le template avec les blocs mémoire, historique, profil, datetime et ville.
@@ -495,6 +528,11 @@ def build_system_prompt(
     LLM peut alors produire `expense.recurring_key` valide. Quand la
     liste est vide, le bloc est omis pour ne pas polluer le prompt.
 
+    Quand `envelopes` est fourni et non-vide, un bloc liste les catégories
+    d'enveloppes (essence, courses, compte joint…) pour que le LLM mappe une
+    catégorie bancaire (ex. capture Revolut) sur un `expense.category` qui
+    matche une enveloppe existante. Même logique d'omission quand vide.
+
     Quand `open_worries` est fourni et non-vide, un bloc liste les soucis
     ouverts (id + contenu + date de dépôt) pour que le LLM puisse désigner
     un `depot.thought_id` valide lors d'une clôture en langage naturel.
@@ -512,6 +550,7 @@ def build_system_prompt(
     else:
         location_section = ""
     pending_recurring_section = _format_pending_recurring_section(pending_recurring or ())
+    envelopes_section = _format_envelopes_section(envelopes or ())
     open_worries_section = _format_open_worries_section(open_worries or (), timezone)
     body = SYSTEM_PROMPT_TEMPLATE.format(
         current_datetime=current_datetime,
@@ -519,6 +558,7 @@ def build_system_prompt(
         profile_section=profile_section,
         location_section=location_section,
         pending_recurring_section=pending_recurring_section,
+        envelopes_section=envelopes_section,
         open_worries_section=open_worries_section,
         memory_context=_format_block(memory_context, "élément pertinent"),
         recent_history=_format_block(recent_history, "échange récent"),

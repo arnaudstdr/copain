@@ -9,7 +9,7 @@ import {
 } from "./state.js?v=13";
 import { el, lucideNode, showToast, showEphemeral } from "./ui.js?v=14";
 import { callText, callImage } from "./api.js?v=13";
-import { loadDashboard, flashCards, invalidateCards } from "./dashboard.js?v=15";
+import { loadDashboard, flashCards, invalidateCards, openBudgetWithDraft } from "./dashboard.js?v=16";
 
 // ── État local du module ──────────────────────────────────────────────────
 // Instance SpeechRecognition partagée entre les deux micros (dashboard et
@@ -43,6 +43,14 @@ export async function send() {
 function handleAskResponse(body, userText) {
   const intent = body.intent || "answer";
   const refresh = body.refresh_cards || [];
+
+  // Dépense lue depuis une capture (Revolut) : rien n'a été écrit côté serveur.
+  // On ouvre le formulaire Budget pré-rempli pour confirmation (l'utilisateur
+  // valide, ajuste la catégorie ou coche « Compte joint » avant d'enregistrer).
+  if (body.expense_draft) {
+    openBudgetWithDraft(body.expense_draft);
+    return;
+  }
 
   // Mode action : toast court + rafraîchissement des cards concernées
   if (refresh.length > 0) {

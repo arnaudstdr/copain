@@ -9,7 +9,7 @@ import {
   formatHM, formatRelativeDay, formatDateTime, isAllDayEvent,
   showToast,
 } from "./ui.js?v=14";
-import { loadDashboard, renderBellBadge, invalidateCards } from "./dashboard.js?v=15";
+import { loadDashboard, renderBellBadge, invalidateCards } from "./dashboard.js?v=16";
 
 // ── Notifications panel ───────────────────────────────────────────────────
 export async function openNotifs() {

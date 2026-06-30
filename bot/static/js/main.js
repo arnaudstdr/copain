@@ -5,20 +5,20 @@
 import { setApiKey, PROFILE_NAME } from "./state.js?v=13";
 import { showToast, hideEphemeral } from "./ui.js?v=14";
 import { fetchConfig } from "./api.js?v=13";
-import { loadDashboard, closeBudget } from "./dashboard.js?v=15";
+import { loadDashboard, closeBudget } from "./dashboard.js?v=16";
 import { closeMarkdownView } from "./markdown.js?v=13";
 import {
   openNotifs, closeNotifs, closeTasks, closeWeather, closeEvents, closeForYou,
   closeDepot, submitDepot, toggleDepotChip,
-} from "./overlays.js?v=14";
+} from "./overlays.js?v=15";
 import {
   send, handleKey, updateSendBtn, updateChatSendBtn, autoResize,
   handleFileChange, removeAttachment, toggleMic, toggleChatMic,
-} from "./composer.js?v=13";
+} from "./composer.js?v=14";
 import {
   openChat, closeChat, chatSend, handleChatKey,
   handleChatFileChange, removeChatAttachment,
-} from "./chat.js?v=13";
+} from "./chat.js?v=14";
 
 // ── Init ──────────────────────────────────────────────────────────────────
 document.addEventListener("DOMContentLoaded", async () => {

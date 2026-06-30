@@ -14,7 +14,7 @@ from collections import deque
 from collections.abc import AsyncIterator
 from datetime import date
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from httpx import ASGITransport, AsyncClient
@@ -548,6 +548,109 @@ async def test_ask_image_decodes_base64_and_calls_pipeline(
     state.deps.llm.call.assert_awaited_once()
     kwargs = state.deps.llm.call.await_args.kwargs
     assert kwargs["images"] == [b"fake-image-bytes"]
+
+
+async def test_ask_image_expense_returns_draft_not_written(
+    client: AsyncClient, state: AppState
+) -> None:
+    """Une capture lue comme dépense renvoie un brouillon, sans rien écrire.
+
+    refresh_cards reste vide (rien n'a bougé tant que l'utilisateur n'a pas
+    validé via POST /expenses), et la date FR est résolue en ISO.
+    """
+    from bot.pipeline import parse_when_to_date
+
+    expense_meta = {
+        **_NEUTRAL_META,
+        "intent": "expense",
+        "expense": {
+            "action": "spend",
+            "amount": 23.4,
+            "label": "Lidl",
+            "category": "courses",
+            "recurring_key": None,
+            "when": None,
+            "shared": False,
+            "starts_cycle": False,
+        },
+    }
+    payload = {
+        "message": "",
+        "image_b64": base64.b64encode(b"revolut-screenshot").decode("ascii"),
+        "media_type": "image/png",
+    }
+    with patch(
+        "bot.api.process_message",
+        new=AsyncMock(return_value=("J'ai lu cette dépense, vérifie-la.", expense_meta)),
+    ):
+        response = await client.post("/ask/image", headers={"X-API-Key": API_KEY}, json=payload)
+    assert response.status_code == 200
+    body = response.json()
+    assert body["refresh_cards"] == []
+    draft = body["expense_draft"]
+    assert draft is not None
+    assert draft["action"] == "spend"
+    assert draft["amount_eur"] == 23.4
+    assert draft["label"] == "Lidl"
+    assert draft["category"] == "courses"
+    assert draft["shared"] is False
+    assert draft["occurred_on"] == parse_when_to_date(None, "Europe/Paris").isoformat()
+    # Aucune écriture côté ExpenseManager : la confirmation passera par /expenses.
+    state.deps.expenses.add_punctual.assert_not_called()
+
+
+async def test_ask_image_recurring_returns_tick_draft(client: AsyncClient, state: AppState) -> None:
+    """Une transaction reconnue comme récurrente (Netflix) → brouillon tick_recurring.
+
+    Le brouillon porte recurring_key pour que le formulaire s'ouvre déjà réglé
+    sur « Pointer une récurrente » (évite le double comptage). Rien n'est écrit.
+    """
+    recurring_meta = {
+        **_NEUTRAL_META,
+        "intent": "expense",
+        "expense": {
+            "action": "tick_recurring",
+            "amount": 17.99,
+            "label": "Netflix",
+            "category": None,
+            "recurring_key": "netflix",
+            "when": None,
+            "shared": False,
+            "starts_cycle": False,
+        },
+    }
+    payload = {
+        "message": "",
+        "image_b64": base64.b64encode(b"revolut-netflix").decode("ascii"),
+        "media_type": "image/png",
+    }
+    with patch(
+        "bot.api.process_message",
+        new=AsyncMock(return_value=("J'ai lu cette dépense, vérifie-la.", recurring_meta)),
+    ):
+        response = await client.post("/ask/image", headers={"X-API-Key": API_KEY}, json=payload)
+    assert response.status_code == 200
+    draft = response.json()["expense_draft"]
+    assert draft["action"] == "tick_recurring"
+    assert draft["recurring_key"] == "netflix"
+    assert draft["amount_eur"] == 17.99
+    state.deps.expenses.tick_recurring_once.assert_not_called()
+
+
+async def test_ask_image_non_expense_has_no_draft(client: AsyncClient, state: AppState) -> None:
+    """Une photo non-financière garde le comportement actuel (pas de draft)."""
+    payload = {
+        "message": "décris cette photo",
+        "image_b64": base64.b64encode(b"dog-photo").decode("ascii"),
+        "media_type": "image/jpeg",
+    }
+    with patch(
+        "bot.api.process_message",
+        new=AsyncMock(return_value=("Un chien.", _NEUTRAL_META)),
+    ):
+        response = await client.post("/ask/image", headers={"X-API-Key": API_KEY}, json=payload)
+    assert response.status_code == 200
+    assert response.json()["expense_draft"] is None
 
 
 async def test_ask_image_rejects_invalid_base64(client: AsyncClient) -> None:

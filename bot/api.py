@@ -43,6 +43,7 @@ from bot.logging_conf import get_logger
 from bot.pipeline import (
     BotDeps,
     loop_suffix,
+    parse_when_to_date,
     process_message,
     process_message_stream,
     record_depot,
@@ -104,7 +105,10 @@ class AskRequest(BaseModel):
 
 
 class AskImageRequest(BaseModel):
-    message: str = Field(min_length=1, max_length=MAX_MESSAGE_CHARS)
+    # Légende optionnelle : une capture (ticket, transaction Revolut) est
+    # souvent envoyée sans texte. Le pipeline substitue un prompt par défaut
+    # quand le message est vide (cf. process_message).
+    message: str = Field(min_length=0, max_length=MAX_MESSAGE_CHARS)
     image_b64: str = Field(
         min_length=1,
         max_length=MAX_IMAGE_B64_CHARS,
@@ -115,10 +119,30 @@ class AskImageRequest(BaseModel):
     )
 
 
+class ExpenseDraft(BaseModel):
+    """Brouillon de dépense extrait d'une capture d'écran (Revolut) via vision.
+
+    Sous-ensemble front-friendly d'`ExpenseCreate` : renvoyé par `POST /ask/image`
+    quand le LLM lit une transaction, mais SANS rien écrire. La PWA ouvre le
+    formulaire Budget pré-rempli avec ces valeurs ; l'écriture réelle passe par
+    le `POST /expenses` existant après confirmation de l'utilisateur (qui peut
+    cocher « Compte joint » et ajuster la catégorie).
+    """
+
+    action: str = "spend"
+    amount_eur: float | None = None
+    label: str | None = None
+    category: str | None = None
+    occurred_on: str | None = None
+    shared: bool = False
+    recurring_key: str | None = None
+
+
 class AskResponse(BaseModel):
     response: str
     intent: str = "answer"
     refresh_cards: list[str] = Field(default_factory=list)
+    expense_draft: ExpenseDraft | None = None
 
 
 class NotificationItem(BaseModel):
@@ -475,6 +499,29 @@ def _refresh_cards_for(meta: Meta) -> list[str]:
     return list(_REFRESH_BY_INTENT.get(meta["intent"], []))
 
 
+def _expense_draft_for(meta: Meta, timezone: str) -> ExpenseDraft | None:
+    """Construit un brouillon de dépense depuis le `<meta>` d'une capture image.
+
+    Retourne None si le meta ne porte pas de dépense. La date FR (`when`) est
+    résolue en ISO via `parse_when_to_date` (même logique que le chemin texte),
+    pour que le formulaire Budget puisse la pré-remplir directement. Aucune
+    écriture n'est faite ici : c'est le `POST /expenses` (déclenché à la
+    confirmation) qui persistera la dépense.
+    """
+    if meta["intent"] != "expense" or not meta["expense"]["action"]:
+        return None
+    em = meta["expense"]
+    return ExpenseDraft(
+        action=em["action"] or "spend",
+        amount_eur=em["amount"],
+        label=em["label"],
+        category=em["category"],
+        occurred_on=parse_when_to_date(em["when"], timezone).isoformat(),
+        shared=em["shared"],
+        recurring_key=em["recurring_key"],
+    )
+
+
 def _sse_frame(payload: dict[str, object]) -> str:
     """Sérialise un événement en frame SSE (`data: {json}\\n\\n`)."""
     return f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
@@ -761,6 +808,14 @@ def create_app(state: AppState) -> FastAPI:
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail="Internal error",
             ) from exc
+        draft = _expense_draft_for(meta, deps.settings.timezone)
+        if draft is not None:
+            # Dépense lue depuis la capture : rien n'a été écrit (cf. pipeline).
+            # On renvoie le brouillon pour pré-remplir le formulaire Budget et
+            # on laisse refresh_cards vide tant que l'utilisateur n'a pas validé.
+            return AskResponse(
+                response=reply, intent=meta["intent"], refresh_cards=[], expense_draft=draft
+            )
         return AskResponse(
             response=reply, intent=meta["intent"], refresh_cards=_refresh_cards_for(meta)
         )

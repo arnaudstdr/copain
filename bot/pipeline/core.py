@@ -182,6 +182,14 @@ async def process_message(
         return FALLBACK_TEXT, _FALLBACK_META
     text, meta = extracted
 
+    # Capture d'écran (Revolut) lue comme une dépense : on NE déclenche AUCUN
+    # side effect, donc aucune écriture. L'API renvoie un brouillon que
+    # l'utilisateur valide via le formulaire Budget (POST /expenses). Décision
+    # produit : seul le chemin image diffère l'écriture (c'est de l'argent et
+    # une lecture peut être fausse) ; le chemin texte reste silencieux-write.
+    if images and meta["intent"] == "expense" and meta["expense"]["action"]:
+        return "J'ai lu cette dépense, vérifie-la avant d'enregistrer.", meta
+
     outcome = await _route_and_apply(user_text, meta, deps, intro=text)
     if outcome.search_results is not None:
         text = await deps.llm.call_with_search(user_text, outcome.search_results)
@@ -349,8 +357,11 @@ async def _build_prompt(user_text: str, deps: BotDeps, voice_mode: bool) -> str:
     )
     tz = ZoneInfo(deps.settings.timezone)
     now_str = datetime.now(tz).strftime("%A %d %B %Y à %H:%M")
+    from bot.finance.config import extract_finance_config
+
     current_location = await deps.location_events.get_current_location()
     pending_recurring = await safe_pending_recurring(deps)
+    envelopes = extract_finance_config(deps.profile.data).envelopes
     open_worries = await safe_open_worries(deps)
     return build_system_prompt(
         memory_context=memory_context,
@@ -362,5 +373,6 @@ async def _build_prompt(user_text: str, deps: BotDeps, voice_mode: bool) -> str:
         current_location=current_location,
         timezone=deps.settings.timezone,
         pending_recurring=pending_recurring,
+        envelopes=envelopes,
         open_worries=open_worries,
     )

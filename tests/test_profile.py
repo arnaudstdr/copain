@@ -248,3 +248,51 @@ def test_build_system_prompt_injects_open_worries() -> None:
     assert "28/05" in prompt
     # Le bloc soucis doit être avant le contexte mémoire (comme les autres injections).
     assert prompt.index("--- Soucis ouverts") < prompt.index("Contexte mémoire")
+
+
+# --- Enveloppes budgétaires --------------------------------------------------
+
+
+def test_build_system_prompt_omits_envelopes_when_empty() -> None:
+    from bot.llm.prompt import build_system_prompt
+    from bot.profile import UserProfile
+
+    prompt = build_system_prompt(
+        memory_context=[],
+        recent_history=[],
+        current_datetime="lundi à 10:00",
+        home_city="Sélestat",
+        user_profile=UserProfile(raw_yaml="", is_loaded=False),
+        envelopes=(),
+    )
+    # Le template statique référence « Enveloppes budgétaires » dans la consigne
+    # image (few-shot) : on cible le marqueur de SECTION pour tester l'omission.
+    assert "--- Enveloppes budgétaires" not in prompt
+
+
+def test_build_system_prompt_injects_envelopes_with_joint_marker() -> None:
+    from bot.finance.config import EnvelopeItem
+    from bot.llm.prompt import build_system_prompt
+    from bot.profile import UserProfile
+
+    envelopes = (
+        EnvelopeItem(category="courses", label="Courses", amount_cents=60000),
+        EnvelopeItem(
+            category="nourriture",
+            label="Courses (compte joint)",
+            amount_cents=60000,
+            shared=True,
+        ),
+    )
+    prompt = build_system_prompt(
+        memory_context=[],
+        recent_history=[],
+        current_datetime="lundi à 10:00",
+        home_city="Sélestat",
+        user_profile=UserProfile(raw_yaml="", is_loaded=False),
+        envelopes=envelopes,
+    )
+    assert "--- Enveloppes budgétaires" in prompt
+    assert "courses (Courses)" in prompt
+    assert "nourriture (Courses (compte joint)) (compte joint)" in prompt
+    assert prompt.index("--- Enveloppes budgétaires") < prompt.index("Contexte mémoire")

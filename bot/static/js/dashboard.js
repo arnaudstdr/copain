@@ -13,7 +13,7 @@ import { openMarkdownView, renderMarkdown } from "./markdown.js?v=13";
 // Cycle d'import dashboard ↔ overlays accepté (cf. PROGRESS.md) : les cards
 // tappables ouvrent les overlays, et les overlays rafraîchissent le
 // dashboard à la fermeture. Bénin : fonctions hoistées, appelées au runtime.
-import { openWeather, openEvents, openTasks, openForYou, openDepot } from "./overlays.js?v=14";
+import { openWeather, openEvents, openTasks, openForYou, openDepot } from "./overlays.js?v=15";
 
 // ── Dashboard ─────────────────────────────────────────────────────────────
 export async function loadDashboard() {
@@ -233,7 +233,7 @@ function formatEur(amount) {
 // Overlay Budget interactif : formulaire de saisie directe (POST /expenses,
 // sans LLM) en haut, récap + transactions + export CSV en dessous. Le chemin
 // bot (intent=expense) reste un canal parallèle inchangé.
-async function openBudget() {
+async function openBudget(draft = null) {
   document.getElementById("budget-overlay").classList.remove("hidden");
   const list = document.getElementById("budget-list");
   list.innerHTML = '<div class="panel-empty">Chargement…</div>';
@@ -242,9 +242,38 @@ async function openBudget() {
     if (!res.ok) throw new Error(`${res.status}`);
     const data = await res.json();
     renderBudgetPanel(data);
+    if (draft) prefillBudgetForm(draft);
   } catch (e) {
     list.innerHTML = '<div class="panel-empty">Impossible de charger</div>';
   }
+}
+
+// Ouvre l'overlay Budget pré-rempli avec une dépense lue depuis une capture
+// (Revolut) via POST /ask/image. Rien n'a été écrit côté serveur : l'utilisateur
+// confirme via le bouton « Enregistrer » (→ POST /expenses), après avoir
+// éventuellement coché « Compte joint » ou ajusté la catégorie.
+export function openBudgetWithDraft(draft) {
+  return openBudget(draft);
+}
+
+function prefillBudgetForm(draft) {
+  const set = (id, val) => {
+    const node = document.getElementById(id);
+    if (node && val != null) node.value = val;
+  };
+  set("bf-action", draft.action || "spend");
+  if (draft.amount_eur != null) set("bf-amount", draft.amount_eur);
+  set("bf-label", draft.label);
+  set("bf-category", draft.category);
+  set("bf-date", draft.occurred_on);
+  // Pointage de récurrente détecté par le LLM : pré-sélectionne la récurrente.
+  // Si la clé n'est pas (ou plus) dans les pending, le select reste sur son
+  // premier item — l'utilisateur ajuste alors le menu déroulant.
+  set("bf-recurring", draft.recurring_key);
+  const shared = document.getElementById("bf-shared");
+  if (shared) shared.checked = !!draft.shared;
+  const form = document.querySelector(".budget-form");
+  if (form) applyBudgetFormMode(form);
 }
 
 export function closeBudget() {

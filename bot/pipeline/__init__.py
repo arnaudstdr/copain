@@ -13,6 +13,7 @@ from bot.pipeline.core import (
     process_message,
     process_message_stream,
 )
+from bot.pipeline.dates import parse_when_to_date
 from bot.pipeline.handlers import FALLBACK_TEXT
 from bot.pipeline.side_effects import record_depot
 
@@ -21,6 +22,7 @@ __all__ = [
     "BotDeps",
     "StreamEvent",
     "loop_suffix",
+    "parse_when_to_date",
     "process_message",
     "process_message_stream",
     "record_depot",
