@@ -252,6 +252,7 @@ class ThoughtItem(BaseModel):
     content: str
     kind: str | None
     created_at: str  # ISO
+    closed: bool
 
 
 class ThoughtsListResponse(BaseModel):
@@ -1063,6 +1064,7 @@ def create_app(state: AppState) -> FastAPI:
                 content=thought.content,
                 kind=thought.kind,
                 created_at=thought.created_at.isoformat(),
+                closed=thought.processed_at is not None,
             ),
             ack=ack,
         )
@@ -1076,13 +1078,20 @@ def create_app(state: AppState) -> FastAPI:
         deps: BotDeps = Depends(get_deps),
         since: str | None = None,
         limit: int = 50,
+        kind: str | None = None,
     ) -> ThoughtsListResponse:
         """Liste les dépôts cognitifs récents (intent `depot`).
 
-        Filtre optionnel `since` (ISO 8601). `limit` plafonné à 200 (clamp
-        tolérant plutôt que rejet) pour éviter les payloads trop gros. Tri
-        chronologique inverse (les dépôts les plus récents en premier).
+        Filtre optionnel `since` (ISO 8601) et `kind` (`worry|idea|note`).
+        `limit` plafonné à 200 (clamp tolérant plutôt que rejet) pour éviter
+        les payloads trop gros. Tri chronologique inverse (les dépôts les plus
+        récents en premier).
         """
+        if kind is not None and kind not in VALID_DEPOT_KINDS:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"`kind` doit valoir {sorted(VALID_DEPOT_KINDS)}, reçu {kind!r}",
+            )
         capped_limit = max(1, min(limit, 200))
         if since is not None:
             try:
@@ -1096,7 +1105,7 @@ def create_app(state: AppState) -> FastAPI:
                 since_dt = since_dt.replace(tzinfo=UTC)
             rows = await deps.thoughts.list_since(since_dt, limit=capped_limit)
         else:
-            rows = await deps.thoughts.list_recent(limit=capped_limit)
+            rows = await deps.thoughts.list_recent(limit=capped_limit, kind=kind)
 
         items = [
             ThoughtItem(
@@ -1104,6 +1113,7 @@ def create_app(state: AppState) -> FastAPI:
                 content=t.content,
                 kind=t.kind,
                 created_at=t.created_at.isoformat(),
+                closed=t.processed_at is not None,
             )
             for t in rows
         ]

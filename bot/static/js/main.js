@@ -10,7 +10,7 @@ import { closeMarkdownView } from "./markdown.js?v=13";
 import {
   openNotifs, closeNotifs, closeTasks, closeWeather, closeEvents, closeForYou,
   closeDepot, submitDepot, toggleDepotChip,
-} from "./overlays.js?v=15";
+} from "./overlays.js?v=16";
 import {
   send, handleKey, updateSendBtn, updateChatSendBtn, autoResize,
   handleFileChange, removeAttachment, toggleMic, toggleChatMic,

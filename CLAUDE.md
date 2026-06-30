@@ -83,7 +83,11 @@ pour vider des pensées parasites sans tenter de les traiter.
   express »** (entrée) fait face à « Pour toi » (sortie) sur la même ligne :
   son tap ouvre un overlay de saisie qui POST sur `/thoughts` (décharge
   cognitive directe, **sans LLM**, réutilise `record_depot` comme le chemin
-  `intent=depot` — zéro divergence). La card « tâches du jour » a été retirée
+  `intent=depot` — zéro divergence). Sélectionner un chip de type
+  (souci/idée/note) a un **double rôle** : taguer le prochain dépôt **et**
+  lister sous le formulaire les dépôts déjà enregistrés de ce type (`GET
+  /thoughts?kind=`, sans LLM) ; chaque entrée ouverte porte un bouton « C'est
+  réglé » (`POST /thoughts/{id}/close`). La card « tâches du jour » a été retirée
   (une liste rajoute de la charge mentale) ; l'endpoint `GET /tasks` et son
   overlay restent en place. Mode chat optionnel via
   icône 💬 pour les conversations longues. Le **mode dialogue conserve son
@@ -296,7 +300,7 @@ Missing or invalid → 403 with a warning logged (source IP included).
 | GET    | `/notifications`   | —                                                                 | `{ "notifications": [ { "id": int, "text": str, "created_at": str } ] }`                                |
 | GET    | `/dashboard`       | —                                                                 | `{ "weather": …, "next_event": …, "today_tasks": […], "unread_notifications": int }`                    |
 | GET    | `/news/latest`     | —                                                                 | `{ "markdown": str, "fetched_at": str }`                                                                |
-| GET    | `/thoughts`        | `?since=<ISO>&limit=<int>` (optionnels)                           | `{ "thoughts": [ { "id": int, "content": str, "kind": str\|null, "created_at": str } ] }`              |
+| GET    | `/thoughts`        | `?since=<ISO>&limit=<int>&kind=worry\|idea\|note` (optionnels ; `kind` invalide → 400) | `{ "thoughts": [ { "id": int, "content": str, "kind": str\|null, "created_at": str, "closed": bool } ] }` |
 | POST   | `/thoughts`        | `{ "content": str, "kind"?: "worry"\|"idea"\|"note"\|null }`      | `{ "recorded": bool, "thought": {…}, "ack": str }` — dépôt express (card dashboard, sans LLM). 400 si content vide / kind invalide |
 | POST   | `/thoughts/{id}/close` | —                                                             | `{ "closed": bool, "thought_id": int }` (idempotent, 404 si id inconnu)                                 |
 | GET    | `/history`         | `?limit=<int>&before_id=<int>` (optionnels)                       | `{ "messages": [ { "id": int, "role": str, "content": str, "created_at": str } ], "has_more": bool }`   |

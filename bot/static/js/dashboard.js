@@ -13,7 +13,7 @@ import { openMarkdownView, renderMarkdown } from "./markdown.js?v=13";
 // Cycle d'import dashboard ↔ overlays accepté (cf. PROGRESS.md) : les cards
 // tappables ouvrent les overlays, et les overlays rafraîchissent le
 // dashboard à la fermeture. Bénin : fonctions hoistées, appelées au runtime.
-import { openWeather, openEvents, openTasks, openForYou, openDepot } from "./overlays.js?v=15";
+import { openWeather, openEvents, openTasks, openForYou, openDepot } from "./overlays.js?v=16";
 
 // ── Dashboard ─────────────────────────────────────────────────────────────
 export async function loadDashboard() {

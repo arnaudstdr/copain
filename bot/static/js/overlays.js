@@ -7,6 +7,7 @@ import {
   el,
   lucideNode,
   formatHM, formatRelativeDay, formatDateTime, isAllDayEvent,
+  formatRelativeAge,
   showToast,
 } from "./ui.js?v=14";
 import { loadDashboard, renderBellBadge, invalidateCards } from "./dashboard.js?v=16";
@@ -73,6 +74,8 @@ export function openDepot() {
   // Aucun type (kind) sélectionné par défaut : le choix reste optionnel.
   overlay.querySelectorAll(".depot-chip").forEach(c => c.classList.remove("selected"));
   document.getElementById("depot-submit").disabled = false;
+  // Pas de chip sélectionné → pas de liste affichée à l'ouverture.
+  document.getElementById("depot-entries").innerHTML = "";
   input.focus();
 }
 
@@ -81,11 +84,87 @@ export function closeDepot() {
 }
 
 // Sélection optionnelle et exclusive du type (souci/idée/note), désélectionnable.
+// Un chip sélectionné a un double rôle : taguer le prochain dépôt ET afficher
+// les dépôts déjà enregistrés de ce type (consultation directe, sans LLM).
 export function toggleDepotChip(chip) {
   const wasSelected = chip.classList.contains("selected");
   document.getElementById("depot-overlay")
     .querySelectorAll(".depot-chip").forEach(c => c.classList.remove("selected"));
-  if (!wasSelected) chip.classList.add("selected");
+  if (!wasSelected) {
+    chip.classList.add("selected");
+    loadDepotEntries(chip.dataset.kind);
+  } else {
+    document.getElementById("depot-entries").innerHTML = "";
+  }
+}
+
+// Liste les dépôts d'un type donné (récent d'abord, clos inclus). Sans LLM :
+// réutilise GET /thoughts?kind=… . Chaque entrée ouverte porte un bouton
+// « C'est réglé » qui la clôt via POST /thoughts/{id}/close.
+async function loadDepotEntries(kind) {
+  const box = document.getElementById("depot-entries");
+  box.innerHTML = "";
+  const loading = el("div", "depot-entries-empty", "Chargement…");
+  box.appendChild(loading);
+  try {
+    const res = await fetch(`${API_BASE}/thoughts?kind=${encodeURIComponent(kind)}`, {
+      headers: { "X-API-Key": API_KEY },
+    });
+    if (!res.ok) throw new Error(`${res.status}`);
+    const data = await res.json();
+    const entries = data.thoughts || [];
+    box.innerHTML = "";
+    if (entries.length === 0) {
+      box.appendChild(el("div", "depot-entries-empty", "Rien de ce type pour l'instant."));
+      return;
+    }
+    entries.forEach(entry => box.appendChild(makeDepotEntry(entry)));
+  } catch (e) {
+    box.innerHTML = "";
+    box.appendChild(el("div", "depot-entries-empty", "Impossible de charger les dépôts."));
+  }
+}
+
+function makeDepotEntry(entry) {
+  const row = el("div", "depot-entry");
+  if (entry.closed) row.classList.add("closed");
+  const body = el("div", "depot-entry-body");
+  body.appendChild(el("div", "depot-entry-content", entry.content));
+  body.appendChild(el("div", "depot-entry-age", formatRelativeAge(entry.created_at)));
+  row.appendChild(body);
+  if (entry.closed) {
+    row.appendChild(el("span", "depot-entry-done", "réglé"));
+  } else {
+    const btn = el("button", "depot-entry-btn", "C'est réglé");
+    btn.onclick = () => closeDepotEntry(entry.id, row);
+    row.appendChild(btn);
+  }
+  return row;
+}
+
+async function closeDepotEntry(id, row) {
+  if (row.classList.contains("depot-entry-closing")) return;
+  row.classList.add("depot-entry-closing");
+  try {
+    const res = await fetch(`${API_BASE}/thoughts/${id}/close`, {
+      method: "POST",
+      headers: { "X-API-Key": API_KEY },
+    });
+    if (!res.ok) throw new Error(`${res.status}`);
+  } catch (e) {
+    row.classList.remove("depot-entry-closing");
+    showToast("Impossible de clôturer");
+    return;
+  }
+  // Clôturer un souci rend la restitution « Pour toi » obsolète.
+  invalidateCards(["foryou"]);
+  row.style.transition = "opacity 0.25s, max-height 0.25s, padding 0.25s, margin 0.25s";
+  row.style.opacity = "0";
+  row.style.maxHeight = "0";
+  row.style.padding = "0";
+  row.style.margin = "0";
+  setTimeout(() => row.remove(), 260);
+  loadDashboard();
 }
 
 export async function submitDepot() {

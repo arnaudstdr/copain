@@ -62,6 +62,15 @@ async def test_list_recent_respects_limit(manager: ThoughtManager) -> None:
     assert len(recent) == 2
 
 
+async def test_list_recent_filters_by_kind(manager: ThoughtManager) -> None:
+    await manager.create("un souci", kind="worry")
+    await manager.create("une idée", kind="idea")
+    await manager.create("une note sans type")
+
+    worries = await manager.list_recent(kind="worry")
+    assert [t.content for t in worries] == ["un souci"]
+
+
 async def test_list_since_filters_by_date(manager: ThoughtManager) -> None:
     old_cutoff = datetime.now(UTC) - timedelta(minutes=1)
     await manager.create("ancien dépôt")

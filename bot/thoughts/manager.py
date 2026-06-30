@@ -54,10 +54,17 @@ class ThoughtManager:
             await session.refresh(thought)
         return thought
 
-    async def list_recent(self, limit: int = 50) -> Sequence[Thought]:
-        """Retourne les dépôts les plus récents (ordre chronologique inverse)."""
+    async def list_recent(self, limit: int = 50, kind: str | None = None) -> Sequence[Thought]:
+        """Retourne les dépôts les plus récents (ordre chronologique inverse).
+
+        `kind` filtre strictement par type (`worry|idea|note`) quand fourni ;
+        les dépôts d'un autre type — ou au `kind` null — sont exclus.
+        """
         async with self._sessionmaker() as session:
-            stmt = select(Thought).order_by(Thought.created_at.desc()).limit(limit)
+            stmt = select(Thought)
+            if kind is not None:
+                stmt = stmt.where(Thought.kind == kind)
+            stmt = stmt.order_by(Thought.created_at.desc()).limit(limit)
             result = await session.execute(stmt)
             return result.scalars().all()  # type: ignore[no-any-return, unused-ignore]
 

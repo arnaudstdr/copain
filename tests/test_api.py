@@ -1250,6 +1250,39 @@ async def test_thoughts_clamps_excessive_limit(client: AsyncClient, state: AppSt
     assert kwargs["limit"] == 200
 
 
+async def test_thoughts_filters_by_kind_and_exposes_closed(
+    client: AsyncClient, state: AppState
+) -> None:
+    from datetime import UTC, datetime
+
+    open_w = MagicMock()
+    open_w.id = 3
+    open_w.content = "souci ouvert"
+    open_w.kind = "worry"
+    open_w.created_at = datetime(2026, 5, 18, 10, 30, tzinfo=UTC)
+    open_w.processed_at = None
+
+    closed_w = MagicMock()
+    closed_w.id = 2
+    closed_w.content = "souci réglé"
+    closed_w.kind = "worry"
+    closed_w.created_at = datetime(2026, 5, 17, 9, 0, tzinfo=UTC)
+    closed_w.processed_at = datetime(2026, 5, 19, 9, 0, tzinfo=UTC)
+
+    state.deps.thoughts.list_recent = AsyncMock(return_value=[open_w, closed_w])
+
+    response = await client.get("/thoughts?kind=worry", headers={"X-API-Key": API_KEY})
+    assert response.status_code == 200
+    body = response.json()
+    assert state.deps.thoughts.list_recent.await_args.kwargs["kind"] == "worry"
+    assert [t["closed"] for t in body["thoughts"]] == [False, True]
+
+
+async def test_thoughts_rejects_invalid_kind(client: AsyncClient, state: AppState) -> None:
+    response = await client.get("/thoughts?kind=banana", headers={"X-API-Key": API_KEY})
+    assert response.status_code == 400
+
+
 # --- POST /thoughts/{id}/close ----------------------------------------------
 
 
