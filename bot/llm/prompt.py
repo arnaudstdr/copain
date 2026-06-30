@@ -29,6 +29,19 @@ ATTENTION — TU RÉPONDS PAR LA VOIX (Siri TTS) :
 
 """
 
+# Préambule additionnel empilé SUR le préambule vocal quand l'échange fait
+# partie d'une conversation vocale continue (boucle Apple Shortcut, header
+# X-Source: siri-conversation). Plusieurs tours s'enchaînent dans la même
+# session : le LLM doit parler comme au milieu d'un dialogue, pas comme à
+# chaque fois la première réplique.
+CONVERSATION_MODE_PREAMBLE = """\
+CONTEXTE — CONVERSATION VOCALE CONTINUE (plusieurs échanges d'affilée) :
+- Ne resalue pas à chaque tour (« bonjour », « salut ») : tu es déjà dans l'échange
+- Si c'est utile, termine par une relance courte pour faire avancer la conversation ; sinon rends la main sans meubler
+- Quand l'utilisateur clôt (« merci », « c'est bon », « au revoir »), réponds par une formule de clôture brève et ne relance pas
+
+"""
+
 SYSTEM_PROMPT_TEMPLATE = """\
 Tu es l'assistant personnel d'Arnaud. Tu communiques en français, de façon
 naturelle, concise et directe. Pas de formules de politesse inutiles.
@@ -501,6 +514,7 @@ def build_system_prompt(
     home_city: str,
     user_profile: UserProfile,
     voice_mode: bool = False,
+    conversation_mode: bool = False,
     current_location: LocationPresence | None = None,
     timezone: str = "Europe/Paris",
     pending_recurring: Sequence[PendingRecurring] | None = None,
@@ -516,6 +530,12 @@ def build_system_prompt(
     du prompt : le LLM produit alors des réponses très courtes adaptées à
     une lecture vocale par Siri (déclenchée par le raccourci iOS "Dis à
     Copain").
+
+    Quand `conversation_mode=True` (boucle vocale continue, header
+    `X-Source: siri-conversation`), un second préambule est empilé sur le
+    préambule vocal : le LLM parle comme au milieu d'un dialogue (pas de
+    salutation à chaque tour, relance courte si utile, clôture brève). Ce
+    mode implique le mode vocal côté transport.
 
     Quand `current_location` est fourni, un bloc "Localisation actuelle"
     est inséré entre le profil et le contexte mémoire pour informer le
@@ -563,4 +583,9 @@ def build_system_prompt(
         memory_context=_format_block(memory_context, "élément pertinent"),
         recent_history=_format_block(recent_history, "échange récent"),
     )
-    return VOICE_MODE_PREAMBLE + body if voice_mode else body
+    prefix = ""
+    if voice_mode:
+        prefix += VOICE_MODE_PREAMBLE
+    if conversation_mode:
+        prefix += CONVERSATION_MODE_PREAMBLE
+    return prefix + body

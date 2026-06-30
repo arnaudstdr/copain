@@ -380,6 +380,23 @@ async def test_ask_with_x_source_siri_activates_voice_mode(
             json={"message": "salut"},
         )
     assert pm.await_args.kwargs.get("voice_mode") is True
+    assert pm.await_args.kwargs.get("conversation_mode") is False
+
+
+async def test_ask_with_x_source_siri_conversation_activates_conversation_mode(
+    client: AsyncClient, state: AppState
+) -> None:
+    """Header X-Source: siri-conversation → conversation_mode=True ET voice_mode=True."""
+    from unittest.mock import patch
+
+    with patch("bot.api.process_message", new=AsyncMock(return_value=("ok", _NEUTRAL_META))) as pm:
+        await client.post(
+            "/ask",
+            headers={"X-API-Key": API_KEY, "X-Source": "siri-conversation"},
+            json={"message": "salut"},
+        )
+    assert pm.await_args.kwargs.get("conversation_mode") is True
+    assert pm.await_args.kwargs.get("voice_mode") is True
 
 
 async def test_ask_with_other_x_source_does_not_activate_voice(

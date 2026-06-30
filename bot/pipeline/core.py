@@ -155,6 +155,7 @@ async def process_message(
     deps: BotDeps,
     images: list[bytes] | None = None,
     voice_mode: bool = False,
+    conversation_mode: bool = False,
 ) -> tuple[str, Meta]:
     """Point d'entrée unique appelé par la couche transport (`bot/api.py`).
 
@@ -167,10 +168,17 @@ async def process_message(
     le system prompt reçoit un préambule TTS-friendly pour produire des
     réponses très courtes et lisibles à voix haute.
 
+    Quand `conversation_mode=True` (boucle vocale continue, header
+    X-Source: siri-conversation), un préambule supplémentaire rend le LLM
+    naturel dans un dialogue multi-tours (pas de re-salutation, relance
+    courte si utile, clôture brève). Ce mode implique le mode vocal.
+
     Les rappels créés en chemin par `apply_side_effects` écrivent dans
     `pending_notifications` via `ReminderScheduler.add_reminder`.
     """
-    system_prompt = await _build_prompt(user_text, deps, voice_mode=voice_mode)
+    system_prompt = await _build_prompt(
+        user_text, deps, voice_mode=voice_mode, conversation_mode=conversation_mode
+    )
 
     user_content = (
         user_text if user_text else "Analyse cette image et propose une action pertinente."
@@ -347,7 +355,12 @@ async def _persist_chat_exchange(deps: BotDeps, user_text: str, assistant_text: 
         log.warning("chat_history_persist_failed", exc_info=True)
 
 
-async def _build_prompt(user_text: str, deps: BotDeps, voice_mode: bool) -> str:
+async def _build_prompt(
+    user_text: str,
+    deps: BotDeps,
+    voice_mode: bool,
+    conversation_mode: bool = False,
+) -> str:
     """Prépare le system prompt complet (mémoire RAG, localisation, pending récurrentes).
 
     Partagé entre `process_message` et `process_message_stream`.
@@ -370,6 +383,7 @@ async def _build_prompt(user_text: str, deps: BotDeps, voice_mode: bool) -> str:
         home_city=deps.settings.home_city,
         user_profile=deps.profile,
         voice_mode=voice_mode,
+        conversation_mode=conversation_mode,
         current_location=current_location,
         timezone=deps.settings.timezone,
         pending_recurring=pending_recurring,

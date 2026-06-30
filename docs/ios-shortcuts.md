@@ -59,6 +59,45 @@ Si la voix Siri prononce "indéfini" ou un truc bizarre :
 - Lance le Shortcut depuis l'app Raccourcis (pas via Siri) pour voir
   le payload JSON renvoyé par le bot dans la step `Get Contents of URL`.
 
+### Variante : conversation vocale continue
+
+Plutôt qu'un échange unique « une question → une réponse », on peut
+enchaîner plusieurs tours mains-libres dans la même session, à la manière
+d'une vraie conversation. Le principe : une boucle `Repeat` qui dicte,
+interroge le bot, lit la réponse, puis recommence.
+
+Côté bot, il suffit d'envoyer le header **`X-Source: siri-conversation`**
+au lieu de `siri`. Le bot active alors un mode dialogue : il ne te resalue
+pas à chaque tour, relance brièvement quand c'est pertinent, et sait
+clore proprement quand tu remercies ou dis au revoir. Ce mode hérite
+automatiquement du formatage vocal (réponses courtes, sans markdown).
+
+La mémoire courte de la conversation est gérée côté bot : tant que les
+appels s'enchaînent, le contexte des tours précédents est réinjecté
+automatiquement, sans rien à faire côté Shortcut.
+
+| # | Action | Paramètres |
+|---|---|---|
+| 1 | `Repeat` | Repeat **8** times (garde-fou anti-boucle infinie) |
+| 2 | &nbsp;&nbsp;`Dictate Text` | Language : French (France). Stop Listening : When I Stop Talking |
+| 3 | &nbsp;&nbsp;`If` | `Dictated Text` *contient* « au revoir » (ou « stop », « c'est bon ») → `Stop This Shortcut`. Sinon, continuer. |
+| 4 | &nbsp;&nbsp;`Get Contents of URL` | URL : `http://<pi-tailscale-host>:8000/ask` <br> Method : `POST` <br> Headers : <br>  • `X-API-Key` = `<API_KEY du .env>` <br>  • `X-Source` = `siri-conversation` <br>  • `Content-Type` = `application/json` <br> Request Body (JSON) : Key `message` = `Dictated Text` (étape 2) |
+| 5 | &nbsp;&nbsp;`Get Dictionary Value` | Get : `Value` <br> Key : `response` <br> Dictionary : `Contents of URL` |
+| 6 | &nbsp;&nbsp;`Speak Text` | Text : `Dictionary Value` (étape 5) <br> Language : French (France) <br> **Cocher `Wait Until Finished`** (sinon la dictée du tour suivant démarre par-dessus la voix) |
+| 7 | *(fin du `Repeat`)* | la boucle repart à l'étape 2 |
+
+Le couple clé pour un enchaînement propre : `Speak Text` en
+**`Wait Until Finished`** + `Dictate Text` en **`When I Stop Talking`**.
+
+#### Limites assumées de cette approche
+
+- **Pas de barge-in** : impossible de couper Copain pendant qu'il parle.
+- **Petit bip** de la dictée iOS entre chaque tour.
+- **Latence par tour** (~2-4 s) = STT Apple + aller-retour réseau + LLM
+  cloud + TTS. Confortable pour un échange posé, pas pour du ping-pong.
+- **`Repeat` borné** : prévois toujours une phrase de sortie (« au
+  revoir »), sinon la boucle tourne jusqu'à sa limite.
+
 ---
 
 ## 2. Automations de localisation

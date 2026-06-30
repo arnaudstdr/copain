@@ -109,7 +109,11 @@ pour vider des pensées parasites sans tenter de les traiter.
 - **Voix Siri**: raccourci iOS "Dis à Copain" qui POST sur `/ask` avec un
   header `X-Source: siri`. Le bot adapte alors son system prompt pour
   produire des réponses TTS-friendly (1-2 phrases, pas de markdown ni
-  d'emoji). Voir `docs/ios-shortcuts.md`.
+  d'emoji). La variante **`X-Source: siri-conversation`** (boucle Shortcut
+  multi-tours) ajoute par-dessus un mode dialogue : pas de re-salutation à
+  chaque tour, relance courte si pertinent, clôture brève (implique le
+  mode vocal ; le contexte des tours est porté par l'history roulante en
+  mémoire). Voir `docs/ios-shortcuts.md`.
 - **Localisation iPhone**: les automations iOS POSTent sur
   `POST /event/location` à chaque arrivée/départ d'une géofence (maison,
   bureau, …). Les events sont persistés dans `location_events` et la
@@ -294,7 +298,7 @@ Missing or invalid → 403 with a warning logged (source IP included).
 
 | Method | Path               | Body                                                              | Response                                                                                                |
 | ------ | ------------------ | ----------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
-| POST   | `/ask`             | `{ "message": str }` <br>(header `X-Source: siri` → mode vocal)   | `{ "response": str, "intent": str, "refresh_cards": [str] }`                                            |
+| POST   | `/ask`             | `{ "message": str }` <br>(header `X-Source: siri` → mode vocal ; `siri-conversation` → mode dialogue continu) | `{ "response": str, "intent": str, "refresh_cards": [str] }`                                            |
 | POST   | `/ask/stream`      | `{ "message": str }`                                              | SSE `text/event-stream` — frames `data: { "type": "delta"\|"replace"\|"done"\|"error", … }`             |
 | POST   | `/ask/image`       | `{ "message": str, "image_b64": str, "media_type": str }`         | `{ "response": str, "intent": str, "refresh_cards": [str] }`                                            |
 | GET    | `/notifications`   | —                                                                 | `{ "notifications": [ { "id": int, "text": str, "created_at": str } ] }`                                |

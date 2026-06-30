@@ -695,10 +695,23 @@ def create_app(state: AppState) -> FastAPI:
         deps: BotDeps = Depends(get_deps),
         x_source: str | None = Header(default=None, alias="X-Source"),
     ) -> AskResponse:
-        voice_mode = x_source == "siri"
-        log.info("ask_received", preview=payload.message[:80], voice_mode=voice_mode)
+        # "siri-conversation" = boucle vocale continue → mode conversation
+        # (préambule dialogue multi-tours) qui implique le mode vocal.
+        conversation_mode = x_source == "siri-conversation"
+        voice_mode = x_source == "siri" or conversation_mode
+        log.info(
+            "ask_received",
+            preview=payload.message[:80],
+            voice_mode=voice_mode,
+            conversation_mode=conversation_mode,
+        )
         try:
-            reply, meta = await process_message(payload.message, deps, voice_mode=voice_mode)
+            reply, meta = await process_message(
+                payload.message,
+                deps,
+                voice_mode=voice_mode,
+                conversation_mode=conversation_mode,
+            )
         except LLMError as exc:
             return AskResponse(response=_llm_error_reply(exc, kind="ask"))
         except Exception as exc:

@@ -231,6 +231,20 @@ async def test_process_default_mode_no_voice_preamble(deps: BotDeps) -> None:
     assert "TU RÉPONDS PAR LA VOIX" not in system_prompt
 
 
+async def test_process_conversation_mode_adds_dialogue_preamble(deps: BotDeps) -> None:
+    """conversation_mode=True empile le préambule dialogue ET le préambule vocal."""
+    await process_message("salut", deps=deps, voice_mode=True, conversation_mode=True)
+    system_prompt = deps.llm.call.await_args.kwargs["system"]
+    assert "CONVERSATION VOCALE CONTINUE" in system_prompt
+    assert "TU RÉPONDS PAR LA VOIX" in system_prompt
+
+
+async def test_process_default_mode_no_conversation_preamble(deps: BotDeps) -> None:
+    await process_message("salut", deps=deps)
+    system_prompt = deps.llm.call.await_args.kwargs["system"]
+    assert "CONVERSATION VOCALE CONTINUE" not in system_prompt
+
+
 async def test_process_stores_memory_when_flagged(deps: BotDeps) -> None:
     deps.llm.call = AsyncMock(
         return_value=_meta_block(
