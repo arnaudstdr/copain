@@ -78,8 +78,14 @@ pour vider des pensées parasites sans tenter de les traiter.
   reminders with five safeguards (feature flag, time window, daily budget,
   dedup, cooldown). Disabled by default.
 - **Dashboard PWA**: l'iPhone tape `/` et reçoit une PWA orientée "tableau
-  de bord" (cards météo / prochain évent / tâches / notifs / actu).
-  `GET /dashboard` agrège l'état en un seul appel. Mode chat optionnel via
+  de bord" (cards météo / prochain évent / dépôt express + pour toi / budget /
+  actu). `GET /dashboard` agrège l'état en un seul appel. La **card « Dépôt
+  express »** (entrée) fait face à « Pour toi » (sortie) sur la même ligne :
+  son tap ouvre un overlay de saisie qui POST sur `/thoughts` (décharge
+  cognitive directe, **sans LLM**, réutilise `record_depot` comme le chemin
+  `intent=depot` — zéro divergence). La card « tâches du jour » a été retirée
+  (une liste rajoute de la charge mentale) ; l'endpoint `GET /tasks` et son
+  overlay restent en place. Mode chat optionnel via
   icône 💬 pour les conversations longues. Le **mode dialogue conserve son
   historique de bulles** : les échanges streamés (`/ask/stream` uniquement —
   ni Siri, ni photos, ni bulle éphémère) sont persistés en SQLite et
@@ -146,6 +152,7 @@ FastAPI app (bot/api.py, served by uvicorn)
         │     ├── GET  /dashboard     → build_dashboard(): météo + next évent + tâches du jour + count notifs + budget
         │     ├── GET  /news/latest   → NewsCurator.fetch_top_news() → { markdown, fetched_at } (card Actu)
         │     ├── GET  /thoughts      → ThoughtManager.list_recent/list_since → liste des dépôts cognitifs
+        │     ├── POST /thoughts        → record_depot() → dépôt express (card dashboard, sans LLM) → accusé + loop_size
         │     ├── POST /thoughts/{id}/close → ThoughtManager.close(id) → tap "C'est réglé" (404 si inconnu)
         │     ├── GET  /history       → ChatHistoryManager.page(limit, before_id) → bulles du mode dialogue (scroll infini)
         │     ├── GET  /foryou        → ForYouBuilder.build() → card "Pour toi" (restitution, fail-soft)
@@ -290,6 +297,7 @@ Missing or invalid → 403 with a warning logged (source IP included).
 | GET    | `/dashboard`       | —                                                                 | `{ "weather": …, "next_event": …, "today_tasks": […], "unread_notifications": int }`                    |
 | GET    | `/news/latest`     | —                                                                 | `{ "markdown": str, "fetched_at": str }`                                                                |
 | GET    | `/thoughts`        | `?since=<ISO>&limit=<int>` (optionnels)                           | `{ "thoughts": [ { "id": int, "content": str, "kind": str\|null, "created_at": str } ] }`              |
+| POST   | `/thoughts`        | `{ "content": str, "kind"?: "worry"\|"idea"\|"note"\|null }`      | `{ "recorded": bool, "thought": {…}, "ack": str }` — dépôt express (card dashboard, sans LLM). 400 si content vide / kind invalide |
 | POST   | `/thoughts/{id}/close` | —                                                             | `{ "closed": bool, "thought_id": int }` (idempotent, 404 si id inconnu)                                 |
 | GET    | `/history`         | `?limit=<int>&before_id=<int>` (optionnels)                       | `{ "messages": [ { "id": int, "role": str, "content": str, "created_at": str } ], "has_more": bool }`   |
 | GET    | `/foryou`          | —                                                                 | `{ "items": [ { "type": str, "message": str, "thought_ids": [int] } ], "fetched_at": str }`             |

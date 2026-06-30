@@ -3,11 +3,14 @@
 // dashboard) et centralise le câblage des listeners du DOM statique —
 // les listeners du DOM dynamique (cards, rows) restent dans les renderers.
 import { setApiKey, PROFILE_NAME } from "./state.js?v=13";
-import { showToast, hideEphemeral } from "./ui.js?v=13";
+import { showToast, hideEphemeral } from "./ui.js?v=14";
 import { fetchConfig } from "./api.js?v=13";
-import { loadDashboard, closeBudget } from "./dashboard.js?v=14";
+import { loadDashboard, closeBudget } from "./dashboard.js?v=15";
 import { closeMarkdownView } from "./markdown.js?v=13";
-import { openNotifs, closeNotifs, closeTasks, closeWeather, closeEvents, closeForYou } from "./overlays.js?v=13";
+import {
+  openNotifs, closeNotifs, closeTasks, closeWeather, closeEvents, closeForYou,
+  closeDepot, submitDepot, toggleDepotChip,
+} from "./overlays.js?v=14";
 import {
   send, handleKey, updateSendBtn, updateChatSendBtn, autoResize,
   handleFileChange, removeAttachment, toggleMic, toggleChatMic,
@@ -85,6 +88,11 @@ function bindStaticHandlers() {
   $("#events-overlay .close-btn").addEventListener("click", closeEvents);
   $("#foryou-overlay").addEventListener("click", closeOnBackdrop(closeForYou));
   $("#foryou-overlay .close-btn").addEventListener("click", closeForYou);
+  $("#depot-overlay").addEventListener("click", closeOnBackdrop(closeDepot));
+  $("#depot-overlay .close-btn").addEventListener("click", closeDepot);
+  $("#depot-submit").addEventListener("click", submitDepot);
+  document.querySelectorAll("#depot-overlay .depot-chip")
+    .forEach((chip) => chip.addEventListener("click", () => toggleDepotChip(chip)));
   $("#budget-overlay").addEventListener("click", closeOnBackdrop(closeBudget));
   $("#budget-overlay .close-btn").addEventListener("click", closeBudget);
 

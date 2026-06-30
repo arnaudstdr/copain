@@ -188,7 +188,7 @@ async def process_message(
     elif outcome.replacement is not None:
         text = outcome.replacement
     if outcome.loop_size is not None:
-        text += _loop_suffix(outcome.loop_size)
+        text += loop_suffix(outcome.loop_size)
 
     history_user = user_text if user_text else "(image envoyée)"
     if images:
@@ -259,7 +259,7 @@ async def process_message_stream(
         yield {"type": "replace", "text": text}
     if outcome.loop_size is not None:
         # Suffixe boucle : frame delta supplémentaire après l'accusé (D3).
-        suffix = _loop_suffix(outcome.loop_size)
+        suffix = loop_suffix(outcome.loop_size)
         text += suffix
         yield {"type": "delta", "text": suffix}
 
@@ -303,8 +303,12 @@ async def _route_and_apply(user_text: str, meta: Meta, deps: BotDeps, intro: str
     return _RouteOutcome(replacement=replacement, loop_size=effects.loop_size)
 
 
-def _loop_suffix(loop_size: int) -> str:
-    """Suffixe template de l'accusé quand le dépôt rejoint une boucle (≥ 3 membres)."""
+def loop_suffix(loop_size: int) -> str:
+    """Suffixe template de l'accusé quand le dépôt rejoint une boucle (≥ 3 membres).
+
+    Public : réutilisé par `POST /thoughts` (dépôt express sans LLM) pour
+    composer l'accusé avec la même formulation que le chemin bot.
+    """
     return f" — {loop_size}e fois que ça revient."
 
 

@@ -8,12 +8,12 @@ import {
   el, makeHead,
   sameDay, formatHM, formatRelativeDay, formatRelativeAge, isAllDayEvent,
   showToast,
-} from "./ui.js?v=13";
+} from "./ui.js?v=14";
 import { openMarkdownView, renderMarkdown } from "./markdown.js?v=13";
 // Cycle d'import dashboard ↔ overlays accepté (cf. PROGRESS.md) : les cards
 // tappables ouvrent les overlays, et les overlays rafraîchissent le
 // dashboard à la fermeture. Bénin : fonctions hoistées, appelées au runtime.
-import { openWeather, openEvents, openTasks, openForYou } from "./overlays.js?v=13";
+import { openWeather, openEvents, openTasks, openForYou, openDepot } from "./overlays.js?v=14";
 
 // ── Dashboard ─────────────────────────────────────────────────────────────
 export async function loadDashboard() {
@@ -34,12 +34,14 @@ function renderDashboard(d) {
 
   // Rangée compacte : météo + prochain évent (deux tuiles côte à côte)
   root.appendChild(gridRow(weatherCard(d.weather, true), eventCard(d.next_event, true)));
-  // Tâches (pleine largeur)
-  root.appendChild(tasksCard(d.today_tasks, d.overdue_tasks || 0));
+  // Rangée « décharge cognitive » : dépôt express (entrée) + pour toi (sortie).
+  // La card tâches a été retirée volontairement (une liste rajoute de la charge
+  // mentale) ; l'overlay et l'endpoint /tasks restent en place (réversible).
+  root.appendChild(gridRow(depotCard(), foryouCard(true)));
   // Budget (pleine largeur, restant ce mois)
   root.appendChild(budgetCard(d.budget));
-  // Rangée compacte : actu + pour toi (fetch au tap dans les deux cas)
-  root.appendChild(gridRow(newsCard(true), foryouCard(true)));
+  // Actu en pleine largeur, tout en bas (fetch au tap)
+  root.appendChild(newsCard(false));
 }
 
 // Enveloppe deux cards dans une rangée grille 2 colonnes.
@@ -593,6 +595,18 @@ async function openNews() {
     if (dashboardData) renderDashboard(dashboardData);
     showToast("Impossible de charger les actus");
   }
+}
+
+function depotCard() {
+  // Pendant « entrée » de la card « Pour toi » : un accès en un tap pour vider
+  // une pensée parasite (intent=depot) sans ouvrir le chat. Volontairement
+  // neutre et invitant, sans compteur (canal de sortie, pas d'info entrante).
+  const card = el("div", "card tappable compact depot-card");
+  card.onclick = openDepot;
+  card.appendChild(makeHead("pen-line", "Dépôt express"));
+  card.appendChild(el("div", "card-primary", "Quelque chose en tête ?"));
+  card.appendChild(el("div", "card-meta", "Vide-toi la tête, je garde"));
+  return card;
 }
 
 function foryouCard(compact) {

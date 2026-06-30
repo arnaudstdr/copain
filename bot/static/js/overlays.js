@@ -8,8 +8,8 @@ import {
   lucideNode,
   formatHM, formatRelativeDay, formatDateTime, isAllDayEvent,
   showToast,
-} from "./ui.js?v=13";
-import { loadDashboard, renderBellBadge } from "./dashboard.js?v=14";
+} from "./ui.js?v=14";
+import { loadDashboard, renderBellBadge, invalidateCards } from "./dashboard.js?v=15";
 
 // ── Notifications panel ───────────────────────────────────────────────────
 export async function openNotifs() {
@@ -62,6 +62,61 @@ export function closeTasks() {
   document.getElementById("tasks-overlay").classList.add("hidden");
   // Rafraîchit la card du dashboard (count + première tâche peuvent avoir bougé).
   loadDashboard();
+}
+
+// ── Dépôt express (décharge cognitive directe, sans LLM) ──────────────────
+export function openDepot() {
+  const overlay = document.getElementById("depot-overlay");
+  overlay.classList.remove("hidden");
+  const input = document.getElementById("depot-input");
+  input.value = "";
+  // Aucun type (kind) sélectionné par défaut : le choix reste optionnel.
+  overlay.querySelectorAll(".depot-chip").forEach(c => c.classList.remove("selected"));
+  document.getElementById("depot-submit").disabled = false;
+  input.focus();
+}
+
+export function closeDepot() {
+  document.getElementById("depot-overlay").classList.add("hidden");
+}
+
+// Sélection optionnelle et exclusive du type (souci/idée/note), désélectionnable.
+export function toggleDepotChip(chip) {
+  const wasSelected = chip.classList.contains("selected");
+  document.getElementById("depot-overlay")
+    .querySelectorAll(".depot-chip").forEach(c => c.classList.remove("selected"));
+  if (!wasSelected) chip.classList.add("selected");
+}
+
+export async function submitDepot() {
+  const input = document.getElementById("depot-input");
+  const content = input.value.trim();
+  if (!content) {
+    showToast("Rien à déposer");
+    return;
+  }
+  const selected = document.querySelector("#depot-overlay .depot-chip.selected");
+  const kind = selected ? selected.dataset.kind : null;
+  const submit = document.getElementById("depot-submit");
+  submit.disabled = true;
+  try {
+    const res = await fetch(`${API_BASE}/thoughts`, {
+      method: "POST",
+      headers: { "X-API-Key": API_KEY, "Content-Type": "application/json" },
+      body: JSON.stringify({ content, kind }),
+    });
+    if (!res.ok) throw new Error(`${res.status}`);
+    const data = await res.json();
+    showToast(data.ack || "C'est posé.");
+    // Un nouveau dépôt rend la restitution « Pour toi » obsolète : on invalide
+    // son cache pour forcer un refetch au prochain tap (canal pull).
+    invalidateCards(["foryou"]);
+    closeDepot();
+    loadDashboard();
+  } catch (e) {
+    submit.disabled = false;
+    showToast("Impossible de déposer");
+  }
 }
 
 // ── Météo (overlay) ──────────────────────────────────────────────────────

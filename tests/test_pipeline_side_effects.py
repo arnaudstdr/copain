@@ -24,6 +24,7 @@ from bot.pipeline.side_effects import (
     apply_side_effects,
     euros_to_cents,
     handle_expense_side_effect,
+    record_depot,
     safe_open_worries,
     safe_pending_recurring,
 )
@@ -129,6 +130,19 @@ async def test_depot_add_detects_loop(bot_deps: BotDeps) -> None:
     meta = make_meta(intent="depot", depot={"content": "encore", "kind": "worry"})
     outcome = await apply_side_effects("encore", meta, bot_deps)
     assert outcome.loop_size == 3  # nouveau + 2 voisins récents
+
+
+async def test_record_depot_helper_shared_path(bot_deps: BotDeps) -> None:
+    """`record_depot` (utilisé aussi par POST /thoughts) crée, indexe et retourne le tuple."""
+    new = MagicMock(id=4, content="vidage", kind="note")
+    bot_deps.thoughts.create = AsyncMock(return_value=new)
+    bot_deps.memory.store_depot = AsyncMock()
+    bot_deps.memory.find_similar_depots = AsyncMock(return_value=[])
+    thought, loop_size = await record_depot(content="vidage", kind="note", deps=bot_deps)
+    assert thought is new
+    assert loop_size is None
+    bot_deps.thoughts.create.assert_awaited_once_with(content="vidage", kind="note")
+    bot_deps.memory.store_depot.assert_awaited_once()
 
 
 # --- apply_side_effects : clôture en langage naturel -------------------------

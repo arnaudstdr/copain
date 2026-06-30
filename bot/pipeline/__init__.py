@@ -9,15 +9,19 @@ Le détail vit dans les sous-modules (`core`, `dates`, `handlers`,
 from bot.pipeline.core import (
     BotDeps,
     StreamEvent,
+    loop_suffix,
     process_message,
     process_message_stream,
 )
 from bot.pipeline.handlers import FALLBACK_TEXT
+from bot.pipeline.side_effects import record_depot
 
 __all__ = [
     "FALLBACK_TEXT",
     "BotDeps",
     "StreamEvent",
+    "loop_suffix",
     "process_message",
     "process_message_stream",
+    "record_depot",
 ]

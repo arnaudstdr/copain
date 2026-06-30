@@ -38,9 +38,15 @@ from starlette.types import Scope
 from bot.dashboard import DashboardSnapshot, build_dashboard
 from bot.finance.csv_export import build_expenses_csv
 from bot.llm.client import LLMError, LLMTimeoutError
-from bot.llm.parser import Meta
+from bot.llm.parser import VALID_DEPOT_KINDS, Meta
 from bot.logging_conf import get_logger
-from bot.pipeline import BotDeps, process_message, process_message_stream
+from bot.pipeline import (
+    BotDeps,
+    loop_suffix,
+    process_message,
+    process_message_stream,
+    record_depot,
+)
 from bot.sentry_setup import capture_exception
 
 if TYPE_CHECKING:
@@ -231,6 +237,17 @@ class ThoughtsListResponse(BaseModel):
 class ThoughtCloseResponse(BaseModel):
     closed: bool
     thought_id: int
+
+
+class ThoughtCreateRequest(BaseModel):
+    content: str
+    kind: str | None = None  # worry|idea|note ou null
+
+
+class ThoughtCreateResponse(BaseModel):
+    recorded: bool
+    thought: ThoughtItem
+    ack: str  # accusé sobre (+ suffixe boucle si rumination détectée)
 
 
 # --- Chat history schemas --------------------------------------------------
@@ -953,6 +970,46 @@ def create_app(state: AppState) -> FastAPI:
                 for item in result.items
             ],
             fetched_at=result.fetched_at.isoformat(),
+        )
+
+    @app.post(
+        "/thoughts",
+        response_model=ThoughtCreateResponse,
+        dependencies=[Depends(verify_api_key)],
+    )
+    async def create_thought(
+        body: ThoughtCreateRequest,
+        deps: BotDeps = Depends(get_deps),
+    ) -> ThoughtCreateResponse:
+        """Dépôt cognitif direct (card "Dépôt express" du dashboard, sans LLM).
+
+        Canal parallèle à l'`intent=depot` du bot : réutilise `record_depot`
+        (mêmes écritures SQLite + ChromaDB + détection de boucle) pour garantir
+        zéro divergence. L'accusé est sobre et reprend la même formulation de
+        boucle que le chemin bot (`loop_suffix`).
+        """
+        content = body.content.strip()
+        if not content:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="`content` ne doit pas être vide",
+            )
+        if body.kind is not None and body.kind not in VALID_DEPOT_KINDS:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"`kind` invalide : {body.kind!r} (worry|idea|note ou null)",
+            )
+        thought, loop_size = await record_depot(content=content, kind=body.kind, deps=deps)
+        ack = "C'est posé." + (loop_suffix(loop_size) if loop_size is not None else "")
+        return ThoughtCreateResponse(
+            recorded=True,
+            thought=ThoughtItem(
+                id=thought.id,
+                content=thought.content,
+                kind=thought.kind,
+                created_at=thought.created_at.isoformat(),
+            ),
+            ack=ack,
         )
 
     @app.get(

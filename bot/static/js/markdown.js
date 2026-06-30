@@ -2,7 +2,7 @@
 // Cycle d'import ui ↔ markdown accepté (cf. PROGRESS.md) : showEphemeral
 // (ui.js) rend du markdown, et renderMarkdown utilise escHtml/lucideSvg
 // (ui.js). Bénin : fonctions hoistées, appelées uniquement au runtime.
-import { escHtml, lucideSvg } from "./ui.js?v=13";
+import { escHtml, lucideSvg } from "./ui.js?v=14";
 
 // ── Markdown view (réutilisé pour la card Actu) ────────────────────────
 export function openMarkdownView(title, text, subtitle, action) {

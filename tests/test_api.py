@@ -1178,6 +1178,118 @@ async def test_close_thought_requires_api_key(client: AsyncClient) -> None:
     assert response.status_code == 403
 
 
+# --- POST /thoughts (dépôt express, formulaire sans LLM) --------------------
+
+
+async def test_create_thought_requires_api_key(client: AsyncClient) -> None:
+    response = await client.post("/thoughts", json={"content": "une pensée"})
+    assert response.status_code == 403
+
+
+async def test_create_thought_records_and_returns_ack(client: AsyncClient, state: AppState) -> None:
+    """Dépôt direct nominal : persiste via record_depot et renvoie un accusé sobre."""
+    from datetime import UTC, datetime
+
+    fake_thought = MagicMock()
+    fake_thought.id = 9
+    fake_thought.content = "penser à rappeler le dentiste"
+    fake_thought.kind = "note"
+    fake_thought.created_at = datetime(2026, 6, 30, 9, 15, tzinfo=UTC)
+    state.deps.thoughts.create = AsyncMock(return_value=fake_thought)
+    state.deps.thoughts.list_since = AsyncMock(return_value=[])
+    state.deps.memory.store_depot = AsyncMock()
+    state.deps.memory.find_similar_depots = AsyncMock(return_value=[])
+    state.deps.settings.foryou_similarity_max_distance = 0.25
+
+    response = await client.post(
+        "/thoughts",
+        headers={"X-API-Key": API_KEY},
+        json={"content": "penser à rappeler le dentiste", "kind": "note"},
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["recorded"] is True
+    assert body["thought"]["id"] == 9
+    assert body["thought"]["kind"] == "note"
+    assert body["ack"] == "C'est posé."
+    state.deps.thoughts.create.assert_awaited_once_with(
+        content="penser à rappeler le dentiste", kind="note"
+    )
+
+
+async def test_create_thought_accepts_null_kind(client: AsyncClient, state: AppState) -> None:
+    from datetime import UTC, datetime
+
+    fake_thought = MagicMock()
+    fake_thought.id = 10
+    fake_thought.content = "vidage de tête"
+    fake_thought.kind = None
+    fake_thought.created_at = datetime(2026, 6, 30, 9, 15, tzinfo=UTC)
+    state.deps.thoughts.create = AsyncMock(return_value=fake_thought)
+    state.deps.thoughts.list_since = AsyncMock(return_value=[])
+    state.deps.memory.store_depot = AsyncMock()
+    state.deps.memory.find_similar_depots = AsyncMock(return_value=[])
+    state.deps.settings.foryou_similarity_max_distance = 0.25
+
+    response = await client.post(
+        "/thoughts",
+        headers={"X-API-Key": API_KEY},
+        json={"content": "vidage de tête"},
+    )
+    assert response.status_code == 200
+    assert response.json()["thought"]["kind"] is None
+    state.deps.thoughts.create.assert_awaited_once_with(content="vidage de tête", kind=None)
+
+
+async def test_create_thought_empty_content_returns_400(
+    client: AsyncClient, state: AppState
+) -> None:
+    state.deps.thoughts.create = AsyncMock()
+    response = await client.post(
+        "/thoughts",
+        headers={"X-API-Key": API_KEY},
+        json={"content": "   "},
+    )
+    assert response.status_code == 400
+    state.deps.thoughts.create.assert_not_awaited()
+
+
+async def test_create_thought_invalid_kind_returns_400(
+    client: AsyncClient, state: AppState
+) -> None:
+    state.deps.thoughts.create = AsyncMock()
+    response = await client.post(
+        "/thoughts",
+        headers={"X-API-Key": API_KEY},
+        json={"content": "une pensée", "kind": "panique"},
+    )
+    assert response.status_code == 400
+    state.deps.thoughts.create.assert_not_awaited()
+
+
+async def test_create_thought_loop_ack_suffix(client: AsyncClient, state: AppState) -> None:
+    """Une boucle de rumination détectée suffixe l'accusé comme le chemin bot."""
+    from datetime import UTC, datetime
+    from unittest.mock import patch
+
+    fake_thought = MagicMock()
+    fake_thought.id = 11
+    fake_thought.content = "encore cette angoisse"
+    fake_thought.kind = "worry"
+    fake_thought.created_at = datetime(2026, 6, 30, 9, 15, tzinfo=UTC)
+    with patch(
+        "bot.api.record_depot",
+        new=AsyncMock(return_value=(fake_thought, 3)),
+    ):
+        response = await client.post(
+            "/thoughts",
+            headers={"X-API-Key": API_KEY},
+            json={"content": "encore cette angoisse", "kind": "worry"},
+        )
+    assert response.status_code == 200
+    assert response.json()["ack"] == "C'est posé. — 3e fois que ça revient."
+
+
 # --- /budget --------------------------------------------------------------
 
 

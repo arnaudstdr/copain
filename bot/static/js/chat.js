@@ -4,10 +4,10 @@ import {
   chatAttachment, setChatAttachment,
   chatHistory, chatHistoryState,
 } from "./state.js?v=13";
-import { el, lucideNode, sameDay, formatDaySeparator } from "./ui.js?v=13";
+import { el, lucideNode, sameDay, formatDaySeparator } from "./ui.js?v=14";
 import { callImage, callTextStream, fetchHistory } from "./api.js?v=13";
 import { renderMarkdown } from "./markdown.js?v=13";
-import { loadDashboard, invalidateCards } from "./dashboard.js?v=14";
+import { loadDashboard, invalidateCards } from "./dashboard.js?v=15";
 import { setLoading, autoResize, updateChatSendBtn } from "./composer.js?v=13";
 
 // ── Mode chat (overlay) ───────────────────────────────────────────────────

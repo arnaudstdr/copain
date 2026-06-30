@@ -78,29 +78,11 @@ async def apply_side_effects(
     # On NE déclenche PAS le store_memory générique sur ce chemin : un
     # dépôt n'est pas un fait stable à apprendre sur l'utilisateur.
     if meta["intent"] == "depot" and meta["depot"]["content"]:
-        thought = await deps.thoughts.create(
+        _, loop_size = await record_depot(
             content=meta["depot"]["content"],
             kind=meta["depot"]["kind"],
+            deps=deps,
         )
-        log.info(
-            "thought_stored",
-            thought_id=thought.id,
-            kind=thought.kind,
-            preview=thought.content[:80],
-        )
-        loop_size: int | None = None
-        try:
-            await deps.memory.store_depot(
-                content=thought.content,
-                thought_id=thought.id,
-                thought_kind=thought.kind,
-            )
-        except Exception as exc:
-            # SQLite est la source de vérité, ChromaDB est best-effort.
-            # Sans indexation, pas de recherche de similarité possible.
-            log.warning("depot_chroma_indexing_failed", error=str(exc))
-        else:
-            loop_size = await _detect_depot_loop(thought, deps)
         return SideEffectsOutcome(loop_size=loop_size)
 
     if meta["store_memory"] and meta["memory_content"]:
@@ -125,6 +107,41 @@ async def apply_side_effects(
                 content=task.content,
             )
     return SideEffectsOutcome()
+
+
+async def record_depot(content: str, kind: str | None, deps: BotDeps) -> tuple[Thought, int | None]:
+    """Persiste un dépôt cognitif et détecte une éventuelle boucle de rumination.
+
+    Séquence : création SQLite (source de vérité), indexation ChromaDB
+    best-effort (tag `kind=depot`), puis détection de boucle si l'indexation a
+    réussi. Partagé par le chemin bot (`apply_side_effects`, `intent=depot`) et
+    par le formulaire direct (`POST /thoughts`, sans LLM) — même garantie que
+    `ExpenseManager` : aucune divergence de comportement entre les deux canaux.
+
+    Retourne `(thought, loop_size)` où `loop_size` est la taille de la boucle
+    rejointe (dépôt inclus, ≥ 3) ou None.
+    """
+    thought = await deps.thoughts.create(content=content, kind=kind)
+    log.info(
+        "thought_stored",
+        thought_id=thought.id,
+        kind=thought.kind,
+        preview=thought.content[:80],
+    )
+    loop_size: int | None = None
+    try:
+        await deps.memory.store_depot(
+            content=thought.content,
+            thought_id=thought.id,
+            thought_kind=thought.kind,
+        )
+    except Exception as exc:
+        # SQLite est la source de vérité, ChromaDB est best-effort.
+        # Sans indexation, pas de recherche de similarité possible.
+        log.warning("depot_chroma_indexing_failed", error=str(exc))
+    else:
+        loop_size = await _detect_depot_loop(thought, deps)
+    return thought, loop_size
 
 
 async def _close_thought_from_meta(meta: Meta, deps: BotDeps) -> SideEffectsOutcome:

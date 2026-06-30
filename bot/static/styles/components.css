@@ -154,6 +154,17 @@ select.budget-input { cursor: pointer; }
 .budget-submit { margin-top: 2px; padding: 11px 12px; border-radius: 9px; border: 1px solid transparent; background: var(--accent); color: var(--on-accent); font-size: 14px; font-weight: 600; cursor: pointer; transition: opacity 0.15s, transform 0.1s; }
 .budget-submit:active { transform: scale(0.98); }
 .budget-submit:disabled { opacity: 0.5; pointer-events: none; }
+/* Dépôt express (overlay de décharge cognitive directe, sans LLM) */
+.depot-form { display: flex; flex-direction: column; gap: 12px; padding: 4px 0; }
+.depot-input { width: 100%; box-sizing: border-box; background: var(--bg2); border: 1px solid var(--border2); border-radius: 12px; padding: 13px 14px; font-size: 15px; line-height: 1.45; color: var(--text); resize: none; font-family: inherit; }
+.depot-input::placeholder { color: var(--text2); }
+.depot-input:focus { outline: none; border-color: var(--accent); }
+.depot-chips { display: flex; gap: 8px; }
+.depot-chip { flex: 1; padding: 9px 10px; border-radius: 9px; border: 1px solid var(--border2); background: var(--bg2); color: var(--text2); font-size: 13px; font-weight: 600; cursor: pointer; transition: border-color 0.15s, color 0.15s, background 0.15s; }
+.depot-chip.selected { border-color: var(--accent); background: var(--accent); color: var(--on-accent); }
+.depot-submit { padding: 12px; border-radius: 10px; border: 1px solid transparent; background: var(--accent); color: var(--on-accent); font-size: 15px; font-weight: 600; cursor: pointer; transition: opacity 0.15s, transform 0.1s; }
+.depot-submit:active { transform: scale(0.98); }
+.depot-submit:disabled { opacity: 0.5; pointer-events: none; }
 .budget-detail { display: flex; flex-direction: column; gap: 10px; flex-shrink: 0; }
 .budget-recap { padding: 0; }
 .budget-export { align-self: flex-start; padding: 8px 14px; border-radius: 9px; background: transparent; border: 1px solid var(--border2); color: var(--text2); font-size: 13px; font-weight: 600; cursor: pointer; }
