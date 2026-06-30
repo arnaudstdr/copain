@@ -152,6 +152,7 @@ FastAPI app (bot/api.py, served by uvicorn)
         │     ├── GET  /tasks         → TaskManager.list_pending() → overlay tâches PWA (cochage)
         │     ├── POST /tasks/{id}/complete → TaskManager.complete(id)
         │     ├── GET  /budget        → compute_budget() détaillé (transactions + pending) → overlay Budget
+        │     ├── GET  /share/courses → restant enveloppe "courses" formaté (phrase prête à partager, raccourci iOS) — 404 si non configurée
         │     ├── POST /expenses      → ExpenseManager.add_punctual/add_income/tick_recurring_once → saisie directe (formulaire PWA, sans LLM)
         │     ├── GET  /expenses/export.csv → build_expenses_csv(from, to) → CSV locale FR
         │     ├── GET  /weather/forecast → Open-Meteo brut (horaire 24h + 7 jours), lieu selon position courante
@@ -295,6 +296,7 @@ Missing or invalid → 403 with a warning logged (source IP included).
 | GET    | `/tasks`           | —                                                                 | `{ "tasks": [ { "id": int, "content": str, "due_at": str\|null } ] }` (tâches en cours)                |
 | POST   | `/tasks/{task_id}/complete` | —                                                        | tâche marquée terminée (overlay PWA)                                                                    |
 | GET    | `/budget`          | —                                                                 | détail du cycle courant : transactions + récurrentes pending (overlay Budget)                           |
+| GET    | `/share/courses`   | —                                                                 | `{ "text": str, "label": str, "remaining_eur": float, "allocated_eur": float, "spent_eur": float, "is_overrun": bool, "as_of": str }` — restant enveloppe "courses" prêt à partager (404 si non configurée) |
 | POST   | `/expenses`        | `{ "action": "spend"\|"income"\|"tick_recurring", "amount_eur"?, "label"?, "category"?, "occurred_on"?, "shared"?, "recurring_key"?, "starts_cycle"? }` | `{ "recorded": bool, "transaction": {…}\|null }` — saisie directe sans LLM (`recorded:false` = tick déjà pointé) |
 | GET    | `/expenses/export.csv` | `?from=YYYY-MM-DD&to=YYYY-MM-DD` (bornes incluses)             | CSV FR (sep `;`, virgule décimale, UTF-8 BOM, dates `JJ/MM/AAAA`) en `attachment`                       |
 | GET    | `/weather/forecast` | `?days=<int>&hours=<int>` (optionnels)                           | prévisions Open-Meteo brutes (horaire + quotidien), lieu selon position courante                        |

@@ -129,6 +129,69 @@ doit refléter la dernière transition.
 
 ---
 
+## 3. Raccourci "Partager les courses"
+
+### Objectif
+
+Envoyer en un tap le restant de l'enveloppe « courses » à un tiers
+(typiquement la compagne, sur le compte joint) via Messages, WhatsApp ou
+tout autre canal de la feuille de partage iOS. Tu déclenches, tu choisis
+le destinataire, c'est parti — aucune installation côté destinataire.
+
+### Comment ça marche
+
+L'endpoint `GET /share/courses` calcule le restant de l'enveloppe dont la
+catégorie OU le label contient « cours » (insensible à la casse — couvre
+aussi bien `category: courses` que `label: "Courses (compte joint)"`) et
+renvoie une phrase prête à l'envoi :
+
+```json
+{
+  "text": "Courses : il reste 378,50 € sur 499 € (au 30/06)",
+  "label": "Courses (compte joint)",
+  "remaining_eur": 378.5,
+  "allocated_eur": 499.0,
+  "spent_eur": 120.5,
+  "is_overrun": false,
+  "as_of": "2026-06-30"
+}
+```
+
+En cas de dépassement, `text` bascule sur une formulation explicite
+(« Courses : enveloppe dépassée de … »). Si aucune enveloppe « courses »
+n'est configurée dans `finances.envelopes`, l'endpoint répond **404**.
+
+### Configuration
+
+| Étape | Action Shortcuts | Détails |
+| ----- | ---------------- | ------- |
+| 1 | `Get Contents of URL` | URL : `http://<pi-tailscale-host>:8000/share/courses` <br> Method : `GET` <br> Headers : <br>  • `X-API-Key` = `<API_KEY du .env>` |
+| 2 | `Get Dictionary Value` | Key : `text` <br> Input : `Contents of URL` (étape 1) |
+| 3 | `Share` (Partager) | Input : `Dictionary Value` (étape 2) → ouvre la feuille de partage iOS (Messages, WhatsApp, …) |
+
+À l'étape 3, iOS propose le destinataire (ta compagne). Tu peux aussi
+remplacer `Share` par `Send Message` ciblant directement un contact si tu
+veux sauter la feuille de partage.
+
+### Phrase de déclenchement Siri (optionnel)
+
+Renomme le raccourci « Partage les courses » pour pouvoir dire
+« Dis Siri, partage les courses ».
+
+### Debug
+
+- **404** : l'enveloppe « courses » n'est pas (ou plus) déclarée dans
+  `data/profile.yaml` → `finances.envelopes`. Vérifie qu'une entrée a
+  « cours » dans sa `category` ou son `label`.
+- **403** : `X-API-Key` absent ou erroné.
+- Test rapide depuis le Pi :
+
+  ```bash
+  curl -H "X-API-Key: <API_KEY>" http://localhost:8000/share/courses
+  ```
+
+---
+
 ## Note de sécurité
 
 Les Shortcuts envoient ton `X-API-Key` en clair sur le tailnet. Ce n'est

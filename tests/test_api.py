@@ -1288,6 +1288,85 @@ async def test_budget_returns_summary_with_transactions(
     assert body["pending"][0]["key"] == "loyer"
 
 
+# --- /share/courses -------------------------------------------------------
+
+
+async def test_share_courses_requires_api_key(client: AsyncClient) -> None:
+    response = await client.get("/share/courses")
+    assert response.status_code == 403
+
+
+async def test_share_courses_404_when_no_courses_envelope(
+    client: AsyncClient, state: AppState
+) -> None:
+    from bot.profile import UserProfile
+
+    state.deps.profile = UserProfile(
+        raw_yaml="",
+        is_loaded=True,
+        data={
+            "finances": {"envelopes": [{"category": "essence", "label": "Essence", "amount": 200}]}
+        },
+    )
+    state.deps.expenses.list_for_cycle = AsyncMock(return_value=[])
+    state.deps.expenses.list_savings_for_year = AsyncMock(return_value=[])
+
+    response = await client.get("/share/courses", headers={"X-API-Key": API_KEY})
+    assert response.status_code == 404
+
+
+async def test_share_courses_matches_shared_envelope_by_label(
+    client: AsyncClient, state: AppState
+) -> None:
+    from datetime import date as _date
+
+    from bot.finance.models import Expense
+    from bot.profile import UserProfile
+
+    # Reproduit la config réelle : l'enveloppe "courses" est category=nourriture,
+    # label="Courses (compte joint)", shared=true. Le matching se fait sur "cours".
+    state.deps.profile = UserProfile(
+        raw_yaml="",
+        is_loaded=True,
+        data={
+            "finances": {
+                "envelopes": [
+                    {"category": "essence", "label": "Essence", "amount": 200},
+                    {
+                        "category": "nourriture",
+                        "label": "Courses (compte joint)",
+                        "amount": 499,
+                        "shared": True,
+                    },
+                ]
+            }
+        },
+    )
+    spent = Expense(
+        kind="punctual",
+        amount_cents=12050,
+        label="Lidl",
+        category="nourriture",
+        recurring_key=None,
+        occurred_on=_date(2026, 6, 10),
+        shared=True,
+    )
+    spent.id = 11
+    state.deps.expenses.list_for_cycle = AsyncMock(return_value=[spent])
+    state.deps.expenses.list_savings_for_year = AsyncMock(return_value=[])
+
+    response = await client.get("/share/courses", headers={"X-API-Key": API_KEY})
+    assert response.status_code == 200
+    body = response.json()
+    assert body["label"] == "Courses (compte joint)"
+    assert body["allocated_eur"] == 499.0
+    assert body["spent_eur"] == 120.5
+    assert body["remaining_eur"] == 378.5
+    assert body["is_overrun"] is False
+    assert "378,50 €" in body["text"]
+    assert "499 €" in body["text"]
+
+
 # --- /dashboard suite -----------------------------------------------------
 
 

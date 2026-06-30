@@ -320,6 +320,23 @@ class BudgetMonthDetail(BaseModel):
     envelopes: list[BudgetEnvelopeDetail] = Field(default_factory=list)
 
 
+class CoursesShareCard(BaseModel):
+    """Restant de l'enveloppe « courses », prêt à être partagé en un message.
+
+    `text` est une phrase auto-suffisante (formatée locale FR) que le
+    raccourci iOS envoie tel quel à un tiers (compagne). Les champs chiffrés
+    accompagnent la phrase pour qui voudrait re-formater côté client.
+    """
+
+    text: str
+    label: str
+    remaining_eur: float
+    allocated_eur: float
+    spent_eur: float
+    is_overrun: bool
+    as_of: str  # ISO date du jour de calcul (fuseau serveur)
+
+
 class ExpenseCreate(BaseModel):
     """Saisie budgétaire directe (formulaire PWA, sans passer par le LLM).
 
@@ -444,6 +461,19 @@ def _refresh_cards_for(meta: Meta) -> list[str]:
 def _sse_frame(payload: dict[str, object]) -> str:
     """Sérialise un événement en frame SSE (`data: {json}\\n\\n`)."""
     return f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
+
+
+def _format_eur_fr(value: float) -> str:
+    """Formate un montant en euros, locale FR (virgule décimale).
+
+    Les montants ronds sont affichés sans décimales (`499 €`), les autres
+    avec deux décimales et une virgule (`234,50 €`). Sert aux phrases de
+    partage prêtes à l'envoi (`GET /share/courses`).
+    """
+    rounded = round(value, 2)
+    if rounded == int(rounded):
+        return f"{int(rounded)} €"
+    return f"{rounded:.2f}".replace(".", ",") + " €"
 
 
 # Messages FR renvoyés tels quels au client iOS quand le LLM flanche. Le
@@ -1105,6 +1135,83 @@ def create_app(state: AppState) -> FastAPI:
             transactions=transactions,
             pending=pending,
             envelopes=envelopes_detail,
+        )
+
+    @app.get(
+        "/share/courses",
+        response_model=CoursesShareCard,
+        dependencies=[Depends(verify_api_key)],
+    )
+    async def share_courses(
+        deps: BotDeps = Depends(get_deps),
+    ) -> CoursesShareCard:
+        """Restant de l'enveloppe « courses », formaté pour partage direct.
+
+        Pensé pour un raccourci iOS : il fetch cette route puis pousse `text`
+        dans la feuille de partage (Messages/WhatsApp) vers un tiers. Le
+        calcul réutilise `compute_budget` (mêmes invariants que le dashboard).
+
+        L'enveloppe ciblée est la première dont la catégorie OU le label
+        contient « cours » (insensible à la casse) — robuste que la course
+        soit déclarée `category: courses` ou `label: "Courses (compte joint)"`.
+        404 si aucune enveloppe de ce type n'est configurée dans le YAML.
+        """
+        from bot.finance.budget import compute_budget
+        from bot.finance.config import extract_finance_config
+
+        tz = ZoneInfo(deps.settings.timezone)
+        today_d = datetime.now(tz).date()
+        cfg = extract_finance_config(deps.profile.data)
+        cycle_start, cycle_end = await deps.expenses.current_cycle_bounds(today_d)
+        month_rows = await deps.expenses.list_for_cycle(today_d)
+        year_savings = await deps.expenses.list_savings_for_year(today_d.year)
+        summary = compute_budget(
+            config=cfg,
+            month_expenses=month_rows,
+            year_savings=year_savings,
+            today=today_d,
+            cycle_start=cycle_start,
+            cycle_end=cycle_end,
+        )
+
+        env = next(
+            (
+                e
+                for e in summary.envelopes
+                if "cours" in e.category.lower() or "cours" in e.label.lower()
+            ),
+            None,
+        )
+        if env is None:
+            raise HTTPException(
+                status_code=404,
+                detail="Aucune enveloppe 'courses' configurée dans finances.envelopes",
+            )
+
+        remaining_eur = env.remaining_cents / 100
+        allocated_eur = env.allocated_cents / 100
+        spent_eur = env.spent_cents / 100
+        as_of_fr = today_d.strftime("%d/%m")
+        if env.is_overrun:
+            text = (
+                f"Courses : enveloppe dépassée de {_format_eur_fr(-remaining_eur)} "
+                f"({_format_eur_fr(spent_eur)} dépensés sur {_format_eur_fr(allocated_eur)}, "
+                f"au {as_of_fr})"
+            )
+        else:
+            text = (
+                f"Courses : il reste {_format_eur_fr(remaining_eur)} "
+                f"sur {_format_eur_fr(allocated_eur)} (au {as_of_fr})"
+            )
+
+        return CoursesShareCard(
+            text=text,
+            label=env.label,
+            remaining_eur=remaining_eur,
+            allocated_eur=allocated_eur,
+            spent_eur=spent_eur,
+            is_overrun=env.is_overrun,
+            as_of=today_d.isoformat(),
         )
 
     @app.post(
