@@ -69,7 +69,10 @@ pour vider des pensées parasites sans tenter de les traiter.
   calendar
 - **Fuel prices** (intent `fuel` LLM uniquement, plus de card dashboard) :
   via `data.economie.gouv.fr` open data API, top 5 stations autour de
-  `HOME_CITY` (geocoding via OSM Nominatim)
+  `HOME_CITY` (geocoding via OSM Nominatim). La donnée officielle ne contient
+  **aucune enseigne** : chaque station est enrichie a posteriori (fail-soft)
+  par l'enseigne du point `amenity=fuel` OpenStreetMap le plus proche via
+  Overpass (`bot/fuel/overpass.py`, appariement par distance).
 - **Weather**: via Open-Meteo, supports FR expressions (`demain`, `ce
   weekend`, etc.) up to 16 days
 - **Budget / finances (`intent=expense`)** : saisie en langage naturel des
@@ -265,7 +268,8 @@ FastAPI app (bot/api.py, served by uvicorn)
         │
         ├── Fuel (open data fuel prices — intent LLM uniquement)
         │     ├── FuelClient         → data.economie.gouv.fr (ODS v2.1)
-        │     └── NominatimClient    → OSM geocoding (FR, in-memory cache)
+        │     ├── NominatimClient    → OSM geocoding (FR, in-memory cache)
+        │     └── OverpassClient     → enseigne OSM (amenity=fuel), enrichissement fail-soft
         │
         ├── Finance (intent `expense` — bot/finance/)
         │     ├── ExpenseManager     → tables `expenses` + `budget_cycles` (cycle ancré salaire)

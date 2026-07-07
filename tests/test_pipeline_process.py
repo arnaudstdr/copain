@@ -171,6 +171,8 @@ def deps() -> BotDeps:
     calendar = MagicMock()
     fuel = MagicMock()
     fuel.find_cheapest = AsyncMock(return_value=[])
+    overpass = MagicMock()
+    overpass.find_fuel_stations = AsyncMock(return_value=[])
     geocoder = MagicMock()
     geocoder.geocode_fr = AsyncMock(return_value=None)
     weather = MagicMock()
@@ -195,6 +197,7 @@ def deps() -> BotDeps:
         rss_fetcher=rss_fetcher,
         calendar=calendar,
         fuel=fuel,
+        overpass=overpass,
         geocoder=geocoder,
         weather=weather,
         news=MagicMock(),

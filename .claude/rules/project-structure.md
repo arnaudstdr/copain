@@ -82,9 +82,10 @@ copain/
 │   │   └── client.py            # OpenMeteoClient + HourlyPrecipitation + FR codes
 │   │
 │   ├── fuel/
-│   │   ├── models.py            # FuelType + FuelStation + GeoPoint + FR synonyms
+│   │   ├── models.py            # FuelType + FuelStation (+ brand) + GeoPoint + FR synonyms
 │   │   ├── client.py            # FuelClient (data.economie.gouv.fr ODS v2.1)
-│   │   └── geocoding.py         # NominatimClient (OSM FR + in-memory cache)
+│   │   ├── geocoding.py         # NominatimClient (OSM FR + in-memory cache)
+│   │   └── overpass.py          # OverpassClient (enseigne OSM amenity=fuel, enrichissement fail-soft)
 │   │
 │   ├── finance/
 │   │   ├── models.py            # Expense + BudgetCycle (shares Base with tasks)

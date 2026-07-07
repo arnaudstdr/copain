@@ -32,6 +32,7 @@ if TYPE_CHECKING:
     from bot.finance.manager import ExpenseManager
     from bot.fuel.client import FuelClient
     from bot.fuel.geocoding import NominatimClient
+    from bot.fuel.overpass import OverpassClient
     from bot.llm.client import LLMClient
     from bot.locations.store import LocationEventStore
     from bot.memory.manager import MemoryManager
@@ -122,6 +123,7 @@ class BotDeps:
     rss_fetcher: RssFetcher
     calendar: ICloudCalendarClient
     fuel: FuelClient
+    overpass: OverpassClient
     geocoder: NominatimClient
     weather: OpenMeteoClient
     news: NewsCurator

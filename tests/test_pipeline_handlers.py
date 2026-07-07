@@ -19,6 +19,7 @@ from bot.calendar.models import CalendarEvent
 from bot.fuel.client import FuelError
 from bot.fuel.geocoding import NominatimError
 from bot.fuel.models import FuelStation, GeoPoint
+from bot.fuel.overpass import BrandPoint, OverpassError
 from bot.pipeline.handlers import (
     FALLBACK_TEXT,
     _fr_day_label,
@@ -408,6 +409,26 @@ async def test_fuel_success_uses_geocoded_location(bot_deps: BotDeps) -> None:
     assert kwargs["center"] == GeoPoint(lat=45.7, lon=4.8)
 
 
+async def test_fuel_enriches_station_with_brand(bot_deps: BotDeps) -> None:
+    bot_deps.fuel.find_cheapest = AsyncMock(return_value=[_station(1.799)])
+    # Point OSM quasi confondu avec la station (_station : lat=48.26, lon=7.45).
+    bot_deps.overpass.find_fuel_stations = AsyncMock(
+        return_value=[BrandPoint(lat=48.2601, lon=7.4501, brand="TotalEnergies")]
+    )
+    meta = make_meta(intent="fuel", fuel={"fuel_type": "gazole"})
+    out = await handle_fuel(meta, bot_deps, intro="")
+    assert "TotalEnergies" in out and "1.799" in out
+
+
+async def test_fuel_enrichment_failsoft_on_overpass_error(bot_deps: BotDeps) -> None:
+    bot_deps.fuel.find_cheapest = AsyncMock(return_value=[_station(1.799)])
+    bot_deps.overpass.find_fuel_stations = AsyncMock(side_effect=OverpassError("down"))
+    meta = make_meta(intent="fuel", fuel={"fuel_type": "gazole"})
+    out = await handle_fuel(meta, bot_deps, intro="")
+    # L'enseigne manque mais la réponse carburant reste complète.
+    assert "1.799" in out and "Sélestat" in out
+
+
 # --- handle_weather ----------------------------------------------------------
 
 
@@ -469,6 +490,13 @@ def test_format_km_integer_vs_decimal() -> None:
 def test_format_station() -> None:
     line = format_station(1, _station(price=1.812, distance=3.4))
     assert line.startswith("1. ") and "1.812 €" in line and "3.4 km" in line
+
+
+def test_format_station_with_brand() -> None:
+    from dataclasses import replace
+
+    line = format_station(1, replace(_station(price=1.812), brand="Intermarché"))
+    assert line.startswith("1. Intermarché — ") and "1.812 €" in line
 
 
 def test_humanize_age_all_branches() -> None:

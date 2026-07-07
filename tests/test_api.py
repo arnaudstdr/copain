@@ -124,6 +124,7 @@ def _build_deps() -> BotDeps:
         rss_fetcher=MagicMock(),
         calendar=MagicMock(),
         fuel=MagicMock(),
+        overpass=MagicMock(),
         geocoder=MagicMock(),
         weather=MagicMock(),
         news=MagicMock(),

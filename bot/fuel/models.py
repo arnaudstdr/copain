@@ -67,6 +67,10 @@ class FuelStation:
     fuel_type: FuelType
     price_eur: float
     updated_at: datetime | None
+    # Enseigne (marque) de la station. Absente de la donnée officielle
+    # data.economie.gouv.fr → enrichie a posteriori via OpenStreetMap
+    # (bot/fuel/overpass.py), fail-soft : None si pas d'appariement fiable.
+    brand: str | None = None
 
 
 def normalize_fuel_type(raw: str | None) -> FuelType | None:

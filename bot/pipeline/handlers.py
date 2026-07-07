@@ -12,7 +12,7 @@ au runtime, jamais l'inverse (DAG d'imports du package).
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import date, datetime, timedelta
 from typing import TYPE_CHECKING
 from zoneinfo import ZoneInfo
@@ -21,6 +21,7 @@ from bot.calendar.client import ICloudCalendarError
 from bot.fuel.client import FuelError
 from bot.fuel.geocoding import NominatimError
 from bot.fuel.models import FUEL_LABELS, GeoPoint, normalize_fuel_type
+from bot.fuel.overpass import OverpassError, nearest_brand
 from bot.logging_conf import get_logger
 from bot.pipeline.dates import parse_due, parse_range, parse_weather_range
 from bot.rss.manager import FeedAlreadyExists
@@ -302,6 +303,8 @@ async def handle_fuel(meta: Meta, deps: BotDeps, intro: str) -> str:
             f"dans un rayon de {format_km(radius_km)} autour de {place_label}."
         )
 
+    stations = await _enrich_with_brands(stations, center, radius_km, deps)
+
     tz = ZoneInfo(deps.settings.timezone)
     header = (
         f"⛽ Top {len(stations)} {FUEL_LABELS[fuel_type]} "
@@ -388,10 +391,39 @@ def _weather_period_label(when_str: str | None) -> str:
     return when_str.strip()
 
 
+async def _enrich_with_brands(
+    stations: Sequence[FuelStation],
+    center: GeoPoint,
+    radius_km: float,
+    deps: BotDeps,
+) -> list[FuelStation]:
+    """Attache l'enseigne OSM à chaque station (fail-soft).
+
+    Une seule requête Overpass couvre tout le rayon, puis chaque station est
+    appariée au point OSM le plus proche. Toute erreur (Overpass indispo,
+    payload inattendu) laisse les stations inchangées : l'enseigne est un
+    bonus, jamais un point de rupture de la réponse carburant.
+    """
+    try:
+        brand_points = await deps.overpass.find_fuel_stations(center, radius_km)
+    except OverpassError:
+        log.warning("fuel_brand_enrichment_failed")
+        return list(stations)
+    if not brand_points:
+        return list(stations)
+
+    enriched: list[FuelStation] = []
+    for station in stations:
+        brand = nearest_brand(station.lat, station.lon, brand_points)
+        enriched.append(replace(station, brand=brand) if brand else station)
+    return enriched
+
+
 def format_station(rank: int, station: FuelStation) -> str:
     location_parts = [part for part in (station.address, station.postal_code, station.city) if part]
     location = ", ".join(location_parts) if location_parts else "adresse inconnue"
-    return f"{rank}. {station.price_eur:.3f} € — {location} ({station.distance_km:.1f} km)"
+    brand = f"{station.brand} — " if station.brand else ""
+    return f"{rank}. {brand}{station.price_eur:.3f} € — {location} ({station.distance_km:.1f} km)"
 
 
 def format_km(km: float) -> str:

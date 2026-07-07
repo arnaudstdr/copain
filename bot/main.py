@@ -27,6 +27,7 @@ from bot.finance.cron import FinanceReminderJob
 from bot.finance.manager import ExpenseManager
 from bot.fuel.client import FuelClient
 from bot.fuel.geocoding import NominatimClient
+from bot.fuel.overpass import OverpassClient
 from bot.llm.client import LLMClient
 from bot.locations.store import LocationEventStore
 from bot.logging_conf import configure_logging, get_logger
@@ -111,6 +112,7 @@ async def _build_state(
         timezone=settings.timezone,
     )
     fuel = FuelClient()
+    overpass = OverpassClient(user_agent=settings.nominatim_user_agent)
     geocoder = NominatimClient(user_agent=settings.nominatim_user_agent)
     proactivity = ProactivityService(
         settings=settings,
@@ -152,6 +154,7 @@ async def _build_state(
         rss_fetcher=rss_fetcher,
         calendar=calendar,
         fuel=fuel,
+        overpass=overpass,
         geocoder=geocoder,
         weather=weather,
         news=news,
@@ -220,6 +223,7 @@ async def _build_state(
         await search.aclose()
         await weather.aclose()
         await fuel.aclose()
+        await overpass.aclose()
         await geocoder.aclose()
         await engine.dispose()
         log.info("shutdown_done")
