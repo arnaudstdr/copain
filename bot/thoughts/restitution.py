@@ -16,6 +16,7 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime, timedelta
+from types import MappingProxyType
 from typing import TYPE_CHECKING, Literal
 
 if TYPE_CHECKING:
@@ -30,6 +31,13 @@ SURFACED_COOLDOWN_DAYS = 7
 MAX_ITEMS = 2
 
 CandidateType = Literal["closable_worry", "loop", "connection", "stale_idea"]
+# Nature du `context` d'un `closable_worry` : évènement passé rapproché ou état
+# de budget sain. Pilote la formulation (step 06) sans multiplier les types
+# côté PWA (un souci apaisé par le budget reste un `closable_worry`).
+ContextKind = Literal["event", "budget"]
+
+# Défaut immutable partagé (évite un littéral mutable en signature).
+_NO_BUDGET_REASSURANCE: Mapping[int, str] = MappingProxyType({})
 
 
 @dataclass(frozen=True, slots=True)
@@ -77,6 +85,7 @@ class Candidate:
     thought_ids: tuple[int, ...]
     content: str  # matière pour la formulation LLM (step 06)
     context: str | None  # ex. titre de l'évent passé rapproché, ou dépôt relié
+    context_kind: ContextKind | None = None  # nature du context (event | budget)
 
 
 def select_candidates(
@@ -86,12 +95,16 @@ def select_candidates(
     event_matched_worries: Mapping[int, str],
     now: datetime,
     connections: Sequence[ConnectionFacts] = (),
+    budget_reassured_worries: Mapping[int, str] = _NO_BUDGET_REASSURANCE,
 ) -> list[Candidate]:
     """Applique règles, cooldown, priorité et plafond.
 
     `thoughts` peut contenir tous kinds et états : chaque règle filtre
     strictement. `event_matched_worries` mappe `thought_id` → titre de
     l'évent calendrier passé rapproché (calculé en amont, similarité = I/O).
+    `budget_reassured_worries` mappe `thought_id` → phrase d'état de budget
+    sain (calculée en amont, fail-soft) pour un souci d'argent apaisable ;
+    vide si le budget est tendu (on ne rassure jamais à tort).
 
     Priorité (décroissante) : closable_worry > loop > connection > stale_idea.
     Un `thought_id` déjà restitué par un candidat prioritaire exclut tout
@@ -100,7 +113,7 @@ def select_candidates(
     avec une boucle retenue est automatiquement écartée.
     """
     ordered = [
-        *_closable_worries(thoughts, event_matched_worries, now),
+        *_closable_worries(thoughts, event_matched_worries, budget_reassured_worries, now),
         *_loop_candidates(loops, now),
         *_connection_candidates(connections, now),
         *_stale_ideas(thoughts, now),
@@ -120,9 +133,14 @@ def select_candidates(
 def _closable_worries(
     thoughts: Sequence[ThoughtFacts],
     event_matched_worries: Mapping[int, str],
+    budget_reassured_worries: Mapping[int, str],
     now: datetime,
 ) -> list[Candidate]:
-    """Soucis ouverts rapprochés d'un évent passé OU ouverts depuis > 14 j."""
+    """Soucis ouverts rapprochés d'un évent, apaisés par le budget, OU > 14 j.
+
+    `context`/`context_kind` retiennent le signal le plus spécifique : évent
+    passé d'abord, puis budget sain, sinon rien (déclenchement par ancienneté).
+    """
     eligible = [
         t
         for t in thoughts
@@ -131,19 +149,31 @@ def _closable_worries(
         and not _in_cooldown(t.surfaced_at, now)
         and (
             t.thought_id in event_matched_worries
+            or t.thought_id in budget_reassured_worries
             or _older_than(t.created_at, now, STALE_WORRY_DAYS)
         )
     ]
     eligible.sort(key=lambda t: t.created_at, reverse=True)
-    return [
-        Candidate(
-            type="closable_worry",
-            thought_ids=(t.thought_id,),
-            content=t.content,
-            context=event_matched_worries.get(t.thought_id),
+    candidates: list[Candidate] = []
+    for t in eligible:
+        context: str | None
+        context_kind: ContextKind | None
+        if t.thought_id in event_matched_worries:
+            context, context_kind = event_matched_worries[t.thought_id], "event"
+        elif t.thought_id in budget_reassured_worries:
+            context, context_kind = budget_reassured_worries[t.thought_id], "budget"
+        else:
+            context, context_kind = None, None
+        candidates.append(
+            Candidate(
+                type="closable_worry",
+                thought_ids=(t.thought_id,),
+                content=t.content,
+                context=context,
+                context_kind=context_kind,
+            )
         )
-        for t in eligible
-    ]
+    return candidates
 
 
 def _loop_candidates(loops: Sequence[LoopFacts], now: datetime) -> list[Candidate]:

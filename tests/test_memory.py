@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from unittest.mock import AsyncMock
 
@@ -200,3 +201,59 @@ async def test_find_similar_depots_respects_top_k(
 
     # Les deux plus proches uniquement (0.0 puis ≈0.0014)
     assert [m.thought_id for m in matches] == [1, 2]
+
+
+# --- retrieve_context : seuil de distance + boost de récence ----------------
+
+
+def _fixed_embedder(query_vector: list[float]) -> AsyncMock:
+    """Embedder qui renvoie toujours `query_vector` (pour piloter la distance)."""
+    embedder = AsyncMock()
+    embedder.embed.side_effect = lambda _text: query_vector
+    return embedder
+
+
+async def test_retrieve_context_filters_beyond_max_distance(tmp_data_dir: Path) -> None:
+    manager = MemoryManager(
+        tmp_data_dir / "chroma", _fixed_embedder([1.0, 0.0, 0.0, 0.0]), rag_max_distance=0.5
+    )
+    # Souvenir orthogonal à la requête → distance cosine 1.0 > 0.5 → écarté.
+    manager._collection.add(
+        ids=["far"],
+        embeddings=[[0.0, 1.0, 0.0, 0.0]],
+        documents=["hors sujet"],
+        metadatas=[{"timestamp": datetime.now(UTC).isoformat()}],
+    )
+    assert await manager.retrieve_context("peu importe", top_k=5) == []
+
+
+async def test_retrieve_context_recency_breaks_ties(tmp_data_dir: Path) -> None:
+    manager = MemoryManager(
+        tmp_data_dir / "chroma",
+        _fixed_embedder([1.0, 0.0, 0.0, 0.0]),
+        rag_max_distance=0.5,
+        rag_recency_half_life_days=30.0,
+    )
+    now = datetime.now(UTC)
+    # Deux souvenirs à distance 0 de la requête : seule la récence les départage.
+    manager._collection.add(
+        ids=["old", "new"],
+        embeddings=[[1.0, 0.0, 0.0, 0.0], [1.0, 0.0, 0.0, 0.0]],
+        documents=["souvenir ancien", "souvenir récent"],
+        metadatas=[
+            {"timestamp": (now - timedelta(days=90)).isoformat()},
+            {"timestamp": now.isoformat()},
+        ],
+    )
+    results = await manager.retrieve_context("peu importe", top_k=5)
+    assert results[0] == "souvenir récent"
+    assert set(results) == {"souvenir récent", "souvenir ancien"}
+
+
+async def test_embed_texts_delegates_to_embed_many(
+    tmp_data_dir: Path, embedder_with_varying_vectors: AsyncMock
+) -> None:
+    manager = MemoryManager(tmp_data_dir / "chroma", embedder_with_varying_vectors)
+    vectors = await manager.embed_texts(["a", "b"])
+    assert embedder_with_varying_vectors.embed_many.call_count == 1
+    assert len(vectors) == 2

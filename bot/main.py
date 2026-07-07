@@ -132,12 +132,20 @@ async def _build_state(
 
     location_events = LocationEventStore(engine)
 
-    memory = MemoryManager(settings.chroma_dir, embedder)
+    memory = MemoryManager(
+        settings.chroma_dir,
+        embedder,
+        rag_max_distance=settings.rag_max_distance,
+        rag_recency_half_life_days=settings.rag_recency_half_life_days,
+    )
     foryou = ForYouBuilder(
         thoughts=thoughts,
         memory=memory,
         calendar=calendar,
         llm=llm,
+        expenses=expenses,
+        profile=profile,
+        settings=settings,
         similarity_max_distance=settings.foryou_similarity_max_distance,
     )
 

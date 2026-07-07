@@ -82,6 +82,14 @@ NOMINATIM_USER_AGENT=copain-bot/1.0 (personal assistant)
 # Leave empty to disable file persistence (stdout stays active).
 LOG_FILE_PATH=./data/logs/bot.log
 
+# Card "Pour toi" (restitution des dépôts cognitifs)
+FORYOU_SIMILARITY_MAX_DISTANCE=0.35    # seuil cosine boucles/connexions dépôt↔dépôt
+FORYOU_EVENT_MAX_DISTANCE=0.4          # seuil cosine du booster sémantique souci↔évent
+
+# Mémoire RAG (retrieve_context)
+RAG_MAX_DISTANCE=0.6                    # au-delà, un souvenir est jugé hors-sujet
+RAG_RECENCY_HALF_LIFE_DAYS=30          # demi-vie du boost de récence (départage à pertinence égale)
+
 # Environment (dev | prod) — controls the structlog log format
 ENV=dev
 

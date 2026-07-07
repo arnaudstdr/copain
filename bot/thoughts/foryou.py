@@ -15,16 +15,21 @@ Chaque dépendance externe est isolée sous `try/except` : calendrier down →
 LLM down → formulation template. L'endpoint `GET /foryou` ne renvoie jamais
 de 500 à cause d'une de ces pannes (canal 100 % pull, zéro notification).
 
-Le rapprochement worry ↔ évent passé est **lexical** (tokens significatifs
-partagés) et non sémantique : l'`Embedder` n'est pas exposé dans `BotDeps`
-et ré-embedder les titres d'évents à chaque tap serait coûteux sur le Pi.
-L'ancienneté (> 14 j) reste le déclencheur principal de `closable_worry` ;
-le lexical n'en est qu'un booster de précision.
+Le rapprochement worry ↔ évent passé combine un match **lexical** (tokens
+significatifs partagés, rapide et sans I/O) et un **booster sémantique**
+(embeddings via `MemoryManager.embed_texts`) fusionnés en union : le
+sémantique attrape les synonymes que le lexical rate, et si l'Embedder est
+indisponible on retombe proprement sur le seul lexical (fail-soft). Le petit
+nombre d'évents sur 7 j borne le coût d'embed sur le Pi. L'ancienneté (> 14 j)
+reste un déclencheur de `closable_worry` à part entière. Enfin, un souci
+d'**argent** peut être apaisé par un budget sain (croisement avec
+`compute_budget`, fail-soft, jamais quand le budget est tendu).
 """
 
 from __future__ import annotations
 
 import json
+import math
 import unicodedata
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
@@ -32,6 +37,8 @@ from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Any
 
 from bot.calendar.client import ICloudCalendarError
+from bot.finance.config import extract_finance_config
+from bot.finance.summary import load_budget_summary
 from bot.logging_conf import get_logger
 from bot.thoughts.restitution import (
     CLOSABLE_EVENT_WINDOW_DAYS,
@@ -47,8 +54,13 @@ from bot.thoughts.restitution import (
 if TYPE_CHECKING:
     from bot.calendar.client import ICloudCalendarClient
     from bot.calendar.models import CalendarEvent
+    from bot.config import Settings
+    from bot.finance.budget import BudgetSummary
+    from bot.finance.config import FinanceConfig
+    from bot.finance.manager import ExpenseManager
     from bot.llm.client import LLMClient
     from bot.memory.manager import DepotMatch, MemoryManager
+    from bot.profile import UserProfile
     from bot.thoughts.manager import ThoughtManager
     from bot.thoughts.models import Thought
 
@@ -96,6 +108,43 @@ _STOPWORDS: frozenset[str] = frozenset(
 )
 _MIN_TOKEN_LEN = 4
 
+# Vocabulaire de base pour repérer un souci « d'argent » (tokens déjà
+# normalisés : sans accents, minuscule, longueur ≥ 4 pour passer le filtre de
+# `_significant_tokens`). Complété à la volée par les libellés/catégories des
+# enveloppes et récurrentes du profil (personnalisation gratuite).
+_MONEY_TOKENS: frozenset[str] = frozenset(
+    {
+        "argent",
+        "budget",
+        "fric",
+        "thune",
+        "loyer",
+        "facture",
+        "factures",
+        "banque",
+        "compte",
+        "comptes",
+        "credit",
+        "credits",
+        "pret",
+        "prets",
+        "dette",
+        "dettes",
+        "decouvert",
+        "depense",
+        "depenses",
+        "economies",
+        "epargne",
+        "salaire",
+        "paye",
+        "paie",
+        "impot",
+        "impots",
+        "finances",
+        "financier",
+    }
+)
+
 
 @dataclass(frozen=True, slots=True)
 class ForYouItem:
@@ -123,6 +172,9 @@ class ForYouBuilder:
         memory: MemoryManager,
         calendar: ICloudCalendarClient,
         llm: LLMClient,
+        expenses: ExpenseManager,
+        profile: UserProfile,
+        settings: Settings,
         *,
         similarity_max_distance: float,
         max_seeds: int = 20,
@@ -132,7 +184,11 @@ class ForYouBuilder:
         self._memory = memory
         self._calendar = calendar
         self._llm = llm
+        self._expenses = expenses
+        self._profile = profile
+        self._settings = settings
         self._max_distance = similarity_max_distance
+        self._event_max_distance = settings.foryou_event_max_distance
         self._max_seeds = max_seeds
         self._top_k = top_k
 
@@ -152,7 +208,16 @@ class ForYouBuilder:
 
         events = await self._safe_past_events(now)
         worries = [f for f in open_facts if f.kind == "worry"]
-        event_matched = match_worries_to_events(worries, events)
+        # Union lexical (rapide, fail-safe) et sémantique (attrape les
+        # synonymes) : le lexical prime sur conflit. Embedder KO → sémantique
+        # vide → comportement lexical d'origine.
+        lexical = match_worries_to_events(worries, events)
+        semantic = await self._safe_semantic_worry_events(worries, events)
+        event_matched = {**semantic, **lexical}
+
+        # Souci d'argent apaisé par un budget sain (fail-soft ; {} si budget
+        # tendu ou non configuré — on ne rassure jamais à tort).
+        budget_reassured = await self._safe_budget_reassurance(worries, now)
 
         # Une seule passe de similarité (un embed par graine ouverte) alimente
         # à la fois les boucles (≥ 3, versant anxieux) et les connexions
@@ -167,6 +232,7 @@ class ForYouBuilder:
             event_matched_worries=event_matched,
             now=now,
             connections=connections,
+            budget_reassured_worries=budget_reassured,
         )
 
         items = await self._formulate(candidates)
@@ -210,6 +276,82 @@ class ForYouBuilder:
         except ICloudCalendarError as exc:
             log.warning("foryou_calendar_skipped", error=str(exc))
             return []
+
+    async def _safe_semantic_worry_events(
+        self,
+        worries: Sequence[ThoughtFacts],
+        events: Sequence[CalendarEvent],
+    ) -> dict[int, str]:
+        """Rapproche chaque souci de son évent passé le plus proche (sémantique).
+
+        Un seul appel d'embeddings batché sur `[soucis…, titres d'évents…]`,
+        puis meilleure paire cosine sous `foryou_event_max_distance`. Booster
+        de `match_worries_to_events` : tout échec (Embedder KO) → `{}`, le
+        lexical reste seul. Court-circuite sans embed si rien à apparier.
+        """
+        if not worries or not events:
+            return {}
+        try:
+            worry_contents = [w.content for w in worries]
+            titles = [e.title for e in events]
+            vectors = await self._memory.embed_texts([*worry_contents, *titles])
+            if len(vectors) != len(worry_contents) + len(titles):
+                return {}
+            worry_vecs = vectors[: len(worry_contents)]
+            event_vecs = vectors[len(worry_contents) :]
+            matched: dict[int, str] = {}
+            for worry, wvec in zip(worries, worry_vecs, strict=True):
+                best_title: str | None = None
+                best_distance = self._event_max_distance
+                for event, evec in zip(events, event_vecs, strict=True):
+                    distance = 1.0 - _cosine(wvec, evec)
+                    if distance <= best_distance:
+                        best_distance = distance
+                        best_title = event.title
+                if best_title is not None:
+                    matched[worry.thought_id] = best_title
+            return matched
+        except Exception as exc:  # Embedder/Ollama down → on garde le lexical
+            log.warning("foryou_semantic_events_failed", error=str(exc))
+            return {}
+
+    async def _safe_budget_reassurance(
+        self, worries: Sequence[ThoughtFacts], now: datetime
+    ) -> dict[int, str]:
+        """Soucis d'argent apaisables par un budget sain → {thought_id: phrase}.
+
+        Gate strict : on ne renvoie une phrase que si le restant prévisionnel
+        est positif ET aucune récurrente en retard ET aucune enveloppe
+        dépassée. Sinon `{}` (jamais rassurer à tort ajouterait de l'anxiété).
+        Entièrement fail-soft.
+        """
+        if not worries:
+            return {}
+        try:
+            config = extract_finance_config(self._profile.data)
+            summary = await load_budget_summary(
+                expenses=self._expenses,
+                config=config,
+                timezone=self._settings.timezone,
+            )
+            if summary is None:
+                return {}
+            healthy = (
+                summary.remaining_cents > 0
+                and not summary.has_overdue
+                and not summary.has_envelope_overrun
+            )
+            if not healthy:
+                return {}
+            vocabulary = _finance_vocabulary(config)
+            money_ids = match_money_worries(worries, vocabulary)
+            if not money_ids:
+                return {}
+            phrase = _budget_reassurance_phrase(summary)
+            return dict.fromkeys(money_ids, phrase)
+        except Exception as exc:  # YAML/SQLite/finance KO → pas d'angle budget
+            log.warning("foryou_budget_reassurance_failed", error=str(exc))
+            return {}
 
     async def _gather_similar(
         self, open_facts: Sequence[ThoughtFacts]
@@ -377,6 +519,54 @@ def _significant_tokens(text: str) -> set[str]:
     return {tok for tok in raw if len(tok) >= _MIN_TOKEN_LEN and tok not in _STOPWORDS}
 
 
+def match_money_worries(
+    worries: Iterable[ThoughtFacts],
+    vocabulary: frozenset[str],
+) -> set[int]:
+    """`thought_id` des soucis dont le contenu croise le vocabulaire finance.
+
+    Même normalisation lexicale que `match_worries_to_events` (réutilise
+    `_significant_tokens`). Pur, sans I/O.
+    """
+    return {
+        worry.thought_id for worry in worries if _significant_tokens(worry.content) & vocabulary
+    }
+
+
+def _finance_vocabulary(config: FinanceConfig) -> frozenset[str]:
+    """Vocabulaire finance = base FR + libellés/catégories du profil.
+
+    Les libellés d'enveloppes et de récurrentes (loyer, essence, courses…)
+    passent par `_significant_tokens` pour rester homogènes avec le contenu
+    des soucis (accents/casse normalisés, tokens ≥ 4).
+    """
+    vocab: set[str] = set(_MONEY_TOKENS)
+    for env in config.envelopes:
+        vocab |= _significant_tokens(env.label)
+        vocab |= _significant_tokens(env.category)
+    for rec in config.recurring:
+        vocab |= _significant_tokens(rec.label)
+        if rec.category:
+            vocab |= _significant_tokens(rec.category)
+    return frozenset(vocab)
+
+
+def _cosine(a: Sequence[float], b: Sequence[float]) -> float:
+    """Similarité cosine de deux vecteurs (nomic-embed-text non normalisés)."""
+    dot = sum(x * y for x, y in zip(a, b, strict=True))
+    norm = math.sqrt(sum(x * x for x in a)) * math.sqrt(sum(y * y for y in b))
+    return dot / norm if norm else 0.0
+
+
+def _budget_reassurance_phrase(summary: BudgetSummary) -> str:
+    """Matière factuelle (pas la phrase finale) pour rassurer sur l'argent."""
+    remaining = round(summary.remaining_cents / 100)
+    return (
+        f"le budget du mois est sous contrôle : il reste environ {remaining} € "
+        "de restant prévisionnel, aucune récurrente en retard"
+    )
+
+
 def _to_facts(row: Any) -> ThoughtFacts:
     """Convertit une ligne SQLite en `ThoughtFacts` (datetimes réattachées UTC)."""
     return ThoughtFacts(
@@ -409,7 +599,9 @@ def _template(candidate: Candidate) -> str:
     if candidate.type == "connection":
         other = (candidate.context or "").strip()
         return f"Ça en rejoint une autre : « {content} » fait écho à « {other} »."
-    if candidate.context:
+    if candidate.context_kind == "budget" and candidate.context:
+        return f"Tu t'inquiétais pour « {content} » — pour info, {candidate.context}."
+    if candidate.context:  # évènement passé rapproché
         return (
             f"Tu avais noté « {content} » — c'est peut-être réglé depuis « {candidate.context} » ?"
         )
@@ -424,6 +616,7 @@ def _serialize_candidates(candidates: Sequence[Candidate]) -> str:
             "type": c.type,
             "contenu": c.content,
             "contexte": c.context,
+            "contexte_type": c.context_kind,
         }
         for i, c in enumerate(candidates)
     ]
@@ -461,8 +654,12 @@ _FORMULATION_SYSTEM = (
     "Pour CHAQUE item, rédige UNE phrase courte, sobre et bienveillante en "
     "français, qui aide Arnaud à sortir la chose de sa tête sans rien y "
     "rajouter :\n"
-    "- closable_worry : suggère doucement que ce souci est peut-être réglé "
-    "(propose, n'affirme jamais).\n"
+    '- closable_worry : selon `contexte_type` — "event" : le `contexte` est un '
+    "évènement passé, suggère doucement que le souci est peut-être réglé depuis "
+    '(propose, n\'affirme jamais) ; "budget" : le `contexte` décrit un budget '
+    "sain, rassure sobrement en reprenant l'info chiffrée, sans injonction ni "
+    "dramatisation ; sinon (contexte vide) : demande doucement si c'est toujours "
+    "d'actualité.\n"
     "- loop : objective sans juger qu'un sujet revient souvent ces temps-ci.\n"
     "- stale_idea : fais resurgir l'idée sans pression.\n"
     "- connection : signale sobrement que deux dépôts se font écho, sur un ton "

@@ -46,6 +46,7 @@ def _select(
     loops: list[LoopFacts] | None = None,
     event_matched_worries: dict[int, str] | None = None,
     connections: list[ConnectionFacts] | None = None,
+    budget_reassured_worries: dict[int, str] | None = None,
 ) -> list[Candidate]:
     return select_candidates(
         thoughts=thoughts or [],
@@ -53,6 +54,7 @@ def _select(
         event_matched_worries=event_matched_worries or {},
         now=NOW,
         connections=connections or [],
+        budget_reassured_worries=budget_reassured_worries or {},
     )
 
 
@@ -72,12 +74,46 @@ def test_closable_worry_via_event_match() -> None:
     assert out[0].context == "Contrôle technique"
 
 
+def test_closable_worry_via_event_sets_context_kind() -> None:
+    worry = _thought(1, days_ago=3)
+    out = _select(thoughts=[worry], event_matched_worries={1: "Contrôle technique"})
+    assert out[0].context_kind == "event"
+
+
+def test_closable_worry_via_budget_reassurance() -> None:
+    """Souci d'argent récent apaisé par un budget sain → closable, contexte budget."""
+    worry = _thought(1, days_ago=2, content="peur pour l'argent")
+    out = _select(thoughts=[worry], budget_reassured_worries={1: "budget sain, reste 400 €"})
+    assert len(out) == 1
+    assert out[0].type == "closable_worry"
+    assert out[0].context == "budget sain, reste 400 €"
+    assert out[0].context_kind == "budget"
+
+
+def test_closable_worry_event_takes_precedence_over_budget() -> None:
+    """Un souci rapproché d'un évent ET apaisable par le budget → contexte évent."""
+    worry = _thought(1, days_ago=2)
+    out = _select(
+        thoughts=[worry],
+        event_matched_worries={1: "Contrôle technique"},
+        budget_reassured_worries={1: "budget sain"},
+    )
+    assert out[0].context == "Contrôle technique"
+    assert out[0].context_kind == "event"
+
+
+def test_recent_money_worry_needs_budget_signal() -> None:
+    """Sans mapping budget, un souci récent d'argent n'est pas closable (< 14 j)."""
+    assert _select(thoughts=[_thought(1, days_ago=2, content="peur pour l'argent")]) == []
+
+
 def test_closable_worry_via_age() -> None:
     """Souci ouvert depuis > 14 j, sans évent rapproché → candidat sans contexte."""
     out = _select(thoughts=[_thought(1, days_ago=15)])
     assert len(out) == 1
     assert out[0].type == "closable_worry"
     assert out[0].context is None
+    assert out[0].context_kind is None
 
 
 def test_worry_recent_without_event_is_not_candidate() -> None:

@@ -17,7 +17,14 @@ import pytest
 from bot.calendar.client import ICloudCalendarError
 from bot.llm.client import LLMError
 from bot.memory.manager import DepotMatch
-from bot.thoughts.foryou import ForYouBuilder, ForYouItem, ForYouResult, match_worries_to_events
+from bot.thoughts import foryou as foryou_module
+from bot.thoughts.foryou import (
+    ForYouBuilder,
+    ForYouItem,
+    ForYouResult,
+    match_money_worries,
+    match_worries_to_events,
+)
 from bot.thoughts.restitution import ThoughtFacts
 
 NOW = datetime(2026, 6, 1, 12, 0, tzinfo=UTC)
@@ -57,8 +64,15 @@ def _build(
     events: list[SimpleNamespace] | BaseException = (),  # type: ignore[assignment]
     calendar_connected: bool = True,
     llm_response: str | BaseException = '["formulé"]',
+    embeddings: list[list[float]] | BaseException | None = None,
+    profile_data: dict[str, object] | None = None,
 ) -> tuple[ForYouBuilder, MagicMock, MagicMock, MagicMock, MagicMock]:
-    """Assemble un ForYouBuilder avec ses collaborateurs mockés."""
+    """Assemble un ForYouBuilder avec ses collaborateurs mockés.
+
+    Par défaut le budget n'est pas configuré (`profile_data={}`) → aucun angle
+    budget, et `embed_texts` renvoie `[]` → booster sémantique neutre (le
+    lexical reste seul). Les tests budget patchent `load_budget_summary`.
+    """
     thoughts = MagicMock()
     thoughts.list_open = AsyncMock(return_value=open_thoughts)
     thoughts.list_since = AsyncMock(
@@ -71,6 +85,10 @@ def _build(
         memory.find_similar_depots = AsyncMock(side_effect=matches)
     else:
         memory.find_similar_depots = AsyncMock(return_value=list(matches))
+    if isinstance(embeddings, BaseException):
+        memory.embed_texts = AsyncMock(side_effect=embeddings)
+    else:
+        memory.embed_texts = AsyncMock(return_value=[] if embeddings is None else embeddings)
 
     calendar = MagicMock()
     calendar.is_connected = calendar_connected
@@ -85,11 +103,18 @@ def _build(
     else:
         llm.chat = AsyncMock(return_value=llm_response)
 
+    expenses = MagicMock()
+    profile = SimpleNamespace(data=profile_data if profile_data is not None else {})
+    settings = SimpleNamespace(timezone="Europe/Paris", foryou_event_max_distance=0.4)
+
     builder = ForYouBuilder(
         thoughts=thoughts,
         memory=memory,
         calendar=calendar,
         llm=llm,
+        expenses=expenses,
+        profile=profile,  # type: ignore[arg-type]
+        settings=settings,  # type: ignore[arg-type]
         similarity_max_distance=0.35,
     )
     return builder, thoughts, memory, calendar, llm
@@ -303,3 +328,152 @@ def test_foryou_item_is_frozen() -> None:
     item = ForYouItem(type="loop", message="x", thought_ids=(1,))
     with pytest.raises(AttributeError):
         item.message = "y"  # type: ignore[misc]
+
+
+# --- helper lexical money-worry --------------------------------------------
+
+
+def test_match_money_worries_matches_base_vocabulary() -> None:
+    worries = [_facts(1, "j'ai peur pour le loyer"), _facts(2, "penser à arroser les plantes")]
+    matched = match_money_worries(worries, frozenset({"loyer", "argent"}))
+    assert matched == {1}
+
+
+# --- piste 1 : souci d'argent apaisé par un budget sain --------------------
+
+
+def _healthy(**overrides: object) -> SimpleNamespace:
+    """Faux BudgetSummary (seuls les champs lus par le gate strict)."""
+    base = {"remaining_cents": 42000, "has_overdue": False, "has_envelope_overrun": False}
+    base.update(overrides)
+    return SimpleNamespace(**base)
+
+
+async def test_money_worry_surfaced_when_budget_healthy(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Souci d'argent récent (age 2 j) : ni ancien, ni évent → SEUL le budget
+    # sain peut le rendre closable.
+    open_thoughts = [_thought(1, kind="worry", age_days=2, content="peur pour l'argent")]
+    builder, _t, _m, _c, llm = _build(open_thoughts=open_thoughts, llm_response='["formulé"]')
+    monkeypatch.setattr(foryou_module, "load_budget_summary", AsyncMock(return_value=_healthy()))
+
+    result = await builder.build(now=NOW)
+
+    assert [it.type for it in result.items] == ["closable_worry"]
+    assert result.items[0].thought_ids == (1,)
+    # Le payload envoyé au LLM porte bien le contexte de type budget.
+    user_payload = llm.chat.call_args.kwargs["messages"][1]["content"]
+    assert '"contexte_type": "budget"' in user_payload
+    assert "restant prévisionnel" in user_payload
+
+
+async def test_money_worry_template_reassures_when_llm_down(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    open_thoughts = [_thought(1, kind="worry", age_days=2, content="peur pour l'argent")]
+    builder, *_ = _build(open_thoughts=open_thoughts, llm_response=LLMError("down"))
+    monkeypatch.setattr(foryou_module, "load_budget_summary", AsyncMock(return_value=_healthy()))
+
+    result = await builder.build(now=NOW)
+
+    assert result.items[0].message.startswith("Tu t'inquiétais pour")
+    assert "restant prévisionnel" in result.items[0].message
+
+
+async def test_money_worry_not_surfaced_when_budget_has_overdue(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    open_thoughts = [_thought(1, kind="worry", age_days=2, content="peur pour l'argent")]
+    builder, *_ = _build(open_thoughts=open_thoughts)
+    monkeypatch.setattr(
+        foryou_module,
+        "load_budget_summary",
+        AsyncMock(return_value=_healthy(has_overdue=True)),
+    )
+
+    result = await builder.build(now=NOW)
+
+    assert result.items == []
+
+
+async def test_money_worry_not_surfaced_when_remaining_negative(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    open_thoughts = [_thought(1, kind="worry", age_days=2, content="peur pour l'argent")]
+    builder, *_ = _build(open_thoughts=open_thoughts)
+    monkeypatch.setattr(
+        foryou_module,
+        "load_budget_summary",
+        AsyncMock(return_value=_healthy(remaining_cents=-500)),
+    )
+
+    result = await builder.build(now=NOW)
+
+    assert result.items == []
+
+
+async def test_non_money_worry_ignored_even_if_budget_healthy(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Souci récent SANS lexique argent → le budget sain ne le concerne pas.
+    open_thoughts = [_thought(1, kind="worry", age_days=2, content="peur pour le chat")]
+    builder, *_ = _build(open_thoughts=open_thoughts)
+    monkeypatch.setattr(foryou_module, "load_budget_summary", AsyncMock(return_value=_healthy()))
+
+    result = await builder.build(now=NOW)
+
+    assert result.items == []
+
+
+# --- piste 2 : booster sémantique worry ↔ évent ----------------------------
+
+
+async def test_semantic_booster_matches_worry_without_shared_token() -> None:
+    # Aucun token partagé ("dents" vs "praticien") → seul le sémantique matche.
+    open_thoughts = [_thought(1, kind="worry", age_days=2, content="angoisse liée aux dents")]
+    events = [SimpleNamespace(title="Contrôle chez le praticien")]
+    # Ordre des vecteurs : [worry1, event1] ; quasi colinéaires → distance ~0.
+    builder, *_ = _build(
+        open_thoughts=open_thoughts,
+        events=events,
+        embeddings=[[1.0, 0.0], [0.99, 0.01]],
+        llm_response='["formulé"]',
+    )
+
+    result = await builder.build(now=NOW)
+
+    assert [it.type for it in result.items] == ["closable_worry"]
+    assert result.items[0].thought_ids == (1,)
+
+
+async def test_semantic_booster_ignores_distant_event() -> None:
+    open_thoughts = [_thought(1, kind="worry", age_days=2, content="angoisse liée aux dents")]
+    events = [SimpleNamespace(title="Réunion budget trimestriel")]
+    # Vecteurs orthogonaux → distance ~1 > seuil → pas de rapprochement.
+    builder, *_ = _build(
+        open_thoughts=open_thoughts,
+        events=events,
+        embeddings=[[1.0, 0.0], [0.0, 1.0]],
+    )
+
+    result = await builder.build(now=NOW)
+
+    assert result.items == []
+
+
+async def test_embedder_down_falls_back_to_lexical_match() -> None:
+    # Embedder KO : le lexical (token "dentiste" partagé) doit encore matcher.
+    open_thoughts = [_thought(1, kind="worry", age_days=2, content="angoisse pour le dentiste")]
+    events = [SimpleNamespace(title="Rendez-vous dentiste")]
+    builder, *_ = _build(
+        open_thoughts=open_thoughts,
+        events=events,
+        embeddings=RuntimeError("embedder down"),
+        llm_response='["formulé"]',
+    )
+
+    result = await builder.build(now=NOW)
+
+    assert [it.type for it in result.items] == ["closable_worry"]
+    assert result.items[0].thought_ids == (1,)

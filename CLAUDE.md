@@ -43,15 +43,25 @@ pour vider des pensées parasites sans tenter de les traiter.
   peut clore que ce qu'il a vu dans la section « Soucis ouverts » du prompt).
 - **Restitution des dépôts (card « Pour toi », `GET /foryou`)** : canal
   100 % pull (fetch au tap, jamais poussé) qui ressort sobrement les dépôts
-  méritant un regard — souci rapprochable d'un évent passé (« closable »),
-  boucle de rumination, **connexion** (deux dépôts sémantiquement proches sans
-  former de boucle — versant *fertile* du même signal de proximité), idée
-  ancienne. Priorité : `closable_worry > loop > connection > stale_idea` (la
-  dédup par `thought_ids` règle seule la collision boucle/connexion).
-  L'orchestrateur (`ForYouBuilder`, `bot/thoughts/foryou.py`) collecte en
-  fail-soft — une seule passe de similarité (`_gather_similar`, un embed par
-  graine ouverte) alimente boucles ET connexions — applique les heuristiques
-  pures de `bot/thoughts/restitution.py` (priorités, fenêtres, cooldown via
+  méritant un regard — souci rapprochable d'un évent passé ou **apaisé par un
+  budget sain** (« closable »), boucle de rumination, **connexion** (deux
+  dépôts sémantiquement proches sans former de boucle — versant *fertile* du
+  même signal de proximité), idée ancienne. Priorité :
+  `closable_worry > loop > connection > stale_idea` (la dédup par `thought_ids`
+  règle seule la collision boucle/connexion). Le rapprochement souci↔évent
+  combine un match **lexical** et un **booster sémantique** (embeddings via
+  `MemoryManager.embed_texts`) fusionnés en union — fail-soft : Embedder KO →
+  lexical seul (`FORYOU_EVENT_MAX_DISTANCE`). Un souci d'**argent** (détecté
+  lexicalement, vocabulaire de base ∪ libellés des enveloppes/récurrentes) est
+  proposé comme closable **uniquement si le budget est sain** (restant > 0,
+  aucune récurrente en retard, aucune enveloppe dépassée — via
+  `load_budget_summary`, `bot/finance/summary.py`) ; jamais quand il est tendu.
+  Le champ `Candidate.context_kind` (`event` | `budget`) pilote la formulation
+  sans multiplier les types côté PWA. L'orchestrateur (`ForYouBuilder`,
+  `bot/thoughts/foryou.py`) collecte en fail-soft — une seule passe de
+  similarité (`_gather_similar`, un embed par graine ouverte) alimente boucles
+  ET connexions — applique les heuristiques pures de
+  `bot/thoughts/restitution.py` (priorités, fenêtres, cooldown via
   `surfaced_at`) puis fait formuler chaque item par le LLM. La card du
   dashboard reste **neutre** (pas de compteur entrant) ; l'overlay porte une
   action par item (« C'est réglé » → `POST /thoughts/{id}/close` sur chaque
@@ -222,7 +232,8 @@ FastAPI app (bot/api.py, served by uvicorn)
         │     ├── store()               → embed + persist the memory_content
         │     ├── store_depot()         → embed + tag {kind=depot, thought_id, thought_kind}
         │     ├── find_similar_depots() → voisins d'un dépôt (where=depot, distances) → boucles + connexions
-        │     └── retrieve_context()    → top-k relevant chunks (RAG du prompt + recall intent=memory)
+        │     ├── embed_texts()         → embeddings de textes libres (booster sémantique souci↔évent)
+        │     └── retrieve_context()    → top-k chunks pondérés (seuil de distance + boost de récence)
         │
         ├── Task Manager (SQLite via SQLAlchemy async + aiosqlite)
         │     ├── create / list_pending / complete / delete

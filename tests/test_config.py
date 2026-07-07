@@ -218,3 +218,24 @@ def test_foryou_similarity_max_distance_custom(monkeypatch: pytest.MonkeyPatch) 
     monkeypatch.setenv("FORYOU_SIMILARITY_MAX_DISTANCE", "0.5")
     settings = load_settings()
     assert settings.foryou_similarity_max_distance == 0.5
+
+
+def test_rag_and_event_distance_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
+    _minimal_env(monkeypatch)
+    for key in ("FORYOU_EVENT_MAX_DISTANCE", "RAG_MAX_DISTANCE", "RAG_RECENCY_HALF_LIFE_DAYS"):
+        monkeypatch.delenv(key, raising=False)
+    settings = load_settings()
+    assert settings.foryou_event_max_distance == 0.4
+    assert settings.rag_max_distance == 0.6
+    assert settings.rag_recency_half_life_days == 30.0
+
+
+def test_rag_and_event_distance_custom(monkeypatch: pytest.MonkeyPatch) -> None:
+    _minimal_env(monkeypatch)
+    monkeypatch.setenv("FORYOU_EVENT_MAX_DISTANCE", "0.5")
+    monkeypatch.setenv("RAG_MAX_DISTANCE", "0.8")
+    monkeypatch.setenv("RAG_RECENCY_HALF_LIFE_DAYS", "10")
+    settings = load_settings()
+    assert settings.foryou_event_max_distance == 0.5
+    assert settings.rag_max_distance == 0.8
+    assert settings.rag_recency_half_life_days == 10.0

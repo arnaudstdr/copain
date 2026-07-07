@@ -38,6 +38,15 @@ HNSW_METADATA: dict[str, str | int] = {
     "hnsw:search_ef": 64,
 }
 
+# Pondération de `retrieve_context` : on sur-échantillonne (RAG_OVERSAMPLE fois
+# top_k) avant de re-classer, pour que le seuil de distance et le boost de
+# récence puissent départager plus large que le top_k final.
+RAG_OVERSAMPLE = 4
+# Bonus de récence maximal soustrait à la distance cosine d'un souvenir tout
+# frais (récence = 1). Volontairement petit : il départage à pertinence
+# sémantique voisine sans jamais écraser un vrai match lointain dans le temps.
+RAG_RECENCY_MAX_BONUS = 0.15
+
 
 class DepotMatch(NamedTuple):
     """Match de similarité sur un dépôt cognitif indexé dans ChromaDB.
@@ -58,7 +67,14 @@ class MemoryManager:
     embedded. Le message brut est conservé en metadata pour debug uniquement.
     """
 
-    def __init__(self, persist_dir: Path, embedder: Embedder) -> None:
+    def __init__(
+        self,
+        persist_dir: Path,
+        embedder: Embedder,
+        *,
+        rag_max_distance: float = 0.6,
+        rag_recency_half_life_days: float = 30.0,
+    ) -> None:
         persist_dir.mkdir(parents=True, exist_ok=True)
         self._client = chromadb.PersistentClient(
             path=str(persist_dir),
@@ -69,6 +85,8 @@ class MemoryManager:
             metadata=HNSW_METADATA,
         )
         self._embedder = embedder
+        self._rag_max_distance = rag_max_distance
+        self._rag_recency_half_life_days = rag_recency_half_life_days
         self._warn_on_hnsw_drift()
 
     def _warn_on_hnsw_drift(self) -> None:
@@ -165,6 +183,15 @@ class MemoryManager:
         )
         log.info("memory_stored_batch", count=len(items))
 
+    async def embed_texts(self, texts: Sequence[str]) -> list[list[float]]:
+        """Embed des textes arbitraires (parallélisé, borné par le sémaphore).
+
+        Expose l'embedder pour des rapprochements sémantiques ad hoc hors
+        ChromaDB (ex. souci ↔ titre d'évènement dans la card « Pour toi »,
+        où les titres ne sont pas indexés). Sans textes → liste vide.
+        """
+        return await self._embedder.embed_many(texts)
+
     async def find_similar_depots(
         self,
         content: str,
@@ -204,12 +231,52 @@ class MemoryManager:
         return matches
 
     async def retrieve_context(self, query: str, top_k: int = 5) -> list[str]:
-        """Retourne les top_k documents les plus pertinents pour la requête."""
+        """Retourne les top_k documents pertinents, seuil + boost de récence.
+
+        Sur-échantillonne (`RAG_OVERSAMPLE * top_k`), écarte les souvenirs
+        hors-sujet (`distance > rag_max_distance`), puis re-classe par un score
+        combinant pertinence sémantique et fraîcheur : `distance - bonus`, où
+        `bonus = RAG_RECENCY_MAX_BONUS * 0.5 ** (âge / demi-vie)`. À pertinence
+        égale, le souvenir le plus récent passe devant ; un souvenir daté ne
+        remonte jamais devant un match sémantique franchement meilleur. La
+        signature reste inchangée (retour `list[str]`) : la pondération est
+        transparente pour les appelants.
+        """
         vector = await self._embedder.embed(query)
         result = await asyncio.to_thread(
             self._collection.query,
             query_embeddings=[vector],  # type: ignore[arg-type, unused-ignore]
-            n_results=top_k,
+            n_results=max(top_k * RAG_OVERSAMPLE, top_k),
+            include=[IncludeEnum.documents, IncludeEnum.metadatas, IncludeEnum.distances],
         )
-        documents = result.get("documents") or [[]]
-        return [doc for doc in documents[0] if isinstance(doc, str)]
+        documents = (result.get("documents") or [[]])[0]
+        metadatas = (result.get("metadatas") or [[]])[0]
+        distances = (result.get("distances") or [[]])[0]
+
+        now = datetime.now(UTC)
+        scored: list[tuple[float, str]] = []
+        for doc, meta, distance in zip(documents, metadatas, distances, strict=True):
+            if not isinstance(doc, str) or distance > self._rag_max_distance:
+                continue
+            timestamp = (meta or {}).get("timestamp")
+            score = distance - RAG_RECENCY_MAX_BONUS * self._recency_weight(timestamp, now)
+            scored.append((score, doc))
+        scored.sort(key=lambda pair: pair[0])
+        return [doc for _, doc in scored[:top_k]]
+
+    def _recency_weight(self, timestamp: Any, now: datetime) -> float:
+        """Poids de récence ∈ [0, 1] à partir d'un `timestamp` ISO (1 = frais).
+
+        Décroissance exponentielle de demi-vie `rag_recency_half_life_days`.
+        Timestamp absent/illisible ou demi-vie non positive → 0 (aucun bonus).
+        """
+        if not isinstance(timestamp, str) or self._rag_recency_half_life_days <= 0:
+            return 0.0
+        try:
+            reference = datetime.fromisoformat(timestamp)
+        except ValueError:
+            return 0.0
+        if reference.tzinfo is None:
+            reference = reference.replace(tzinfo=UTC)
+        age_days = max((now - reference).total_seconds() / 86400.0, 0.0)
+        return float(0.5 ** (age_days / self._rag_recency_half_life_days))

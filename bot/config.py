@@ -66,6 +66,10 @@ class Settings:
     finance_reminder_minute: int
 
     foryou_similarity_max_distance: float
+    foryou_event_max_distance: float
+
+    rag_max_distance: float
+    rag_recency_half_life_days: float
 
     max_history: int
     chat_history_retention_days: int
@@ -205,6 +209,9 @@ def load_settings() -> Settings:
         finance_reminder_hour=_env_int("FINANCE_REMINDER_HOUR", 9),
         finance_reminder_minute=_env_int("FINANCE_REMINDER_MINUTE", 0),
         foryou_similarity_max_distance=_env_float("FORYOU_SIMILARITY_MAX_DISTANCE", 0.25),
+        foryou_event_max_distance=_env_float("FORYOU_EVENT_MAX_DISTANCE", 0.4),
+        rag_max_distance=_env_float("RAG_MAX_DISTANCE", 0.6),
+        rag_recency_half_life_days=_env_float("RAG_RECENCY_HALF_LIFE_DAYS", 30.0),
         max_history=_env_int("MAX_HISTORY", 6),
         chat_history_retention_days=_env_int("CHAT_HISTORY_RETENTION_DAYS", 30),
         open_worries_prompt_limit=_env_int("OPEN_WORRIES_PROMPT_LIMIT", 10),
