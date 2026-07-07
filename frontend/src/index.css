@@ -130,27 +130,25 @@ body {
    ────────────────────────────────────────────────────────────────────────── */
 
 /* ── Modèle de scroll : le DOCUMENT est le scroller racine (cf. layout.css) ── */
-html { background: rgb(var(--bg)); }
+/* Fond vivant « Liquid Glass » : trois halos (blooms) peints sur le CANVAS
+   racine (html), pas dans un pseudo `fixed`. Sur iOS 26 la bande de ~59px hors
+   web view (barre d'adresse / bord système) n'est atteinte par AUCUNE hauteur
+   CSS : WebKit n'y échantillonne que le background du scroller racine. En
+   peignant les blooms sur `html`, le viewport ET cette bande lisent le même
+   fond — plus de liseré gris `--bg` en bas. L'intensité `--bloom-opacity` est
+   appliquée par `color-mix` (parité avec les ::before des vues chat/markdown).
+   Cf. mémoire ios26-pwa-bottom-reserved-zone. */
+html {
+  background:
+    radial-gradient(560px 560px at 8% -8%, color-mix(in srgb, var(--bloom-1) calc(var(--bloom-opacity) * 100%), transparent), transparent 70%),
+    radial-gradient(520px 520px at 100% 38%, color-mix(in srgb, var(--bloom-2) calc(var(--bloom-opacity) * 100%), transparent), transparent 70%),
+    radial-gradient(600px 600px at 14% 108%, color-mix(in srgb, var(--bloom-3) calc(var(--bloom-opacity) * 100%), transparent), transparent 72%),
+    rgb(var(--bg));
+}
 body {
   min-height: 100dvh;
   overscroll-behavior-y: none;
   text-rendering: optimizeLegibility;
-}
-
-/* Fond vivant « Liquid Glass » : trois halos (blooms) fixés au viewport,
-   dérivant lentement derrière tout le contenu. */
-body::before {
-  content: "";
-  position: fixed;
-  inset: -12%;
-  z-index: -2;
-  pointer-events: none;
-  opacity: var(--bloom-opacity);
-  background:
-    radial-gradient(560px 560px at 8% -8%, var(--bloom-1), transparent 70%),
-    radial-gradient(520px 520px at 100% 38%, var(--bloom-2), transparent 70%),
-    radial-gradient(600px 600px at 14% 108%, var(--bloom-3), transparent 72%);
-  animation: bloomDrift 28s ease-in-out infinite;
 }
 /* Grain papier subtil par-dessus les blooms, derrière les cards. */
 body::after {
