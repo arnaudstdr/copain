@@ -38,6 +38,7 @@ from bot.thoughts.restitution import (
     LOOP_MIN_MEMBERS,
     LOOP_WINDOW_DAYS,
     Candidate,
+    ConnectionFacts,
     LoopFacts,
     ThoughtFacts,
     select_candidates,
@@ -47,7 +48,7 @@ if TYPE_CHECKING:
     from bot.calendar.client import ICloudCalendarClient
     from bot.calendar.models import CalendarEvent
     from bot.llm.client import LLMClient
-    from bot.memory.manager import MemoryManager
+    from bot.memory.manager import DepotMatch, MemoryManager
     from bot.thoughts.manager import ThoughtManager
     from bot.thoughts.models import Thought
 
@@ -100,7 +101,7 @@ _MIN_TOKEN_LEN = 4
 class ForYouItem:
     """Item de restitution prêt pour la PWA : type, message formulé, ids ciblés."""
 
-    type: str  # CandidateType : closable_worry | loop | stale_idea
+    type: str  # CandidateType : closable_worry | loop | connection | stale_idea
     message: str
     thought_ids: tuple[int, ...]
 
@@ -153,13 +154,19 @@ class ForYouBuilder:
         worries = [f for f in open_facts if f.kind == "worry"]
         event_matched = match_worries_to_events(worries, events)
 
-        loops = await self._detect_loops(open_facts, facts_by_id)
+        # Une seule passe de similarité (un embed par graine ouverte) alimente
+        # à la fois les boucles (≥ 3, versant anxieux) et les connexions
+        # (paires, versant fertile). ChromaDB down → ni l'un ni l'autre.
+        by_seed = await self._gather_similar(open_facts)
+        loops = self._detect_loops(open_facts, facts_by_id, by_seed)
+        connections = self._detect_connections(open_facts, facts_by_id, by_seed)
 
         candidates = select_candidates(
             thoughts=open_facts,
             loops=loops,
             event_matched_worries=event_matched,
             now=now,
+            connections=connections,
         )
 
         items = await self._formulate(candidates)
@@ -204,17 +211,41 @@ class ForYouBuilder:
             log.warning("foryou_calendar_skipped", error=str(exc))
             return []
 
-    async def _detect_loops(
+    async def _gather_similar(
+        self, open_facts: Sequence[ThoughtFacts]
+    ) -> dict[int, list[DepotMatch]] | None:
+        """Voisins sémantiques par graine ouverte (un `find_similar_depots` chacun).
+
+        Retourne `{thought_id: matches}` (matches triés par distance croissante,
+        déjà filtrés par `max_distance`). `None` si ChromaDB est indisponible →
+        ni boucle ni connexion (les autres candidats restent calculés).
+        """
+        by_seed: dict[int, list[DepotMatch]] = {}
+        for seed in open_facts:
+            try:
+                by_seed[seed.thought_id] = await self._memory.find_similar_depots(
+                    seed.content, top_k=self._top_k, max_distance=self._max_distance
+                )
+            except Exception as exc:  # ChromaDB down → ni boucle ni connexion
+                log.warning("foryou_similar_lookup_failed", error=str(exc))
+                return None
+        return by_seed
+
+    def _detect_loops(
         self,
         open_facts: Sequence[ThoughtFacts],
         facts_by_id: Mapping[int, ThoughtFacts],
+        by_seed: dict[int, list[DepotMatch]] | None,
     ) -> list[LoopFacts]:
         """Regroupe les dépôts similaires en boucles, dédupliquées par chevauchement.
 
-        Les notes sont exclues (graine comme membre). Une panne ChromaDB →
-        aucune boucle (les autres candidats restent calculés). Deux graines qui
-        partagent un membre désignent la même rumination → on n'en garde qu'une.
+        Pur (consomme `by_seed` précalculé par `_gather_similar`). Les notes
+        sont exclues (graine comme membre). `by_seed=None` (ChromaDB down) →
+        aucune boucle. Deux graines qui partagent un membre désignent la même
+        rumination → on n'en garde qu'une.
         """
+        if by_seed is None:
+            return []
         seeds = sorted(
             (f for f in open_facts if f.kind != "note"),
             key=lambda f: f.created_at,
@@ -223,15 +254,8 @@ class ForYouBuilder:
         loops: list[LoopFacts] = []
         kept_ids: set[int] = set()
         for seed in seeds:
-            try:
-                matches = await self._memory.find_similar_depots(
-                    seed.content, top_k=self._top_k, max_distance=self._max_distance
-                )
-            except Exception as exc:  # ChromaDB down → pas de boucles du tout
-                log.warning("foryou_loop_lookup_failed", error=str(exc))
-                return []
             member_ids = {seed.thought_id}
-            for match in matches:
+            for match in by_seed.get(seed.thought_id, []):
                 member = facts_by_id.get(match.thought_id)
                 if member is not None and member.kind != "note":
                     member_ids.add(match.thought_id)
@@ -242,6 +266,39 @@ class ForYouBuilder:
             loops.append(LoopFacts(members=tuple(facts_by_id[i] for i in member_ids)))
             kept_ids |= member_ids
         return loops
+
+    def _detect_connections(
+        self,
+        open_facts: Sequence[ThoughtFacts],
+        facts_by_id: Mapping[int, ThoughtFacts],
+        by_seed: dict[int, list[DepotMatch]] | None,
+    ) -> list[ConnectionFacts]:
+        """Relie chaque graine ouverte à son voisin le plus proche (tous kinds).
+
+        Pur (consomme `by_seed`). Le voisin est le premier match (donc le plus
+        proche) présent dans la fenêtre `facts_by_id` et distinct de la graine.
+        Les paires sont dédupliquées de façon symétrique ({a,b} == {b,a}). La
+        collision avec les boucles est gérée en aval par `select_candidates`
+        (priorité boucle > connexion). `by_seed=None` → aucune connexion.
+        """
+        if by_seed is None:
+            return []
+        connections: list[ConnectionFacts] = []
+        seen_pairs: set[frozenset[int]] = set()
+        seeds = sorted(open_facts, key=lambda f: f.created_at, reverse=True)
+        for seed in seeds:
+            for match in by_seed.get(seed.thought_id, []):
+                if match.thought_id == seed.thought_id:
+                    continue
+                other = facts_by_id.get(match.thought_id)
+                if other is None:
+                    continue
+                pair = frozenset((seed.thought_id, other.thought_id))
+                if pair not in seen_pairs:
+                    seen_pairs.add(pair)
+                    connections.append(ConnectionFacts(a=seed, b=other, distance=match.distance))
+                break  # un seul voisin (le plus proche) par graine
+        return connections
 
     async def _safe_mark_surfaced(self, ids: Sequence[int]) -> None:
         try:
@@ -349,6 +406,9 @@ def _template(candidate: Candidate) -> str:
         return (
             f"Une idée déposée il y a un moment : « {content} ». Tu veux en faire quelque chose ?"
         )
+    if candidate.type == "connection":
+        other = (candidate.context or "").strip()
+        return f"Ça en rejoint une autre : « {content} » fait écho à « {other} »."
     if candidate.context:
         return (
             f"Tu avais noté « {content} » — c'est peut-être réglé depuis « {candidate.context} » ?"
@@ -404,7 +464,10 @@ _FORMULATION_SYSTEM = (
     "- closable_worry : suggère doucement que ce souci est peut-être réglé "
     "(propose, n'affirme jamais).\n"
     "- loop : objective sans juger qu'un sujet revient souvent ces temps-ci.\n"
-    "- stale_idea : fais resurgir l'idée sans pression.\n\n"
+    "- stale_idea : fais resurgir l'idée sans pression.\n"
+    "- connection : signale sobrement que deux dépôts se font écho, sur un ton "
+    "fertile (pas anxieux) — ici `contenu` et `contexte` portent les DEUX "
+    "dépôts reliés, cite-les tous les deux entre « … ».\n\n"
     "RÈGLE ABSOLUE : chaque phrase doit NOMMER le sujet concerné en citant le "
     "champ `contenu` entre guillemets « … » (tu peux le raccourcir s'il est "
     "long, sans en changer le sens). Arnaud lit la phrase seule, sans aucun "

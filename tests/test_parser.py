@@ -54,6 +54,57 @@ Je cherche.
     assert meta["search_query"] == "météo Paris demain"
 
 
+def test_extract_meta_memory_intent_with_query() -> None:
+    raw = """\
+Je regarde.
+<meta>
+{
+  "intent": "memory",
+  "store_memory": false,
+  "memory_content": null,
+  "task": {"content": null, "due_str": null},
+  "search_query": null,
+  "memory_query": "le garage"
+}
+</meta>"""
+    _, meta = extract_meta(raw)
+    assert meta["intent"] == "memory"
+    assert meta["memory_query"] == "le garage"
+
+
+def test_extract_meta_memory_query_defaults_to_none_when_absent() -> None:
+    raw = """\
+Coucou.
+<meta>
+{
+  "intent": "answer",
+  "store_memory": false,
+  "memory_content": null,
+  "task": {"content": null, "due_str": null},
+  "search_query": null
+}
+</meta>"""
+    _, meta = extract_meta(raw)
+    assert meta["memory_query"] is None
+
+
+def test_extract_meta_memory_query_non_string_raises() -> None:
+    raw = """\
+Hop.
+<meta>
+{
+  "intent": "memory",
+  "store_memory": false,
+  "memory_content": null,
+  "task": {"content": null, "due_str": null},
+  "search_query": null,
+  "memory_query": 42
+}
+</meta>"""
+    with pytest.raises(MetaParseError, match="memory_query"):
+        extract_meta(raw)
+
+
 def test_extract_meta_missing_block_raises() -> None:
     with pytest.raises(MetaParseError, match="absent"):
         extract_meta("Juste du texte sans meta.")

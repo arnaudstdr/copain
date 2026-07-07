@@ -20,6 +20,14 @@ pour vider des pensées parasites sans tenter de les traiter.
 ### Current features
 
 - **Conversation** with automatic semantic memory (ChromaDB + embeddings)
+- **Recall de la mémoire (`intent=memory`)** : l'utilisateur interroge sa
+  propre mémoire en langage naturel (« j'avais noté quoi sur le garage ? »).
+  Miroir *lecture* de `store_memory` (écriture) : `memory_query` porte l'objet
+  de la recherche, le pipeline appelle `retrieve_context` (toute la collection,
+  souvenirs + dépôts) puis fait reformuler le résultat par le LLM
+  (`call_with_recall` / `call_with_recall_stream`). Read-only (aucun side
+  effect, aucune card rafraîchie) ; fail-soft → « Je n'ai rien noté là-dessus. »
+  si la mémoire est vide ou l'embed indisponible.
 - **Tasks + reminders** in natural language (SQLite). Reminders are written
   to a `pending_notifications` table at due time; the iOS client polls
   `GET /notifications` to consume them.
@@ -36,8 +44,13 @@ pour vider des pensées parasites sans tenter de les traiter.
 - **Restitution des dépôts (card « Pour toi », `GET /foryou`)** : canal
   100 % pull (fetch au tap, jamais poussé) qui ressort sobrement les dépôts
   méritant un regard — souci rapprochable d'un évent passé (« closable »),
-  boucle de rumination, idée ancienne. L'orchestrateur (`ForYouBuilder`,
-  `bot/thoughts/foryou.py`) collecte en fail-soft, applique les heuristiques
+  boucle de rumination, **connexion** (deux dépôts sémantiquement proches sans
+  former de boucle — versant *fertile* du même signal de proximité), idée
+  ancienne. Priorité : `closable_worry > loop > connection > stale_idea` (la
+  dédup par `thought_ids` règle seule la collision boucle/connexion).
+  L'orchestrateur (`ForYouBuilder`, `bot/thoughts/foryou.py`) collecte en
+  fail-soft — une seule passe de similarité (`_gather_similar`, un embed par
+  graine ouverte) alimente boucles ET connexions — applique les heuristiques
   pures de `bot/thoughts/restitution.py` (priorités, fenêtres, cooldown via
   `surfaced_at`) puis fait formuler chaque item par le LLM. La card du
   dashboard reste **neutre** (pas de compteur entrant) ; l'overlay porte une
@@ -187,6 +200,8 @@ FastAPI app (bot/api.py, served by uvicorn)
         │     ├── call(system, user, images?)        → Ollama chat API
         │     ├── call_with_search(message, results) → re-run with SearXNG results
         │     ├── call_with_search_stream(…)         → idem, streamé (intent search via /ask/stream)
+        │     ├── call_with_recall(msg, notes)       → reformule à partir d'extraits mémoire (intent memory)
+        │     ├── call_with_recall_stream(…)         → idem, streamé (recall via /ask/stream)
         │     ├── chat(messages, cacheable=False)    → low-level call (opt-in cache)
         │     ├── chat_stream(messages)              → streaming chunks (utilisé par /ask/stream)
         │     └── TTLCache (bot.cache)               → LLM opt-in + SearXNG always-on
@@ -197,12 +212,14 @@ FastAPI app (bot/api.py, served by uvicorn)
         │
         ├── <meta> parser
         │     └── Intent ∈ {answer, task, search, memory, feed, event, fuel, weather, depot, expense}
+        │         (memory = recall : lecture de la mémoire via memory_query)
         │         + TaskMeta / FeedMeta / EventMeta / FuelMeta / WeatherMeta / DepotMeta / ExpenseMeta
         │
         ├── Memory Manager (ChromaDB + nomic-embed-text via Ollama)
-        │     ├── store()             → embed + persist the memory_content
-        │     ├── store_depot()       → embed + tag {kind=depot, thought_id, thought_kind}
-        │     └── retrieve_context()  → top-5 relevant chunks
+        │     ├── store()               → embed + persist the memory_content
+        │     ├── store_depot()         → embed + tag {kind=depot, thought_id, thought_kind}
+        │     ├── find_similar_depots() → voisins d'un dépôt (where=depot, distances) → boucles + connexions
+        │     └── retrieve_context()    → top-k relevant chunks (RAG du prompt + recall intent=memory)
         │
         ├── Task Manager (SQLite via SQLAlchemy async + aiosqlite)
         │     ├── create / list_pending / complete / delete
@@ -220,9 +237,11 @@ FastAPI app (bot/api.py, served by uvicorn)
         │         les bulles datées côté PWA (fenêtre glissante, purge au boot)
         │
         ├── Restitution des dépôts (card "Pour toi" — bot/thoughts/)
-        │     ├── restitution.py → heuristiques pures (select_candidates, is_loop)
+        │     ├── restitution.py → heuristiques pures (select_candidates, is_loop,
+        │     │                     _connection_candidates ; types closable_worry/loop/connection/stale_idea)
         │     └── foryou.py      → ForYouBuilder.build (collecte fail-soft +
-        │                          rapprochement worry↔évent lexical + LLM)
+        │                          rapprochement worry↔évent lexical +
+        │                          _gather_similar/_detect_loops/_detect_connections + LLM)
         │
         ├── NotificationStore (bot/notifications/store.py)
         │     ├── add(text, title, priority, sound) → SQLite row + Pushover push
@@ -284,7 +303,7 @@ FastAPI app (bot/api.py, served by uvicorn)
 | Geocoding     | Nominatim OSM (HTTP, no key, in-memory cache)           |
 | Logs          | structlog (console in dev, JSON in prod)                |
 | Container     | Docker + Docker Compose                                 |
-| Tests         | pytest + pytest-asyncio (auto mode, 460+ tests)         |
+| Tests         | pytest + pytest-asyncio (auto mode, 730+ tests)         |
 | Quality       | ruff (lint+format) + mypy strict via pre-commit         |
 | Interface web | React 18 + TypeScript + Vite + Tailwind 3 (build Vite)   |
 | Monitoring    | Sentry SDK (opt-in via `SENTRY_DSN`)                    |
@@ -385,7 +404,8 @@ On every call, the LLM receives a system prompt whose centrepiece is a
     "shared": "true if paid from the joint account (excluded from personal budget), default false",
     "starts_cycle": "true when action=income marks the salary reception (anchors a new budget cycle), default false"
   },
-  "search_query": "query if intent=search, otherwise null"
+  "search_query": "query if intent=search, otherwise null",
+  "memory_query": "what to look up in memory if intent=memory (recall), otherwise null"
 }
 ```
 

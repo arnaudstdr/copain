@@ -23,7 +23,7 @@ fighting for your attention.
 ![CI](https://github.com/arnaudstdr/copain/actions/workflows/ci.yml/badge.svg)
 [![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
 ![mypy: strict](https://img.shields.io/badge/mypy-strict-1f5082)
-![Tests](https://img.shields.io/badge/tests-690%2B-success)
+![Tests](https://img.shields.io/badge/tests-730%2B-success)
 ![Raspberry Pi 5](https://img.shields.io/badge/host-Raspberry_Pi_5-c51a4a?logo=raspberrypi&logoColor=white)
 
 <br/>
@@ -77,8 +77,8 @@ a to-do tyrant.
 ### 🧠 Cognitive offloading, by design
 Drop a parasitic thought — a worry, an idea, a note — and it's acknowledged in **1–3
 words**, stored and embedded. A « **Pour toi** » card later surfaces what's worth a
-second look (a worry now closeable against a past event, a rumination loop, a stale idea)
-— **pulled, never pushed**.
+second look (a worry now closeable against a past event, a rumination loop, a **connection**
+between two related deposits, a stale idea) — **pulled, never pushed**.
 
 </td>
 <td width="50%" valign="top">
@@ -102,9 +102,10 @@ effects; the model only decides. One model, no brittle function-calling glue.
 <td width="50%" valign="top">
 
 ### 🗂️ Memory that knows you
-**Semantic memory** (ChromaDB + embeddings) recalls past context, and a hand-edited
-**profile** (name, family, work, routines) is injected as stable facts into every prompt —
-so the assistant doesn't have to re-discover who you are on each turn.
+**Semantic memory** (ChromaDB + embeddings) recalls past context automatically, and you can
+also **ask it directly** (*"j'avais noté quoi sur le garage ?"*). A hand-edited **profile**
+(name, family, work, routines) is injected as stable facts into every prompt — so the
+assistant doesn't have to re-discover who you are on each turn.
 
 </td>
 </tr>
@@ -140,7 +141,7 @@ Strictly opt-in proactivity, with five layered safeguards.
 | **Data** | SQLAlchemy 2 async · aiosqlite · APScheduler | Tasks, thoughts, budget cycles, persisted reminders |
 | **Integrations** | CalDAV (iCloud) · Open-Meteo · SearXNG · Pushover · Sentry | Real third-party services, real fail-soft handling |
 | **Frontend** | React 18 · TypeScript · Vite · Tailwind 3 (installable PWA) | Typed, hashed assets (no manual cache-busting), HMR in dev |
-| **Quality** | pytest (700+ tests, fully mocked) · Ruff · **mypy strict** · pre-commit | Typed, linted, green on every push |
+| **Quality** | pytest (730+ tests, fully mocked) · Ruff · **mypy strict** · pre-commit | Typed, linted, green on every push |
 | **Deploy** | Docker · Raspberry Pi 5 · Tailscale | Self-hosted, private by construction |
 
 ### Architecture
@@ -265,13 +266,13 @@ copain is single-user and built to keep your life on your own network:
 
 ## Quality &amp; rigor
 
-- **690+ tests** across **43 modules**, fully **mocked** — no external services, no network,
+- **730+ tests** across **43 modules**, fully **mocked** — no external services, no network,
   no flakiness.
 - **mypy strict** + **Ruff** (lint &amp; format) enforced via **pre-commit** and **CI**.
 - `async`/`await` end to end; pure heuristics (restitution, budget math) isolated and unit-tested.
 
 ```bash
-make test            # 690+ tests
+make test            # 730+ tests
 make lint typecheck  # ruff + mypy strict
 ```
 
@@ -290,7 +291,7 @@ make lint typecheck  # ruff + mypy strict
 cp .env.example .env                              # fill in the variables
 cp data/profile.example.yaml data/profile.yaml    # edit with your info
 make install                                       # .venv + deps + pre-commit
-make test                                          # 690+ tests, fully mocked
+make test                                          # 730+ tests, fully mocked
 make run                                            # uvicorn (needs Ollama + SearXNG)
 ```
 

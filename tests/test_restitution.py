@@ -9,6 +9,7 @@ import bot.thoughts.restitution
 from bot.memory.manager import DepotMatch
 from bot.thoughts.restitution import (
     Candidate,
+    ConnectionFacts,
     LoopFacts,
     ThoughtFacts,
     is_loop,
@@ -44,12 +45,14 @@ def _select(
     thoughts: list[ThoughtFacts] | None = None,
     loops: list[LoopFacts] | None = None,
     event_matched_worries: dict[int, str] | None = None,
+    connections: list[ConnectionFacts] | None = None,
 ) -> list[Candidate]:
     return select_candidates(
         thoughts=thoughts or [],
         loops=loops or [],
         event_matched_worries=event_matched_worries or {},
         now=NOW,
+        connections=connections or [],
     )
 
 
@@ -268,6 +271,70 @@ def test_thought_id_deduplicated_across_types() -> None:
     assert [c.type for c in out] == ["closable_worry", "stale_idea"]
     assert out[0].thought_ids == (1,)
     assert out[1].thought_ids == (4,)
+
+
+# ---------------------------------------------------------------------------
+# connection (versant fertile du signal de proximité)
+# ---------------------------------------------------------------------------
+
+
+def _conn(a: ThoughtFacts, b: ThoughtFacts, distance: float = 0.2) -> ConnectionFacts:
+    return ConnectionFacts(a=a, b=b, distance=distance)
+
+
+def test_connection_surfaces_pair_content() -> None:
+    """Une connexion seule ressort avec la graine en content et le voisin en context."""
+    a = _thought(1, kind="idea", days_ago=1, content="idée A")
+    b = _thought(2, kind="note", days_ago=8, content="note B")
+    out = _select(connections=[_conn(a, b, 0.1)])
+    assert len(out) == 1
+    assert out[0].type == "connection"
+    assert out[0].thought_ids == (1, 2)
+    assert out[0].content == "idée A"
+    assert out[0].context == "note B"
+
+
+def test_connection_sorted_by_distance() -> None:
+    """Le lien le plus fort (distance la plus faible) passe en premier."""
+    a1 = _thought(1, days_ago=1, content="A1")
+    b1 = _thought(2, days_ago=1, content="B1")
+    a2 = _thought(3, days_ago=1, content="A2")
+    b2 = _thought(4, days_ago=1, content="B2")
+    out = _select(connections=[_conn(a1, b1, 0.24), _conn(a2, b2, 0.05)])
+    assert [c.thought_ids for c in out] == [(3, 4), (1, 2)]
+
+
+def test_connection_cooldown_excludes_if_either_member_recent() -> None:
+    """Si l'un des deux dépôts a été restitué il y a < 7 j, la connexion attend."""
+    a = _thought(1, days_ago=1, content="A", surfaced_days_ago=2)
+    b = _thought(2, days_ago=1, content="B")
+    assert _select(connections=[_conn(a, b)]) == []
+
+
+def test_connection_dropped_when_sharing_id_with_loop() -> None:
+    """Collision boucle/connexion : la boucle (prioritaire) évince la connexion."""
+    loop = _loop(
+        _thought(1, days_ago=10),
+        _thought(2, days_ago=5),
+        _thought(3, days_ago=1),
+    )
+    # Connexion partageant l'id 3 avec la boucle → écartée par la dédup.
+    conn = _conn(_thought(3, days_ago=1, content="A"), _thought(9, days_ago=2, content="B"))
+    out = _select(loops=[loop], connections=[conn])
+    assert [c.type for c in out] == ["loop"]
+
+
+def test_connection_lower_priority_than_loop_higher_than_stale_idea() -> None:
+    """Ordre : loop > connection > stale_idea (cap 2)."""
+    loop = _loop(
+        _thought(1, days_ago=10),
+        _thought(2, days_ago=5),
+        _thought(3, days_ago=1),
+    )
+    conn = _conn(_thought(4, days_ago=1, content="A"), _thought(5, days_ago=2, content="B"))
+    idea = _thought(6, kind="idea", days_ago=20)
+    out = _select(thoughts=[idea], loops=[loop], connections=[conn])
+    assert [c.type for c in out] == ["loop", "connection"]
 
 
 # ---------------------------------------------------------------------------

@@ -142,6 +142,29 @@ async def test_call_with_search_is_cached() -> None:
     assert client._client.chat.call_count == 1  # type: ignore[attr-defined]
 
 
+async def test_call_with_recall_formats_notes_and_is_cached() -> None:
+    """`call_with_recall` construit un prompt mémoire (list[str]) et cache."""
+    client = LLMClient(base_url="http://x", model="m", cache_ttl_sec=60.0)
+    client._client = AsyncMock()  # type: ignore[assignment]
+    client._client.chat = AsyncMock(return_value={"message": {"content": "réponse recall"}})
+    notes = ["note sur le garage", "devis de 400€"]
+    out = await client.call_with_recall("le garage ?", notes)
+    assert out == "réponse recall"
+    # Deux appels identiques → un seul hit réseau (cacheable=True).
+    await client.call_with_recall("le garage ?", notes)
+    assert client._client.chat.call_count == 1  # type: ignore[attr-defined]
+    # Le system prompt oriente mémoire et interdit le bloc <meta>.
+    sent = client._client.chat.await_args.kwargs["messages"]  # type: ignore[attr-defined]
+    system = sent[0]["content"]
+    assert "<meta>" in system and "PAS de bloc <meta>" in system
+    assert "note sur le garage" in sent[1]["content"]
+
+
+def test_recall_messages_voice_mode_adds_tts_hint() -> None:
+    msgs = LLMClient._recall_messages("q", ["extrait"], voice_mode=True)
+    assert "orale" in msgs[0]["content"]
+
+
 async def test_fallback_triggered_on_primary_timeout() -> None:
     """Quand primary timeout, fallback est appelé et sa réponse renvoyée."""
     import httpx

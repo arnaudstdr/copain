@@ -96,6 +96,7 @@ _NEUTRAL_META: dict[str, Any] = {
         "starts_cycle": False,
     },
     "search_query": None,
+    "memory_query": None,
 }
 
 

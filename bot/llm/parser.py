@@ -103,6 +103,7 @@ class Meta(TypedDict):
     depot: DepotMeta
     expense: ExpenseMeta
     search_query: str | None
+    memory_query: str | None
 
 
 class MetaParseError(ValueError):
@@ -349,6 +350,7 @@ def _validate(data: Any) -> Meta:
     }
 
     search_query = _opt_str(data.get("search_query"), "search_query")
+    memory_query = _opt_str(data.get("memory_query"), "memory_query")
 
     return Meta(
         intent=intent,
@@ -362,6 +364,7 @@ def _validate(data: Any) -> Meta:
         depot=depot,
         expense=expense,
         search_query=search_query,
+        memory_query=memory_query,
     )
 
 

@@ -29,7 +29,7 @@ STALE_IDEA_DAYS = 14
 SURFACED_COOLDOWN_DAYS = 7
 MAX_ITEMS = 2
 
-CandidateType = Literal["closable_worry", "loop", "stale_idea"]
+CandidateType = Literal["closable_worry", "loop", "connection", "stale_idea"]
 
 
 @dataclass(frozen=True, slots=True)
@@ -56,13 +56,27 @@ class LoopFacts:
 
 
 @dataclass(frozen=True, slots=True)
+class ConnectionFacts:
+    """Deux dépôts sémantiquement proches sans former de boucle (< 3 membres).
+
+    Versant *fertile* du même signal de proximité que la boucle (versant
+    *anxieux*) : `a` est la graine (dépôt ouvert récent), `b` le voisin le
+    plus proche relié. `distance` cosine (plus petit = plus fort).
+    """
+
+    a: ThoughtFacts
+    b: ThoughtFacts
+    distance: float
+
+
+@dataclass(frozen=True, slots=True)
 class Candidate:
     """Candidat de restitution retenu, prêt pour la formulation LLM."""
 
     type: CandidateType
     thought_ids: tuple[int, ...]
     content: str  # matière pour la formulation LLM (step 06)
-    context: str | None  # ex. titre de l'évent passé rapproché
+    context: str | None  # ex. titre de l'évent passé rapproché, ou dépôt relié
 
 
 def select_candidates(
@@ -71,6 +85,7 @@ def select_candidates(
     loops: Sequence[LoopFacts],
     event_matched_worries: Mapping[int, str],
     now: datetime,
+    connections: Sequence[ConnectionFacts] = (),
 ) -> list[Candidate]:
     """Applique règles, cooldown, priorité et plafond.
 
@@ -78,12 +93,16 @@ def select_candidates(
     strictement. `event_matched_worries` mappe `thought_id` → titre de
     l'évent calendrier passé rapproché (calculé en amont, similarité = I/O).
 
+    Priorité (décroissante) : closable_worry > loop > connection > stale_idea.
     Un `thought_id` déjà restitué par un candidat prioritaire exclut tout
-    candidat moins prioritaire qui le contient (dédup inter-types).
+    candidat moins prioritaire qui le contient (dédup inter-types). C'est ce
+    qui règle la collision boucle/connexion : une connexion partageant un id
+    avec une boucle retenue est automatiquement écartée.
     """
     ordered = [
         *_closable_worries(thoughts, event_matched_worries, now),
         *_loop_candidates(loops, now),
+        *_connection_candidates(connections, now),
         *_stale_ideas(thoughts, now),
     ]
     selected: list[Candidate] = []
@@ -159,6 +178,33 @@ def _loop_candidates(loops: Sequence[LoopFacts], now: datetime) -> list[Candidat
         )
     out.sort(key=lambda pair: pair[0], reverse=True)
     return [candidate for _, candidate in out]
+
+
+def _connection_candidates(
+    connections: Sequence[ConnectionFacts], now: datetime
+) -> list[Candidate]:
+    """Paires de dépôts reliés, ni l'un ni l'autre restitué récemment.
+
+    Trié par distance croissante (lien le plus fort d'abord). Le cooldown est
+    respecté sur les DEUX membres : si l'un des deux a déjà été ressorti il y a
+    moins de SURFACED_COOLDOWN_DAYS, la connexion attend. `content` porte la
+    graine (dépôt récent), `context` l'autre dépôt relié (matière LLM).
+    """
+    eligible = [
+        c
+        for c in connections
+        if not _in_cooldown(c.a.surfaced_at, now) and not _in_cooldown(c.b.surfaced_at, now)
+    ]
+    eligible.sort(key=lambda c: c.distance)
+    return [
+        Candidate(
+            type="connection",
+            thought_ids=(c.a.thought_id, c.b.thought_id),
+            content=c.a.content,
+            context=c.b.content,
+        )
+        for c in eligible
+    ]
 
 
 def _stale_ideas(thoughts: Sequence[ThoughtFacts], now: datetime) -> list[Candidate]:

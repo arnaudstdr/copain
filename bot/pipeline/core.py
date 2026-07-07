@@ -82,7 +82,13 @@ _FALLBACK_META: Meta = {
         "starts_cycle": False,
     },
     "search_query": None,
+    "memory_query": None,
 }
+
+# Réponse fixe quand un recall (intent `memory`) ne retrouve aucun extrait
+# pertinent (mémoire encore vide, ou embed indisponible) : on évite un second
+# appel LLM qui broderait sur du vide.
+_RECALL_EMPTY_TEXT = "Je n'ai rien noté là-dessus."
 
 
 class StreamEvent(TypedDict, total=False):
@@ -137,15 +143,18 @@ class _RouteOutcome:
 
     - `search_results` non-None → intent search, l'orchestrateur produit le
       résumé à partir de ces résultats (variante streamée ou non) ;
+    - `recall_results` non-None → intent memory (recall), l'orchestrateur
+      reformule à partir de ces extraits de mémoire (liste vide → réponse fixe) ;
     - sinon `replacement` porte l'éventuel texte final d'un handler Python
       (None = l'intro du LLM reste le texte final).
 
-    `loop_size` est orthogonal aux deux branches : taille de la boucle de
+    `loop_size` est orthogonal aux branches : taille de la boucle de
     rumination rejointe par un dépôt (None sinon), suffixée à l'accusé par
     template (décision D3 — jamais par second appel LLM).
     """
 
     search_results: list[SearchResult] | None = None
+    recall_results: list[str] | None = None
     replacement: str | None = None
     loop_size: int | None = None
 
@@ -201,6 +210,12 @@ async def process_message(
     outcome = await _route_and_apply(user_text, meta, deps, intro=text)
     if outcome.search_results is not None:
         text = await deps.llm.call_with_search(user_text, outcome.search_results)
+    elif outcome.recall_results is not None:
+        text = (
+            await deps.llm.call_with_recall(user_text, outcome.recall_results, voice_mode)
+            if outcome.recall_results
+            else _RECALL_EMPTY_TEXT
+        )
     elif outcome.replacement is not None:
         text = outcome.replacement
     if outcome.loop_size is not None:
@@ -270,6 +285,17 @@ async def process_message_stream(
             summary_parts.append(piece)
             yield {"type": "delta", "text": piece}
         text = "".join(summary_parts)
+    elif outcome.recall_results is not None:
+        if outcome.recall_results:
+            yield {"type": "replace", "text": ""}
+            recall_parts: list[str] = []
+            async for piece in deps.llm.call_with_recall_stream(user_text, outcome.recall_results):
+                recall_parts.append(piece)
+                yield {"type": "delta", "text": piece}
+            text = "".join(recall_parts)
+        else:
+            text = _RECALL_EMPTY_TEXT
+            yield {"type": "replace", "text": text}
     elif outcome.replacement is not None:
         text = outcome.replacement
         yield {"type": "replace", "text": text}
@@ -315,8 +341,26 @@ async def _route_and_apply(user_text: str, meta: Meta, deps: BotDeps, intro: str
         results = await deps.search.search(meta["search_query"])
         log.info("search_performed", query=meta["search_query"], hits=len(results))
         return _RouteOutcome(search_results=results, loop_size=effects.loop_size)
+    if meta["intent"] == "memory" and meta["memory_query"]:
+        notes = await _safe_recall(deps, meta["memory_query"])
+        log.info("recall_performed", query=meta["memory_query"], hits=len(notes))
+        return _RouteOutcome(recall_results=notes, loop_size=effects.loop_size)
     replacement = await run_intent_handler(user_text, meta, deps, intro=intro)
     return _RouteOutcome(replacement=replacement, loop_size=effects.loop_size)
+
+
+async def _safe_recall(deps: BotDeps, query: str) -> list[str]:
+    """Recherche sémantique dans la mémoire pour un recall (fail-soft).
+
+    Réutilise `retrieve_context` (toute la collection : souvenirs + dépôts).
+    Un échec d'embedding (Ollama local indisponible) ne doit pas casser la
+    réponse : on retombe sur une liste vide → réponse fixe côté orchestrateur.
+    """
+    try:
+        return await deps.memory.retrieve_context(query, top_k=8)
+    except Exception:
+        log.warning("recall_retrieve_failed", exc_info=True)
+        return []
 
 
 def loop_suffix(loop_size: int) -> str:

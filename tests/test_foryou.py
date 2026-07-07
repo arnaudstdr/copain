@@ -247,6 +247,42 @@ async def test_chromadb_down_no_loop_but_worry_and_idea_present() -> None:
     assert "loop" not in types
 
 
+async def test_build_emits_connection_for_two_close_depots() -> None:
+    """Deux dépôts proches (< 3 membres, pas de boucle) → item connexion."""
+    open_thoughts = [
+        _thought(1, kind="note", age_days=1, content="acheter un vélo cargo"),
+        _thought(2, kind="note", age_days=8, content="idée de vélo pour les enfants"),
+    ]
+    # find_similar_depots renvoie la même liste pour chaque graine (mock) :
+    # chaque dépôt trouve l'autre comme voisin le plus proche.
+    matches = [
+        DepotMatch(thought_id=1, content="acheter un vélo cargo", distance=0.05),
+        DepotMatch(thought_id=2, content="idée de vélo pour les enfants", distance=0.1),
+    ]
+    builder, thoughts, _m, _c, _llm = _build(
+        open_thoughts=open_thoughts,
+        matches=matches,
+        llm_response='["ça se rejoint"]',
+    )
+
+    result = await builder.build(now=NOW)
+
+    assert [it.type for it in result.items] == ["connection"]
+    assert set(result.items[0].thought_ids) == {1, 2}
+    (surfaced_ids,), _ = thoughts.mark_surfaced.call_args
+    assert sorted(surfaced_ids) == [1, 2]
+
+
+async def test_build_no_connection_when_single_open_depot() -> None:
+    """Un seul dépôt ouvert sans voisin → aucune connexion."""
+    builder, _t, _m, _c, _llm = _build(
+        open_thoughts=[_thought(1, kind="note", age_days=1, content="seul dépôt")],
+        matches=[],
+    )
+    result = await builder.build(now=NOW)
+    assert result.items == []
+
+
 async def test_zero_candidates_returns_empty_items() -> None:
     builder, thoughts, _m, _c, llm = _build(open_thoughts=[])
 

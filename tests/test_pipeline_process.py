@@ -53,6 +53,7 @@ def _meta_block(
     expense_shared: bool = False,
     expense_starts_cycle: bool = False,
     search_query: str | None = None,
+    memory_query: str | None = None,
     response_text: str = "Réponse texte.",
 ) -> str:
     """Construit une réponse LLM factice avec bloc <meta> valide."""
@@ -100,6 +101,7 @@ def _meta_block(
             "starts_cycle": expense_starts_cycle,
         },
         "search_query": search_query,
+        "memory_query": memory_query,
     }
     return f"{response_text}\n<meta>{json.dumps(meta)}</meta>"
 
@@ -118,6 +120,7 @@ def deps() -> BotDeps:
     llm = MagicMock()
     llm.call = AsyncMock(return_value=_meta_block(intent="answer"))
     llm.call_with_search = AsyncMock(return_value="Résumé de la recherche")
+    llm.call_with_recall = AsyncMock(return_value="Voici ce que tu avais noté.")
     llm.chat = AsyncMock(return_value="Résumé des articles")
 
     tasks = MagicMock()
@@ -632,6 +635,36 @@ async def test_process_search_intent_relaunches_llm_with_results(
     deps.search.search.assert_awaited_once_with("météo Paris demain")
     deps.llm.call_with_search.assert_awaited_once()
     assert text == "Résumé de la recherche"
+
+
+async def test_process_memory_intent_recalls_and_reformulates(deps: BotDeps) -> None:
+    """intent=memory → retrieve_context sur la query → reformulation LLM."""
+    deps.llm.call = AsyncMock(return_value=_meta_block(intent="memory", memory_query="le garage"))
+    deps.memory.retrieve_context = AsyncMock(return_value=["note sur le garage"])
+    text, _ = await process_message("j'avais noté quoi sur le garage ?", deps=deps)
+    # retrieve_context sert aussi au RAG de _build_prompt (top_k=5) ; on vérifie
+    # l'appel dédié au recall (top_k=8) parmi les appels.
+    deps.memory.retrieve_context.assert_any_await("le garage", top_k=8)
+    deps.llm.call_with_recall.assert_awaited_once()
+    assert text == "Voici ce que tu avais noté."
+
+
+async def test_process_memory_intent_empty_recall_returns_fixed_text(deps: BotDeps) -> None:
+    """Recall sans résultat → texte fixe, pas de second appel LLM."""
+    deps.llm.call = AsyncMock(return_value=_meta_block(intent="memory", memory_query="licorne"))
+    deps.memory.retrieve_context = AsyncMock(return_value=[])
+    text, _ = await process_message("j'avais noté quoi sur les licornes ?", deps=deps)
+    deps.llm.call_with_recall.assert_not_awaited()
+    assert text == "Je n'ai rien noté là-dessus."
+
+
+async def test_safe_recall_returns_empty_on_retrieval_failure(deps: BotDeps) -> None:
+    """_safe_recall isole une panne d'embed (fail-soft) → liste vide."""
+    from bot.memory.embeddings import EmbeddingError
+    from bot.pipeline.core import _safe_recall
+
+    deps.memory.retrieve_context = AsyncMock(side_effect=EmbeddingError("ollama down"))
+    assert await _safe_recall(deps, "le garage") == []
 
 
 async def test_process_feed_list_returns_formatted_list(deps: BotDeps) -> None:

@@ -28,6 +28,7 @@ def _meta_block(
     task_content: str | None = None,
     task_due: str | None = None,
     search_query: str | None = None,
+    memory_query: str | None = None,
     weather_location: str | None = None,
     depot_content: str | None = None,
     depot_kind: str | None = None,
@@ -48,6 +49,7 @@ def _meta_block(
             "thought_id": depot_thought_id,
         },
         "search_query": search_query,
+        "memory_query": memory_query,
     }
     return f"<meta>{json.dumps(meta)}</meta>"
 
@@ -93,6 +95,7 @@ def deps() -> BotDeps:
         return_value=_astream(["Réponse texte.", f"\n{_meta_block('answer')}"])
     )
     llm.call_with_search_stream = MagicMock(return_value=_astream(["Résumé."]))
+    llm.call_with_recall_stream = MagicMock(return_value=_astream(["Tu avais noté ça."]))
 
     tasks = MagicMock()
     fake_task = MagicMock()
@@ -295,6 +298,31 @@ async def test_stream_search_intent_replaces_then_streams_summary(deps: BotDeps)
     assert _visible_text(events) == "Voici le résumé."
     assert "assistant: Voici le résumé." in deps.history
     deps.search.search.assert_awaited_once_with("prix vélo cargo")
+
+
+async def test_stream_memory_intent_replaces_then_streams_recall(deps: BotDeps) -> None:
+    """intent=memory streamé : reset de l'intro puis stream de la reformulation."""
+    deps.llm.chat_stream = MagicMock(
+        return_value=_astream(["Je regarde.\n", _meta_block("memory", memory_query="le garage")])
+    )
+    deps.memory.retrieve_context = AsyncMock(return_value=["note sur le garage"])
+    deps.llm.call_with_recall_stream = MagicMock(return_value=_astream(["Tu avais ", "noté ça."]))
+    events = await _collect(process_message_stream("j'avais noté quoi sur le garage ?", deps))
+    types = [e["type"] for e in events]
+    assert "replace" in types
+    assert _visible_text(events) == "Tu avais noté ça."
+    deps.memory.retrieve_context.assert_any_await("le garage", top_k=8)
+
+
+async def test_stream_memory_intent_empty_recall_shows_fixed_text(deps: BotDeps) -> None:
+    """Recall streamé sans résultat → texte fixe, pas d'appel au stream de recall."""
+    deps.llm.chat_stream = MagicMock(
+        return_value=_astream(["Je regarde.\n", _meta_block("memory", memory_query="licorne")])
+    )
+    deps.memory.retrieve_context = AsyncMock(return_value=[])
+    events = await _collect(process_message_stream("noté quoi sur les licornes ?", deps))
+    assert _visible_text(events) == "Je n'ai rien noté là-dessus."
+    deps.llm.call_with_recall_stream.assert_not_called()
 
 
 async def test_stream_search_frame_sequence_golden(deps: BotDeps) -> None:

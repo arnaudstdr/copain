@@ -169,6 +169,58 @@ class LLMClient:
             {"role": "user", "content": user},
         ]
 
+    async def call_with_recall(
+        self,
+        original_message: str,
+        notes: Iterable[str],
+        voice_mode: bool = False,
+    ) -> str:
+        """Reformule une réponse à partir d'extraits de la mémoire (intent `memory`).
+
+        Miroir de `call_with_search` pour le recall : la recherche ChromaDB a
+        déjà eu lieu, ce second appel ne fait que synthétiser sobrement les
+        notes retrouvées. Pas de bloc <meta>, pas de side effect → `cacheable`.
+        """
+        return await self.chat(
+            messages=self._recall_messages(original_message, notes, voice_mode),
+            cacheable=True,
+        )
+
+    async def call_with_recall_stream(
+        self,
+        original_message: str,
+        notes: Iterable[str],
+        voice_mode: bool = False,
+    ) -> AsyncIterator[str]:
+        """Version streamée de `call_with_recall` (mêmes prompts, même cache)."""
+        async for piece in self.chat_stream(
+            messages=self._recall_messages(original_message, notes, voice_mode),
+            cacheable=True,
+        ):
+            yield piece
+
+    @staticmethod
+    def _recall_messages(
+        original_message: str,
+        notes: Iterable[str],
+        voice_mode: bool = False,
+    ) -> list[dict[str, Any]]:
+        """Construit les messages du recall (partagé stream / non-stream)."""
+        formatted = "\n".join(f"- {note}" for note in notes)
+        system = (
+            "Tu es l'assistant personnel d'Arnaud. Voici des extraits de ses notes "
+            "et de sa mémoire. Réponds à sa question UNIQUEMENT à partir de ces "
+            "extraits, sobrement et en français. Si rien ne correspond vraiment, "
+            "dis-le simplement sans inventer. N'inclus PAS de bloc <meta>."
+        )
+        if voice_mode:
+            system += " Réponse orale : 1 à 2 phrases, pas de markdown ni d'emoji."
+        user = f"Question : {original_message}\n\nExtraits de mémoire :\n{formatted}"
+        return [
+            {"role": "system", "content": system},
+            {"role": "user", "content": user},
+        ]
+
     async def chat(
         self,
         messages: list[dict[str, Any]],
