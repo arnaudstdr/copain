@@ -97,11 +97,12 @@ pour vider des pensées parasites sans tenter de les traiter.
   séparateurs de jour, fenêtre glissante `CHAT_HISTORY_RETENTION_DAYS`).
   **Plus de briefing matin automatique ni de card carburant**
   (intentionnellement, pour ne pas pousser d'info entrante non sollicitée).
-  Code sous `bot/static/` :
-  `index.html` (structure seule, servi en `no-store`), CSS sous `styles/`,
-  JS en modules ES6 natifs sous `js/` (entrée `main.js`, assets référencés
-  avec `?v=N` incrémenté à chaque déploiement pour invalider le cache
-  Safari).
+  Code sous `frontend/` : **app React 18 + TypeScript + Vite + Tailwind 3**
+  (miroir de la stack `domestique-ai`). Sources sous `frontend/src/` (`main.tsx`,
+  `App.tsx`, `api/`, `components/`, `hooks/`, `index.css`), PWA (`manifest.json`,
+  `sw.js`, icônes) sous `frontend/public/`. Le build Vite produit
+  `frontend/dist` (assets hashés → **plus de `?v=N` manuel**), servi par FastAPI
+  via `SPAStaticFiles` (`index.html` en `no-store`, catch-all fallback SPA).
 - **Profil utilisateur YAML** (`data/profile.yaml`): fichier édité à la main
   décrivant l'utilisateur (identité, famille, travail, voiture, routines,
   préférences). Injecté tel quel dans le system prompt à chaque appel LLM,
@@ -149,7 +150,7 @@ FastAPI app (bot/api.py, served by uvicorn)
         ├── verify_api_key dep (X-API-Key vs settings.api_key, 403 if invalid)
         │
         ├── Endpoints
-        │     ├── GET  /             → FileResponse(index.html) → Safari iOS (PWA dashboard)
+        │     ├── GET  /             → SPAStaticFiles(frontend/dist) → Safari iOS (PWA React, catch-all)
         │     ├── GET  /config       → { api_key }  (pas d'auth, réseau Tailscale privé)
         │     ├── POST /ask           → pipeline.process_message(message) → { response, intent, refresh_cards }
         │     │                          (header X-Source: siri active le voice_mode TTS)
@@ -285,7 +286,7 @@ FastAPI app (bot/api.py, served by uvicorn)
 | Container     | Docker + Docker Compose                                 |
 | Tests         | pytest + pytest-asyncio (auto mode, 460+ tests)         |
 | Quality       | ruff (lint+format) + mypy strict via pre-commit         |
-| Interface web | Vanilla JS PWA (modules ES6 natifs, zéro build step)    |
+| Interface web | React 18 + TypeScript + Vite + Tailwind 3 (build Vite)   |
 | Monitoring    | Sentry SDK (opt-in via `SENTRY_DSN`)                    |
 | Push iOS      | Pushover (opt-in via `PUSHOVER_TOKEN` + `PUSHOVER_USER`)|
 

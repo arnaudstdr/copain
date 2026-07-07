@@ -33,6 +33,13 @@ CODE_REVIEW.md
 # Données runtime (volume monté à l'exécution)
 data/
 
+# Front : node_modules et build local sont régénérés dans le stage node du
+# Dockerfile (npm ci + npm run build). Inutile (et lourd) de les envoyer au
+# daemon Docker — seuls les sources de frontend/ sont nécessaires au build.
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+
 # Secrets (jamais dans une image)
 .env
 .env.*

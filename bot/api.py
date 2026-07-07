@@ -30,9 +30,10 @@ from typing import TYPE_CHECKING, Literal
 from zoneinfo import ZoneInfo
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request, status
-from fastapi.responses import FileResponse, Response, StreamingResponse
+from fastapi.responses import Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
+from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.types import Scope
 
 from bot.dashboard import DashboardSnapshot, build_dashboard
@@ -57,25 +58,37 @@ if TYPE_CHECKING:
 
 log = get_logger(__name__)
 
-STATIC_DIR = pathlib.Path(__file__).parent / "static"
+# Build du front React (Vite), unique interface web depuis le cutover (front
+# vanilla supprimé). Absent en dev pur (on passe par `vite dev`) et en CI/clone
+# frais (gitignoré) : dans ce cas aucun serving statique n'est monté (`/` → 404,
+# warning au boot). Présent (image Docker, `make run` local après build) : le
+# catch-all SPAStaticFiles sert `/`. Cf. .claude/plans/frontend-react-vite/.
+FRONTEND_DIST = pathlib.Path(__file__).parent.parent / "frontend" / "dist"
 
 
-class RevalidateStaticFiles(StaticFiles):
-    """`StaticFiles` qui force la revalidation conditionnelle du cache.
+class SPAStaticFiles(StaticFiles):
+    """`StaticFiles` servant le build Vite avec fallback SPA + `no-store` sur l'index.
 
-    La PWA est un graphe de modules ES natifs (zéro build step) : `index.html`
-    (servi en `no-store`) ne versionne que l'entrée `main.js?v=N`, mais les
-    imports internes (`import … from "./dashboard.js"`) sont des chemins nus.
-    Sans `Cache-Control`, Safari applique un cache heuristique et peut servir
-    un module interne périmé tout en chargeant un `main.js` neuf : si une API
-    inter-module a changé (export ajouté/retiré), l'import échoue et toute la
-    PWA reste blanche.
+    Deux écarts par rapport au `StaticFiles(html=True)` standard :
 
-    `no-cache` n'interdit pas la mise en cache : il impose juste une
-    revalidation (`If-None-Match` / `If-Modified-Since`) avant réutilisation.
-    Le coût reste un 304 quand le fichier n'a pas bougé, et le client récupère
-    toujours la version fraîche après un déploiement.
+    - **Fallback SPA** : tout chemin inconnu sous `/` retombe sur `index.html`
+      (200) au lieu de 404. Les vraies routes API restent prioritaires car
+      FastAPI les résout avant ce mount catch-all.
+    - **`index.html` en `no-store`** (comme le serving vanilla) : Safari iOS
+      cache le shell HTML très agressivement, un redéploiement doit pouvoir le
+      remplacer. Les assets, eux, sont hashés par Vite → cache long via les
+      en-têtes par défaut de `StaticFiles`.
     """
+
+    async def get_response(self, path: str, scope: Scope) -> Response:
+        # StaticFiles lève `starlette.exceptions.HTTPException` (classe parente) ;
+        # capturer `fastapi.HTTPException` (sous-classe) ne l'attraperait pas.
+        try:
+            return await super().get_response(path, scope)
+        except StarletteHTTPException as exc:
+            if exc.status_code == 404:
+                return await super().get_response("index.html", scope)
+            raise
 
     def file_response(
         self,
@@ -85,7 +98,8 @@ class RevalidateStaticFiles(StaticFiles):
         status_code: int = 200,
     ) -> Response:
         response = super().file_response(full_path, stat_result, scope, status_code)
-        response.headers["Cache-Control"] = "no-cache"
+        if os.path.basename(full_path) == "index.html":
+            response.headers["Cache-Control"] = "no-store, must-revalidate"
         return response
 
 
@@ -654,32 +668,15 @@ def create_app(state: AppState) -> FastAPI:
     # `allow_origins=["*"]` permettrait à n'importe quelle page web ouverte
     # sur un appareil du Tailnet de lire `GET /config` (et donc l'API key)
     # via un fetch cross-origin.
-    app.mount("/static", RevalidateStaticFiles(directory=STATIC_DIR), name="static")
 
-    @app.get("/", response_class=FileResponse, include_in_schema=False)
-    async def chat_ui() -> FileResponse:
-        # Cache-Control no-store : la PWA iOS cache le HTML très agressivement
-        # (parfois même sans service worker). Sans ce header, un rebuild +
-        # redéploiement ne suffit pas à faire disparaître l'ancien dashboard.
-        return FileResponse(
-            STATIC_DIR / "index.html",
-            headers={"Cache-Control": "no-store, must-revalidate"},
-        )
-
-    _TOUCH_ICON = STATIC_DIR / "icon-1024.png"
-
-    @app.get("/apple-touch-icon.png", response_class=FileResponse, include_in_schema=False)
-    @app.get(
-        "/apple-touch-icon-precomposed.png", response_class=FileResponse, include_in_schema=False
-    )
-    @app.get("/apple-touch-icon-120x120.png", response_class=FileResponse, include_in_schema=False)
-    @app.get(
-        "/apple-touch-icon-120x120-precomposed.png",
-        response_class=FileResponse,
-        include_in_schema=False,
-    )
-    async def apple_touch_icon() -> FileResponse:
-        return FileResponse(_TOUCH_ICON, media_type="image/png")
+    # Le front React (build Vite) est l'unique interface web : servi par le
+    # catch-all SPAStaticFiles monté en fin de create_app (après toutes les
+    # routes explicites). Ses icônes (`/icon-1024.png`, manifest, favicon) et
+    # son `index.html` (no-store) sortent directement de `frontend/dist`. Si le
+    # build est absent (dev pur, CI), rien n'est monté et `/` renvoie 404.
+    react_dist_available = FRONTEND_DIST.is_dir()
+    if not react_dist_available:
+        log.warning("frontend_dist_missing", path=str(FRONTEND_DIST))
 
     @app.get("/config", include_in_schema=False)
     async def get_config(settings: Settings = Depends(get_settings_dep)) -> dict[str, str]:
@@ -1589,6 +1586,13 @@ def create_app(state: AppState) -> FastAPI:
             for e in events_raw
         ]
         return EventsListResponse(events=items)
+
+    # Catch-all SPA : monté APRÈS toutes les routes explicites (elles restent
+    # prioritaires) et uniquement si le build React existe. Sert index.html sur
+    # `/`, les assets hashés, les icônes/manifest, et retombe sur index.html
+    # pour tout chemin inconnu (routing client).
+    if react_dist_available:
+        app.mount("/", SPAStaticFiles(directory=FRONTEND_DIST, html=True), name="spa")
 
     return app
 

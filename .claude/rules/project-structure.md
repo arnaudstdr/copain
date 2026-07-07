@@ -108,30 +108,31 @@ copain/
 │   ├── news/
 │   │   └── client.py            # NewsCurator (SearXNG news + curation LLM)
 │   │
-│   ├── static/                  # PWA vanilla JS (index.html servi à /, no-store)
-│   │   ├── index.html           # structure HTML + <link> CSS + <script type="module">
-│   │   │                        #   assets versionnés ?v=N (cache-busting Safari)
-│   │   ├── manifest.json
-│   │   ├── styles/
-│   │   │   ├── theme.css        # variables CSS + palettes dark/light
-│   │   │   ├── layout.css       # app shell, header, dashboard, composer
-│   │   │   ├── components.css   # cards, overlays, chat, markdown, éphémère/toast
-│   │   │   └── animations.css   # keyframes
-│   │   └── js/                  # modules ES6 natifs, zéro build step
-│   │       ├── main.js          # point d'entrée : boot + bindings du DOM statique
-│   │       ├── state.js         # état global partagé (API_KEY, loading, caches…)
-│   │       ├── api.js           # fetch wrappers : callText, callImage, stream SSE
-│   │       ├── dashboard.js     # loadDashboard + renderers de cards + budget
-│   │       ├── overlays.js      # notifs, tâches (swipe), météo, évents, pour toi
-│   │       ├── chat.js          # mode chat (feed, envoi, bulle SSE live)
-│   │       ├── composer.js      # envoi /ask, photos, micro (SpeechRecognition)
-│   │       ├── markdown.js      # renderMarkdown + vue markdown plein écran
-│   │       └── ui.js            # el(), escHtml(), Lucide, helpers date, toast/éphémère
-│   │
 │   └── proactivity/
 │       ├── models.py            # NotificationLog (shares Base with tasks)
 │       ├── rules.py             # evaluate_rain + evaluate_upcoming_event (pure)
 │       └── service.py           # ProactivityService.tick + on_location_event + safeguards
+│
+├── frontend/                    # PWA React 18 + TS + Vite + Tailwind 3 (miroir domestique-ai)
+│   ├── package.json             # deps front épinglées + scripts (dev/build)
+│   ├── vite.config.ts           # build + proxy dev vers :8000 (map API_PREFIXES)
+│   ├── tailwind.config.js       # tokens couleur → rgb(var(--x) / <alpha>) ; typography
+│   ├── tsconfig.json            # TS strict (+ noUnusedLocals/Parameters)
+│   ├── index.html               # shell HTML (head PWA, <link> icônes racine)
+│   ├── public/                  # copié verbatim dans dist (assets non hashés)
+│   │   ├── manifest.json
+│   │   ├── sw.js                # service worker network-first, CACHE_NAME versionné
+│   │   ├── favicon.svg
+│   │   └── icon-{192,512,1024}.png
+│   ├── dist/                    # build Vite (gitignoré) — servi par SPAStaticFiles
+│   └── src/
+│       ├── main.tsx             # entrée : bootstrapConfig + providers + render
+│       ├── App.tsx              # écran unique (dashboard + overlays via état local)
+│       ├── index.css            # palette (variables CSS dark/light) + CSS portée verbatim
+│       ├── api/                 # client.ts (fetch same-origin + SSE) + types.ts (miroir Pydantic)
+│       ├── components/          # dashboard/ (cards) + overlays/ + chat/ + Composer/Markdown/Toast
+│       ├── hooks/               # useDashboard/useHistory/useChatStream/useNews/useSpeechRecognition
+│       └── lib/                 # format, weatherIcon, chatStore, foryouCache (état hors React)
 │
 ├── data/                        # persisted Docker volume
 │   ├── chroma/

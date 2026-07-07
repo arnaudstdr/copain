@@ -1,0 +1,9 @@
+node_modules/
+dist/
+*.local
+.vite/
+
+# Artefacts de build TypeScript (régénérés par `tsc -b` / `vite build`)
+*.tsbuildinfo
+vite.config.js
+vite.config.d.ts

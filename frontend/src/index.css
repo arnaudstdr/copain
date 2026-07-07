@@ -1,0 +1,539 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ──────────────────────────────────────────────────────────────────────────
+   Socle de tokens de thème (step 03) — portage complet de
+   bot/static/styles/theme.css. Mode sombre « graphite » par défaut + mode
+   clair « béton froid » via prefers-color-scheme.
+
+   La palette de couleurs est exposée en TRIPLETS RGB (« R G B ») et non en hex,
+   pour que les tokens Tailwind (tailwind.config.js) puissent appliquer les
+   modificateurs d'alpha via `rgb(var(--x) / <alpha-value>)` (ex: bg-accent/16).
+   C'est une transformation strictement iso-visuelle des couleurs hex de la PWA.
+   Les tokens composites (glass, blooms, ombres, overlays) restent des valeurs
+   littérales, reprises verbatim de theme.css.
+   ────────────────────────────────────────────────────────────────────────── */
+
+:root {
+  /* ── Typographie « Graphite & acier » ── */
+  --font-display: "IBM Plex Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-body: "IBM Plex Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+
+  /* ── Palette sombre « graphite » — défaut (triplets RGB) ── */
+  --bg: 21 24 28;
+  --bg2: 28 32 38;
+  --bg3: 37 43 51;
+  --bg4: 47 54 63;
+  --border: 35 41 49;
+  --border2: 51 59 69;
+  --text: 223 228 234;
+  --text2: 154 164 176;
+  --text3: 107 116 128;
+  --accent: 100 154 201;
+  --accent2: 130 178 219;
+  --green: 91 168 138;
+  --red: 212 97 90;
+  --orange: 201 139 74;
+  --purple: 138 140 196;
+  --blue: 100 154 201;
+  --on-accent: 14 17 22;
+
+  /* Couleurs dérivées (flash, overlays, ombres, textures). */
+  --flash-bg: rgba(100, 154, 201, 0.16);
+  --overlay-bg: rgba(0, 0, 0, 0.58);
+  --shadow-strong: 0 12px 34px rgba(0, 0, 0, 0.5);
+  --card-shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 4px 14px rgba(0, 0, 0, 0.3);
+  --track-bg: rgba(255, 255, 255, 0.08);
+  --grain-opacity: 0.03;
+
+  /* ── Liquid Glass (mode sombre) ── */
+  --bloom-1: #3a5fae;
+  --bloom-2: #6a4fc0;
+  --bloom-3: #9148c0;
+  --bloom-opacity: 0.6;
+  --glass-fill: rgba(255, 255, 255, 0.07);
+  --glass-fill-2: rgba(255, 255, 255, 0.12);
+  --glass-rim: rgba(255, 255, 255, 0.28);
+  --glass-rim-lo: rgba(255, 255, 255, 0.04);
+  --glass-edge: rgba(255, 255, 255, 0.14);
+  --glass-blur: blur(22px) saturate(180%);
+  --glass-shadow: 0 14px 40px -12px rgba(0, 0, 0, 0.6), 0 2px 10px -4px rgba(0, 0, 0, 0.5);
+  --glass-inset: inset 0 1px 1px rgba(255, 255, 255, 0.22), inset 0 -12px 26px -20px rgba(0, 0, 0, 0.5);
+  --dock-shadow: 0 18px 44px -14px rgba(0, 0, 0, 0.65), var(--glass-inset);
+  /* Voile du header sticky : --bg translucide, le contenu scrolle dessous. */
+  --chrome-fill: rgba(21, 24, 28, 0.7);
+}
+
+/* ── Palette claire « béton froid » — mode clair iOS ── */
+@media (prefers-color-scheme: light) {
+  :root {
+    --bg: 233 237 241;
+    --bg2: 255 255 255;
+    --bg3: 230 234 239;
+    --bg4: 216 222 229;
+    --border: 221 226 232;
+    --border2: 196 204 213;
+    --text: 27 33 39;
+    --text2: 77 88 98;
+    --text3: 130 141 152;
+    --accent: 63 115 159;
+    --accent2: 47 94 135;
+    --green: 63 143 110;
+    --red: 192 69 59;
+    --orange: 185 124 44;
+    --purple: 111 114 176;
+    --blue: 63 115 159;
+    --on-accent: 255 255 255;
+
+    --flash-bg: rgba(63, 115, 159, 0.12);
+    --overlay-bg: rgba(20, 28, 38, 0.4);
+    --shadow-strong: 0 12px 30px rgba(30, 40, 55, 0.16);
+    --card-shadow: 0 1px 2px rgba(30, 40, 55, 0.06), 0 4px 14px rgba(30, 40, 55, 0.08);
+    --track-bg: rgba(20, 28, 38, 0.1);
+    --grain-opacity: 0.03;
+
+    /* ── Liquid Glass (mode clair) ── */
+    --bloom-1: #6fd3dc;
+    --bloom-2: #ffc6a0;
+    --bloom-3: #ffae84;
+    --bloom-opacity: 0.72;
+    --glass-fill: rgba(255, 255, 255, 0.46);
+    --glass-fill-2: rgba(255, 255, 255, 0.62);
+    --glass-rim: rgba(255, 255, 255, 0.85);
+    --glass-rim-lo: rgba(255, 255, 255, 0.1);
+    --glass-edge: rgba(255, 255, 255, 0.55);
+    --glass-blur: blur(22px) saturate(180%);
+    --glass-shadow: 0 10px 30px -10px rgba(26, 40, 64, 0.28), 0 2px 8px -4px rgba(26, 40, 64, 0.18);
+    --glass-inset: inset 0 1px 1px rgba(255, 255, 255, 0.85), inset 0 -10px 24px -18px rgba(40, 60, 90, 0.22);
+    --dock-shadow: 0 18px 40px -14px rgba(20, 30, 50, 0.4), var(--glass-inset);
+    --chrome-fill: rgba(233, 237, 241, 0.7);
+  }
+}
+
+body {
+  margin: 0;
+  background: rgb(var(--bg));
+  color: rgb(var(--text));
+  font-family: var(--font-body);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ──────────────────────────────────────────────────────────────────────────
+   Layout + composants (step 04) — portage verbatim de
+   bot/static/styles/{layout,components,animations}.css. Les tokens de PALETTE
+   (bg/text/accent/red/…) sont référencés en `rgb(var(--x))` (triplets RGB) ;
+   les tokens COMPOSITES (glass/blooms/ombres/overlays/chrome) restent en
+   `var(--x)` (valeurs littérales). Transformation strictement iso-visuelle.
+   Périmètre step 04 : shell (header, dashboard, composer dock, bord bas iOS 26)
+   + cards. Les overlays/panels/chat/markdown viennent aux steps 05-08.
+   ────────────────────────────────────────────────────────────────────────── */
+
+/* ── Modèle de scroll : le DOCUMENT est le scroller racine (cf. layout.css) ── */
+html { background: rgb(var(--bg)); }
+body {
+  min-height: 100dvh;
+  overscroll-behavior-y: none;
+  text-rendering: optimizeLegibility;
+}
+
+/* Fond vivant « Liquid Glass » : trois halos (blooms) fixés au viewport,
+   dérivant lentement derrière tout le contenu. */
+body::before {
+  content: "";
+  position: fixed;
+  inset: -12%;
+  z-index: -2;
+  pointer-events: none;
+  opacity: var(--bloom-opacity);
+  background:
+    radial-gradient(560px 560px at 8% -8%, var(--bloom-1), transparent 70%),
+    radial-gradient(520px 520px at 100% 38%, var(--bloom-2), transparent 70%),
+    radial-gradient(600px 600px at 14% 108%, var(--bloom-3), transparent 72%);
+  animation: bloomDrift 28s ease-in-out infinite;
+}
+/* Grain papier subtil par-dessus les blooms, derrière les cards. */
+body::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  opacity: var(--grain-opacity);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  background-size: 160px 160px;
+}
+
+/* Gabarit centré : la hauteur vient du contenu (le body scrolle). */
+#app { min-height: 100dvh; max-width: 480px; margin: 0 auto; position: relative; }
+
+/* ── Header (sticky, voilé de verre) ── */
+header { display: flex; align-items: center; gap: 12px; padding: 12px 16px; padding-top: max(12px, env(safe-area-inset-top)); position: sticky; top: 0; z-index: 5; background: var(--chrome-fill); -webkit-backdrop-filter: var(--glass-blur); backdrop-filter: var(--glass-blur); }
+.greeting { flex: 1; min-width: 0; }
+.greeting-name { font-weight: 600; font-size: 15px; letter-spacing: 0.6px; text-transform: uppercase; line-height: 1.1; }
+.greeting-date { font-family: var(--font-mono); font-size: 11px; color: rgb(var(--text3)); margin-top: 3px; letter-spacing: 0.2px; }
+.header-btn { position: relative; width: 38px; height: 38px; border-radius: 50%; background: var(--glass-fill); -webkit-backdrop-filter: var(--glass-blur); backdrop-filter: var(--glass-blur); border: 1px solid var(--glass-edge); box-shadow: var(--glass-shadow), var(--glass-inset); color: rgb(var(--text2)); cursor: pointer; display: flex; align-items: center; justify-content: center; flex-shrink: 0; transition: transform 0.1s, background 0.15s; }
+.header-btn:active { transform: scale(0.92); }
+.header-btn:hover { background: var(--glass-fill-2); }
+.badge { position: absolute; top: -3px; right: -3px; background: rgb(var(--red)); color: #fff; font-size: 9px; font-weight: 700; min-width: 16px; height: 16px; padding: 0 4px; border-radius: 8px; display: flex; align-items: center; justify-content: center; }
+
+/* ── Dashboard feed ── */
+#dashboard { padding: 12px 14px 110px; display: flex; flex-direction: column; gap: 10px; }
+.card-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.card-grid > .card { min-width: 0; }
+
+/* ── Card de verre « Liquid Glass » ── */
+.card { position: relative; background: var(--glass-fill); -webkit-backdrop-filter: var(--glass-blur); backdrop-filter: var(--glass-blur); border: 1px solid var(--glass-edge); border-radius: 20px; padding: 15px 16px; display: flex; flex-direction: column; gap: 4px; box-shadow: var(--glass-shadow), var(--glass-inset); transition: background 0.2s, transform 0.15s, box-shadow 0.2s; }
+.card::before { content: ""; position: absolute; inset: 0; border-radius: inherit; pointer-events: none; background: linear-gradient(140deg, var(--glass-rim) 0%, transparent 24%, transparent 80%, var(--glass-rim-lo) 100%); opacity: 0.55; }
+.card > * { position: relative; z-index: 1; }
+.card.tappable { cursor: pointer; }
+.card.tappable:active { transform: scale(0.98); }
+.card.flash { animation: flash 0.6s ease; }
+
+.card-head { display: flex; align-items: center; gap: 10px; }
+.card-icon { width: 30px; height: 30px; border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 15px; background: var(--glass-fill-2); border: 1px solid var(--glass-edge); box-shadow: inset 0 1px 1px var(--glass-rim); flex-shrink: 0; color: rgb(var(--accent)); }
+.card-icon .lucide { width: 16px; height: 16px; }
+
+.lucide { display: inline-block; vertical-align: -2px; flex-shrink: 0; }
+.lucide-warn { color: rgb(var(--red)); }
+.card-label { font-family: var(--font-mono); font-size: 10.5px; color: rgb(var(--text3)); text-transform: uppercase; letter-spacing: 1px; font-weight: 500; }
+.card-primary { font-family: var(--font-display); font-size: 17px; font-weight: 600; letter-spacing: -0.1px; line-height: 1.25; margin-top: 1px; }
+.card-secondary { font-size: 13px; color: rgb(var(--text2)); margin-top: 2px; }
+.card-meta { font-family: var(--font-mono); font-size: 11px; color: rgb(var(--text3)); margin-top: 4px; letter-spacing: 0.2px; }
+.card.empty .card-primary { color: rgb(var(--text3)); font-weight: 500; }
+
+/* ── Card compacte (tuile de grille 2 colonnes) ── */
+.card.compact { padding: 13px 14px; gap: 3px; }
+.card.compact .card-head { gap: 8px; }
+.card.compact .card-label { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.card.compact .card-primary { font-size: 15px; }
+.card.compact .card-primary,
+.card.compact .card-secondary,
+.card.compact .card-meta { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* ── Enveloppes budgétaires (progress bar inline dans la card Budget) ── */
+.envelope-track { height: 4px; border-radius: 2px; background: var(--track-bg); margin-top: 2px; overflow: hidden; }
+.envelope-fill { height: 100%; background: rgb(var(--green)); transition: width 0.2s ease; }
+.envelope-fill.overrun { background: rgb(var(--red)); }
+.envelope-amount-overrun { color: rgb(var(--red)); }
+.envelope-amounts { font-family: var(--font-mono); font-size: 0.95em; letter-spacing: -0.2px; }
+.envelope-shared-badge {
+  display: inline-block;
+  font-size: 0.72em;
+  font-weight: 500;
+  padding: 1px 6px;
+  margin-left: 6px;
+  border-radius: 8px;
+  background: rgb(var(--bg3));
+  color: rgb(var(--text3));
+  border: 1px solid rgb(var(--border2));
+  vertical-align: middle;
+}
+.envelope-row.shared .envelope-label { color: rgb(var(--text2)); }
+.envelope-fill.shared { background: rgb(var(--text3)); }
+
+/* ── Composer wrap (dock flottant) — placeholder au step 04, réel au step 08 ── */
+.composer-wrap {
+  position: fixed;
+  left: 50%;
+  bottom: 0;
+  transform: translateX(-50%);
+  width: 100%;
+  max-width: 480px;
+  margin: 0 auto;
+  z-index: 9;
+  padding: 8px 14px max(14px, env(safe-area-inset-bottom));
+  background: transparent;
+  pointer-events: none;
+}
+.composer-wrap > * { pointer-events: auto; }
+
+.bar, #bar { position: relative; display: flex; align-items: flex-end; gap: 8px; padding: 9px 11px; border: 1px solid var(--glass-edge); border-radius: 30px; background: var(--glass-fill-2); -webkit-backdrop-filter: blur(30px) saturate(200%); backdrop-filter: blur(30px) saturate(200%); box-shadow: var(--dock-shadow); }
+.bar::before, #bar::before { content: ""; position: absolute; inset: 0; border-radius: inherit; pointer-events: none; background: linear-gradient(160deg, var(--glass-rim) 0%, transparent 26%, transparent 80%, var(--glass-rim-lo) 100%); opacity: 0.7; }
+.bar > *, #bar > * { position: relative; z-index: 1; }
+.icon-btn { width: 38px; height: 38px; border-radius: 50%; background: transparent; border: 1px solid transparent; color: rgb(var(--text2)); cursor: pointer; display: flex; align-items: center; justify-content: center; flex-shrink: 0; transition: transform 0.1s, background 0.15s, border-color 0.15s; }
+.icon-btn:active { transform: scale(0.9); }
+.icon-btn:hover { background: var(--glass-fill); border-color: var(--glass-edge); }
+.icon-btn.recording { background: var(--flash-bg); border-color: rgb(var(--accent)); color: rgb(var(--accent)); }
+.msg-input { flex: 1; min-width: 0; background: var(--glass-fill); border: 1px solid var(--glass-edge); border-radius: 22px; padding: 9px 15px; color: rgb(var(--text)); font-size: 16px; resize: none; line-height: 1.4; font-family: inherit; max-height: 110px; overflow-y: auto; outline: none; transition: border-color 0.15s; }
+.msg-input:focus { border-color: rgb(var(--accent)); }
+.send-btn { width: 42px; height: 42px; border-radius: 50%; background: linear-gradient(155deg, rgb(var(--accent2)), rgb(var(--accent))); border: 1px solid rgba(255, 255, 255, 0.25); color: #fff; cursor: pointer; display: flex; align-items: center; justify-content: center; flex-shrink: 0; box-shadow: 0 6px 16px -4px rgb(var(--accent)), inset 0 1px 1px rgba(255, 255, 255, 0.45); transition: opacity 0.15s, transform 0.1s; }
+.send-btn:active { transform: scale(0.9); }
+.send-btn:disabled { opacity: 0.4; cursor: default; }
+
+/* Preview photo (pastille de verre posée au-dessus du dock, step 08). Portée de
+   #preview-bar/#chat-preview-bar du vanilla (montage conditionnel React → pas
+   de .hidden). */
+.preview-bar { margin-bottom: 8px; padding: 8px 12px; border: 1px solid var(--glass-edge); border-radius: 18px; background: var(--glass-fill-2); -webkit-backdrop-filter: var(--glass-blur); backdrop-filter: var(--glass-blur); box-shadow: var(--glass-shadow); display: flex; align-items: center; gap: 12px; flex-shrink: 0; }
+.preview-wrap { position: relative; width: 44px; height: 44px; flex-shrink: 0; }
+.preview-img { width: 44px; height: 44px; object-fit: cover; border-radius: 8px; }
+.remove-btn { position: absolute; top: -5px; right: -5px; width: 16px; height: 16px; border-radius: 50%; background: rgb(var(--red)); border: none; color: #fff; font-size: 8px; cursor: pointer; display: flex; align-items: center; justify-content: center; }
+.preview-label { font-size: 12px; color: rgb(var(--text2)); }
+
+/* ── Bord bas iOS 26 (#edge-glass) — lame de verre échantillonnée par WebKit ── */
+#edge-glass {
+  position: fixed;
+  left: 0; right: 0; bottom: 0;
+  height: 20px;
+  z-index: 30;
+  pointer-events: none;
+  background: var(--glass-fill);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-mask-image: linear-gradient(to top, #000 55%, transparent);
+  mask-image: linear-gradient(to top, #000 55%, transparent);
+}
+
+/* ── Animations (cf. animations.css) ── */
+@keyframes flash { 0% { background: var(--glass-fill); } 30% { background: var(--flash-bg); } 100% { background: var(--glass-fill); } }
+@keyframes bloomDrift {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  33%      { transform: translate(2%, 1.5%) scale(1.05); }
+  66%      { transform: translate(-1.5%, 2%) scale(1.03); }
+}
+@keyframes cardIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+
+/* Révélation échelonnée des cards — UNIQUEMENT au 1er rendu (React pose
+   .revealed sur #dashboard après la 1re animation, cf. App.tsx). */
+#dashboard:not(.revealed) > * { animation: cardIn 0.5s cubic-bezier(0.22, 0.61, 0.36, 1) both; }
+#dashboard:not(.revealed) > *:nth-child(1) { animation-delay: .03s; }
+#dashboard:not(.revealed) > *:nth-child(2) { animation-delay: .09s; }
+#dashboard:not(.revealed) > *:nth-child(3) { animation-delay: .15s; }
+#dashboard:not(.revealed) > *:nth-child(4) { animation-delay: .21s; }
+#dashboard:not(.revealed) > *:nth-child(5) { animation-delay: .27s; }
+#dashboard:not(.revealed) > *:nth-child(6) { animation-delay: .33s; }
+
+@media (prefers-reduced-motion: reduce) {
+  #dashboard:not(.revealed) > * { animation: none; }
+  body::before { animation: none; }
+}
+
+/* ──────────────────────────────────────────────────────────────────────────
+   Overlays de consultation (step 05) — portage verbatim de components.css
+   (notifs, tâches, météo, évents) + de la vue markdown plein écran. Mêmes
+   règles rgb()/var() qu'au step 04 : tokens de PALETTE en `rgb(var(--x))`,
+   tokens COMPOSITES (glass/overlay/bloom/chrome/font) en `var(--x)`. Le rendu
+   React masque via montage conditionnel (pas de classe `.hidden`), donc les
+   règles `.hidden` du vanilla ne sont pas portées. Le dépôt/pour toi/budget
+   (formulaires) arrivent au step 06, le chat au step 07.
+   ────────────────────────────────────────────────────────────────────────── */
+
+/* ── Icône alignée sur le texte (entêtes de panneau) ── */
+.lucide-text { width: 1em; height: 1em; vertical-align: -0.15em; margin-right: 0.35em; }
+
+/* ── Overlay = fond assombri + bottom-sheet de verre ── */
+.overlay { position: fixed; inset: 0; background: var(--overlay-bg); z-index: 15; display: flex; flex-direction: column; justify-content: flex-end; animation: fadeIn 0.15s ease; }
+.panel { position: relative; background: var(--glass-fill-2); -webkit-backdrop-filter: blur(30px) saturate(190%); backdrop-filter: blur(30px) saturate(190%); border-top: 1px solid var(--glass-edge); border-radius: 24px 24px 0 0; padding-bottom: max(20px, env(safe-area-inset-bottom)); box-shadow: 0 -10px 40px -12px rgba(0,0,0,0.3), var(--glass-inset); animation: slideUp 0.25s ease; max-height: 75dvh; display: flex; flex-direction: column; }
+.panel::before { content: ""; position: absolute; inset: 0; border-radius: inherit; pointer-events: none; background: linear-gradient(180deg, var(--glass-rim) 0%, transparent 6%); opacity: 0.6; }
+.panel > * { position: relative; z-index: 1; }
+.panel-head { display: flex; align-items: center; justify-content: space-between; padding: 16px 20px 12px; }
+.panel-title { font-family: var(--font-display); font-weight: 600; font-size: 16px; letter-spacing: -0.1px; }
+.close-btn { background: rgb(var(--bg3)); border: 1px solid rgb(var(--border2)); color: rgb(var(--text2)); width: 28px; height: 28px; border-radius: 50%; cursor: pointer; font-size: 11px; display: flex; align-items: center; justify-content: center; }
+.panel-list { overflow-y: auto; padding: 0 16px 8px; display: flex; flex-direction: column; gap: 8px; }
+.notif-item { background: rgb(var(--bg3)); border: 1px solid rgb(var(--border2)); border-radius: 12px; padding: 11px 13px; display: flex; flex-direction: column; gap: 4px; }
+.notif-text { font-size: 13.5px; line-height: 1.5; white-space: pre-wrap; }
+.notif-time { font-size: 11px; color: rgb(var(--text3)); align-self: flex-end; }
+.panel-empty { padding: 28px 20px; color: rgb(var(--text3)); font-size: 13px; text-align: center; }
+
+/* ── Toast (retour d'action bref) ── */
+#toast { position: fixed; bottom: 100px; left: 50%; transform: translateX(-50%); background: var(--glass-fill-2); -webkit-backdrop-filter: var(--glass-blur); backdrop-filter: var(--glass-blur); border: 1px solid var(--glass-edge); border-radius: 20px; padding: 9px 18px; font-size: 13px; color: rgb(var(--text)); white-space: nowrap; z-index: 20; box-shadow: var(--glass-shadow); animation: toastIn 0.2s ease; pointer-events: none; max-width: 86%; overflow: hidden; text-overflow: ellipsis; }
+/* Toast d'action (icône + libellé) — pastille verte (step 08). */
+.toast-content { display: inline-flex; align-items: center; gap: 6px; }
+.toast-content .lucide { color: rgb(var(--green)); }
+
+/* ── Weather overlay ── */
+.weather-section-title { font-size: 11.5px; color: rgb(var(--text3)); text-transform: uppercase; letter-spacing: 0.5px; font-weight: 500; margin: 8px 4px 4px; }
+.weather-hourly-strip { display: flex; gap: 8px; overflow-x: auto; padding: 4px 4px 8px; scrollbar-width: none; flex-shrink: 0; }
+.weather-hourly-strip::-webkit-scrollbar { display: none; }
+.weather-hour { flex-shrink: 0; background: rgb(var(--bg3)); border: 1px solid rgb(var(--border2)); border-radius: 12px; padding: 10px 12px; min-width: 72px; display: flex; flex-direction: column; align-items: center; gap: 3px; }
+.weather-hour-time { font-size: 11px; color: rgb(var(--text3)); }
+.weather-hour-icon { display: flex; align-items: center; justify-content: center; color: rgb(var(--text)); }
+.weather-hour-icon .lucide { width: 20px; height: 20px; }
+.weather-hour-temp { font-size: 14px; font-weight: 600; }
+.weather-hour-precip { font-size: 10px; color: rgb(var(--blue)); }
+.weather-day { display: flex; align-items: center; gap: 12px; background: rgb(var(--bg3)); border: 1px solid rgb(var(--border2)); border-radius: 12px; padding: 11px 13px; flex-shrink: 0; }
+.weather-day-label { width: 64px; font-size: 13px; font-weight: 500; flex-shrink: 0; text-transform: capitalize; }
+.weather-day-icon { display: flex; align-items: center; justify-content: center; flex-shrink: 0; color: rgb(var(--text)); }
+.weather-day-icon .lucide { width: 20px; height: 20px; }
+.weather-day-desc { flex: 1; font-size: 12.5px; color: rgb(var(--text2)); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.weather-day-temps { font-size: 13px; font-weight: 500; white-space: nowrap; }
+.weather-day-precip { font-size: 11px; color: rgb(var(--blue)); margin-left: 8px; white-space: nowrap; }
+
+/* ── Events overlay ── */
+.events-day-group { display: flex; flex-direction: column; gap: 6px; flex-shrink: 0; }
+.events-day-label { font-size: 11.5px; color: rgb(var(--text3)); text-transform: uppercase; letter-spacing: 0.5px; font-weight: 500; padding: 8px 4px 2px; }
+.event-item { background: rgb(var(--bg3)); border: 1px solid rgb(var(--border2)); border-radius: 12px; padding: 10px 13px; display: flex; flex-direction: column; gap: 3px; flex-shrink: 0; }
+.event-time { font-size: 12px; color: rgb(var(--text3)); }
+.event-title { font-size: 13.5px; font-weight: 500; }
+.event-location { font-size: 11.5px; color: rgb(var(--text2)); display: flex; align-items: center; gap: 4px; }
+.event-location .lucide { width: 12px; height: 12px; flex-shrink: 0; }
+.event-calendar { font-size: 10.5px; color: rgb(var(--text3)); font-style: italic; align-self: flex-end; }
+
+/* ── Tasks overlay ── */
+.task-row { position: relative; background: rgb(var(--bg3)); border: 1px solid rgb(var(--border2)); border-radius: 12px; overflow: hidden; touch-action: pan-y; flex-shrink: 0; }
+.task-row-inner { display: flex; align-items: center; gap: 11px; padding: 11px 13px; background: rgb(var(--bg3)); position: relative; z-index: 2; transition: transform 0.2s ease; will-change: transform; }
+.task-row.swiped .task-row-inner { transform: translateX(-84px); }
+.task-check { width: 22px; height: 22px; border-radius: 50%; border: 2px solid rgb(var(--text3)); flex-shrink: 0; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: background 0.15s, border-color 0.15s, transform 0.1s; }
+.task-check:active { transform: scale(0.88); }
+.task-check.checked { background: rgb(var(--green)); border-color: rgb(var(--green)); }
+.task-check.checked svg { display: block; }
+.task-check svg { display: none; width: 14px; height: 14px; color: #0f0f11; }
+.task-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.task-content { font-size: 13.5px; line-height: 1.35; color: rgb(var(--text)); word-break: break-word; }
+.task-due { font-size: 11px; color: rgb(var(--text3)); }
+.task-due.overdue { color: rgb(var(--red)); }
+.task-row-delete { position: absolute; top: 0; right: 0; bottom: 0; width: 84px; background: rgb(var(--red)); color: #fff; display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 600; cursor: pointer; z-index: 1; }
+.task-row-delete:active { opacity: 0.85; }
+.task-completing { opacity: 0.4; pointer-events: none; }
+
+/* ── Vue markdown plein écran (actu ; réutilisée pour le récap budget step 06) ── */
+#markdown-view { position: fixed; inset: 0; max-width: 480px; margin: 0 auto; background: rgb(var(--bg)); z-index: 12; display: flex; flex-direction: column; overflow: hidden; animation: slideRight 0.2s ease; }
+#markdown-view::before {
+  content: ""; position: absolute; inset: -12%; z-index: 0; pointer-events: none;
+  opacity: var(--bloom-opacity);
+  background:
+    radial-gradient(560px 560px at 8% -8%, var(--bloom-1), transparent 70%),
+    radial-gradient(520px 520px at 100% 38%, var(--bloom-2), transparent 70%),
+    radial-gradient(600px 600px at 14% 108%, var(--bloom-3), transparent 72%);
+}
+#markdown-view > * { position: relative; z-index: 1; }
+.markdown-body { flex: 1; overflow-y: auto; padding: 16px 18px max(20px, env(safe-area-inset-bottom)); font-size: 14.5px; line-height: 1.6; color: rgb(var(--text)); }
+.markdown-body h1 { font-family: var(--font-display); font-size: 21px; font-weight: 700; letter-spacing: -0.3px; margin: 14px 0 10px; color: rgb(var(--text)); }
+.markdown-body h2 { font-family: var(--font-display); font-size: 18px; font-weight: 700; letter-spacing: -0.2px; margin: 16px 0 8px; color: rgb(var(--text)); }
+.markdown-body h3 { font-family: var(--font-display); font-size: 16px; font-weight: 600; margin: 18px 0 8px; color: rgb(var(--text)); }
+.markdown-body strong { font-weight: 600; color: rgb(var(--text)); }
+.markdown-body em { color: rgb(var(--text2)); font-style: normal; }
+.markdown-body a { color: rgb(var(--accent2)); text-decoration: none; word-break: break-all; }
+.markdown-body a:active { opacity: 0.7; }
+.markdown-body ul { list-style: none; padding: 0; margin: 8px 0; }
+.markdown-body li { padding: 8px 0 8px 18px; position: relative; border-bottom: 1px solid rgb(var(--border)); }
+.markdown-body li:last-child { border-bottom: none; }
+.markdown-body li::before { content: "•"; color: rgb(var(--accent2)); position: absolute; left: 4px; top: 8px; font-weight: 700; }
+.markdown-body p { margin: 6px 0; }
+.markdown-empty { color: rgb(var(--text3)); text-align: center; padding: 40px 20px; font-size: 13.5px; }
+
+/* ──────────────────────────────────────────────────────────────────────────
+   Overlays interactifs (step 06) — portage verbatim de components.css :
+   dépôt express (saisie + entrées), « Pour toi » (restitution), Budget
+   (formulaire de saisie directe + récap). Mêmes règles rgb()/var() qu'aux
+   steps 04/05 : tokens de PALETTE (bg/text/accent/green/border) en
+   `rgb(var(--x))`. Le récap budget réutilise `.markdown-body` (rendu JSX
+   iso-visuel, cf. BudgetOverlay) via `.budget-recap`.
+   ────────────────────────────────────────────────────────────────────────── */
+
+/* ── « Pour toi » (restitution des dépôts) ── */
+.foryou-item { background: rgb(var(--bg3)); border: 1px solid rgb(var(--border2)); border-radius: 12px; padding: 13px; display: flex; flex-direction: column; gap: 11px; flex-shrink: 0; overflow: hidden; }
+.foryou-message { font-size: 13.5px; line-height: 1.4; color: rgb(var(--text)); word-break: break-word; }
+.foryou-actions { display: flex; gap: 8px; }
+.foryou-btn { flex: 1; padding: 9px 12px; border-radius: 9px; font-size: 13px; font-weight: 600; cursor: pointer; border: 1px solid transparent; transition: opacity 0.15s, transform 0.1s; }
+.foryou-btn:active { transform: scale(0.97); }
+.foryou-btn.primary { background: rgb(var(--green)); color: #0f0f11; }
+.foryou-btn.ghost { background: transparent; border-color: rgb(var(--border2)); color: rgb(var(--text2)); }
+.foryou-resolving { opacity: 0.4; pointer-events: none; }
+
+/* ── Dépôt express (décharge cognitive directe, sans LLM) ── */
+.depot-form { display: flex; flex-direction: column; gap: 12px; padding: 4px 0; }
+.depot-input { width: 100%; box-sizing: border-box; background: rgb(var(--bg2)); border: 1px solid rgb(var(--border2)); border-radius: 12px; padding: 13px 14px; font-size: 15px; line-height: 1.45; color: rgb(var(--text)); resize: none; font-family: inherit; }
+.depot-input::placeholder { color: rgb(var(--text2)); }
+.depot-input:focus { outline: none; border-color: rgb(var(--accent)); }
+.depot-chips { display: flex; gap: 8px; }
+.depot-chip { flex: 1; padding: 9px 10px; border-radius: 9px; border: 1px solid rgb(var(--border2)); background: rgb(var(--bg2)); color: rgb(var(--text2)); font-size: 13px; font-weight: 600; cursor: pointer; transition: border-color 0.15s, color 0.15s, background 0.15s; }
+.depot-chip.selected { border-color: rgb(var(--accent)); background: rgb(var(--accent)); color: rgb(var(--on-accent)); }
+.depot-submit { padding: 12px; border-radius: 10px; border: 1px solid transparent; background: rgb(var(--accent)); color: rgb(var(--on-accent)); font-size: 15px; font-weight: 600; cursor: pointer; transition: opacity 0.15s, transform 0.1s; }
+.depot-submit:active { transform: scale(0.98); }
+.depot-submit:disabled { opacity: 0.5; pointer-events: none; }
+.depot-entries { display: flex; flex-direction: column; gap: 8px; }
+.depot-entries:empty { display: none; }
+.depot-entries-empty { color: rgb(var(--text2)); font-size: 13px; padding: 8px 2px; }
+.depot-entry { display: flex; align-items: flex-start; gap: 10px; background: rgb(var(--bg3)); border: 1px solid rgb(var(--border2)); border-radius: 12px; padding: 11px 12px; overflow: hidden; flex-shrink: 0; }
+.depot-entry.closed { opacity: 0.6; }
+.depot-entry-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.depot-entry-content { font-size: 14px; line-height: 1.4; color: rgb(var(--text)); word-break: break-word; }
+.depot-entry-age { font-size: 12px; color: rgb(var(--text2)); }
+.depot-entry-btn { flex-shrink: 0; align-self: center; padding: 6px 11px; border-radius: 8px; border: 1px solid rgb(var(--border2)); background: rgb(var(--bg2)); color: rgb(var(--text)); font-size: 12px; font-weight: 600; cursor: pointer; white-space: nowrap; transition: opacity 0.15s, transform 0.1s; }
+.depot-entry-btn:active { transform: scale(0.97); }
+.depot-entry-done { flex-shrink: 0; align-self: center; font-size: 12px; color: rgb(var(--text2)); font-style: italic; }
+
+/* ── Budget overlay (formulaire de saisie directe + récap) ── */
+.budget-form { display: flex; flex-direction: column; gap: 10px; background: rgb(var(--bg3)); border: 1px solid rgb(var(--border2)); border-radius: 12px; padding: 13px; flex-shrink: 0; }
+.budget-field { display: flex; flex-direction: column; gap: 4px; }
+.budget-label { font-size: 11.5px; font-weight: 600; color: rgb(var(--text2)); }
+.budget-input { width: 100%; box-sizing: border-box; background: rgb(var(--bg2)); border: 1px solid rgb(var(--border2)); border-radius: 9px; padding: 9px 11px; font-size: 14px; color: rgb(var(--text)); appearance: none; }
+.budget-input:focus { outline: none; border-color: rgb(var(--accent)); }
+select.budget-input { cursor: pointer; }
+.budget-check { display: flex; align-items: center; gap: 8px; font-size: 13px; color: rgb(var(--text)); cursor: pointer; }
+.budget-check input { width: 17px; height: 17px; accent-color: rgb(var(--accent)); }
+.budget-submit { margin-top: 2px; padding: 11px 12px; border-radius: 9px; border: 1px solid transparent; background: rgb(var(--accent)); color: rgb(var(--on-accent)); font-size: 14px; font-weight: 600; cursor: pointer; transition: opacity 0.15s, transform 0.1s; }
+.budget-submit:active { transform: scale(0.98); }
+.budget-submit:disabled { opacity: 0.5; pointer-events: none; }
+.budget-detail { display: flex; flex-direction: column; gap: 10px; flex-shrink: 0; }
+.budget-recap { padding: 0; }
+.budget-export { align-self: flex-start; padding: 8px 14px; border-radius: 9px; background: transparent; border: 1px solid rgb(var(--border2)); color: rgb(var(--text2)); font-size: 13px; font-weight: 600; cursor: pointer; }
+.budget-export:active { transform: scale(0.98); }
+
+/* ──────────────────────────────────────────────────────────────────────────
+   Mode dialogue (step 07) — portage verbatim de components.css. Vue plein
+   écran #chat-view (fixed, mêmes blooms que #markdown-view), feed de bulles,
+   séparateurs de jour, indicateur « écrit… », markdown en bulle (.chat-md).
+   Mêmes règles rgb()/var() : PALETTE en `rgb(var(--x))`, COMPOSITES (glass/
+   bloom) en `var(--x)`. Pas de `.hidden` (montage conditionnel React).
+   ────────────────────────────────────────────────────────────────────────── */
+
+#chat-view { position: fixed; inset: 0; max-width: 480px; margin: 0 auto; background: rgb(var(--bg)); z-index: 12; display: flex; flex-direction: column; overflow: hidden; animation: fadeIn 0.2s ease; }
+/* Entrée en fondu SANS transform : un translateX casserait le position:fixed de
+   la composer enfant sur WebKit iOS (capsule décalée). fadeIn (opacity seule)
+   évite ce piège tout en gardant la composer fixed pour l'avoidance clavier. */
+#chat-view::before {
+  content: ""; position: absolute; inset: -12%; z-index: 0; pointer-events: none;
+  opacity: var(--bloom-opacity);
+  background:
+    radial-gradient(560px 560px at 8% -8%, var(--bloom-1), transparent 70%),
+    radial-gradient(520px 520px at 100% 38%, var(--bloom-2), transparent 70%),
+    radial-gradient(600px 600px at 14% 108%, var(--bloom-3), transparent 72%);
+}
+#chat-view > * { position: relative; z-index: 1; }
+
+/* Feed : masque bas suivant le dock flottant qui le floute. */
+.chat-feed { flex: 1; overflow-y: auto; padding: 12px 14px 96px; display: flex; flex-direction: column; gap: 10px; -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 118px), transparent); mask-image: linear-gradient(to bottom, #000 calc(100% - 118px), transparent); }
+.chat-feed::-webkit-scrollbar { width: 3px; }
+.chat-feed::-webkit-scrollbar-thumb { background: rgb(var(--border2)); border-radius: 4px; }
+.row { display: flex; align-items: flex-end; gap: 8px; animation: fadeUp 0.2s ease; }
+.row.user { justify-content: flex-end; }
+.row.bot { justify-content: flex-start; }
+.chat-day-sep { display: flex; justify-content: center; margin: 6px 0 2px; }
+.chat-day-sep span { font-size: 11px; font-weight: 600; letter-spacing: 0.02em; color: rgb(var(--text3)); background: rgb(var(--bg3)); border: 1px solid rgb(var(--border2)); border-radius: 10px; padding: 3px 10px; text-transform: capitalize; }
+.avatar-sm { font-size: 14px; background: rgb(var(--bg3)); border-radius: 9px; width: 28px; height: 28px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+.bubble { max-width: 78%; padding: 9px 13px; border-radius: 16px; }
+.bubble.user { background: rgb(var(--accent)); color: rgb(var(--on-accent)); border-bottom-right-radius: 4px; }
+.bubble.bot { background: rgb(var(--bg3)); border: 1px solid rgb(var(--border2)); border-bottom-left-radius: 4px; }
+.bubble-text { font-size: 14px; line-height: 1.55; white-space: pre-wrap; }
+/* Bulle éphémère (réponse /ask du dashboard, step 08). Montage conditionnel
+   React → pas de #ephemeral.hidden. */
+#ephemeral { position: fixed; bottom: 92px; left: 14px; right: 14px; max-width: 452px; margin: 0 auto; background: var(--glass-fill-2); -webkit-backdrop-filter: var(--glass-blur); backdrop-filter: var(--glass-blur); border: 1px solid var(--glass-edge); border-radius: 18px; padding: 13px 15px; font-size: 13.5px; line-height: 1.5; color: rgb(var(--text)); z-index: 8; box-shadow: var(--glass-shadow), var(--glass-inset); animation: slideUpFade 0.2s ease; cursor: pointer; white-space: pre-wrap; max-height: 50dvh; overflow-y: auto; }
+
+/* Markdown rendu dans une bulle (réponses bot ; #ephemeral = bulle éphémère step 08). */
+.chat-md, #ephemeral.chat-md { white-space: normal; }
+.chat-md p { margin: 0 0 8px; }
+.chat-md ul { list-style: none; margin: 0 0 8px; padding: 0; }
+.chat-md p:last-child, .chat-md ul:last-child { margin-bottom: 0; }
+.chat-md li { padding: 2px 0 2px 14px; position: relative; }
+.chat-md li::before { content: "•"; color: rgb(var(--accent2)); position: absolute; left: 2px; font-weight: 700; }
+.chat-md strong { font-weight: 650; }
+.chat-md em { font-style: italic; }
+.chat-md a { color: rgb(var(--accent2)); text-decoration: none; word-break: break-all; }
+.chat-md h1, .chat-md h2, .chat-md h3 { font-size: 14.5px; font-weight: 700; margin: 10px 0 4px; }
+.chat-md h1:first-child, .chat-md h2:first-child, .chat-md h3:first-child { margin-top: 0; }
+.typing { padding: 12px 14px; }
+.dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: rgb(var(--accent)); animation: bounce 1.2s infinite; margin-right: 4px; }
+.dot:nth-child(2) { animation-delay: 0.2s; }
+.dot:nth-child(3) { animation-delay: 0.4s; }
+
+/* ── Keyframes supplémentaires (cf. animations.css) ── */
+@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+@keyframes slideUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
+@keyframes slideRight { from { transform: translateX(8%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+@keyframes toastIn { from { opacity: 0; transform: translateX(-50%) translateY(8px); } to { opacity: 1; transform: translateX(-50%) translateY(0); } }
+@keyframes slideUpFade { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes fadeUp { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes bounce { 0%, 80%, 100% { transform: translateY(0); } 40% { transform: translateY(-6px); } }

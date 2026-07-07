@@ -17,7 +17,7 @@ fighting for your attention.
 ![FastAPI](https://img.shields.io/badge/FastAPI-009688?logo=fastapi&logoColor=white)
 ![Ollama](https://img.shields.io/badge/LLM-Ollama-000000?logo=ollama&logoColor=white)
 ![ChromaDB](https://img.shields.io/badge/memory-ChromaDB-ff6f61)
-![PWA](https://img.shields.io/badge/PWA-vanilla_JS-f7df1e?logo=javascript&logoColor=black)
+![PWA](https://img.shields.io/badge/PWA-React_+_Vite-61dafb?logo=react&logoColor=black)
 ![Docker](https://img.shields.io/badge/Docker-ready-2496ED?logo=docker&logoColor=white)
 <br/>
 ![CI](https://github.com/arnaudstdr/copain/actions/workflows/ci.yml/badge.svg)
@@ -139,8 +139,8 @@ Strictly opt-in proactivity, with five layered safeguards.
 | **Memory** | ChromaDB (HNSW) · `nomic-embed-text` embeddings | Semantic recall without a managed vector DB |
 | **Data** | SQLAlchemy 2 async · aiosqlite · APScheduler | Tasks, thoughts, budget cycles, persisted reminders |
 | **Integrations** | CalDAV (iCloud) · Open-Meteo · SearXNG · Pushover · Sentry | Real third-party services, real fail-soft handling |
-| **Frontend** | Vanilla-JS PWA (ES6 modules, **zero build step**) | Installable, iOS-native feel, no toolchain to rot |
-| **Quality** | pytest (690+ tests, fully mocked) · Ruff · **mypy strict** · pre-commit | Typed, linted, green on every push |
+| **Frontend** | React 18 · TypeScript · Vite · Tailwind 3 (installable PWA) | Typed, hashed assets (no manual cache-busting), HMR in dev |
+| **Quality** | pytest (700+ tests, fully mocked) · Ruff · **mypy strict** · pre-commit | Typed, linted, green on every push |
 | **Deploy** | Docker · Raspberry Pi 5 · Tailscale | Self-hosted, private by construction |
 
 ### Architecture
@@ -169,8 +169,9 @@ bot/
 ├── thoughts/         # cognitive deposits + « Pour toi » restitution heuristics
 ├── finance/          # budget cycles, expense manager, CSV export, reminder cron
 ├── calendar/ weather/ search/ rss/ news/ fuel/ locations/   # real-life integrations
-├── tasks/ notifications/ proactivity/                       # reminders + opt-in pushes
-└── static/           # vanilla-JS PWA (ES6 modules, zero build step)
+└── tasks/ notifications/ proactivity/                       # reminders + opt-in pushes
+
+frontend/            # React 18 + TS + Vite + Tailwind PWA — build → frontend/dist, served by FastAPI
 ```
 
 ---
@@ -232,14 +233,18 @@ disagree on the budget math. The form simply skips the LLM intent step.
 </details>
 
 <details>
-<summary><b>Why a vanilla-JS PWA with zero build step?</b></summary>
+<summary><b>Why React + Vite for the frontend?</b></summary>
 
 <br/>
 
-The frontend is native ES6 modules served straight by FastAPI — no bundler, no
-node_modules, no build to rot. Assets are cache-busted with `?v=N` bumped on deploy. The
-payoff is an installable, iOS-native-feeling app (splash screen, fullscreen, glass scroll
-edges) that I can still understand and ship in five years without resurrecting a toolchain.
+The frontend started as native ES6 modules served straight by FastAPI (zero build step),
+but the manual `?v=N` cache-busting on every internal import turned into a recurring source
+of blank-screen bugs on iOS. It was migrated to **React 18 + TypeScript + Vite + Tailwind 3**
+(mirroring my other project for a homogeneous stack): Vite emits **content-hashed assets**
+(cache-busting for free), TypeScript catches breakage at build time, and a multi-stage Docker
+build ships only `frontend/dist` — no Node in the runtime image. FastAPI serves it through a
+`SPAStaticFiles` catch-all (`index.html` in `no-store`, SPA fallback). Same installable,
+iOS-native-feeling PWA — just without the toolchain-free footguns.
 
 </details>
 
@@ -308,6 +313,13 @@ Two Shortcuts on the iPhone — see [`docs/ios-shortcuts.md`](./docs/ios-shortcu
 
 The PWA needs no setup: open `https://<pi-tailscale-host>:8000/` in Safari and
 "Add to Home Screen".
+
+> **Cutover note (React migration).** After first deploying the React build in place of the
+> old vanilla PWA, iOS may keep a stale cached shell. `index.html` is served `no-store` and
+> assets are content-hashed, so a reload usually suffices — but if the home-screen app stays
+> blank or shows the old UI, **delete the installed PWA and re-add it to the Home Screen once**.
+> Redeploying the Pi is a normal `make docker-build && make docker-up` (the build stage runs
+> `npm ci && npm run build` and bakes `frontend/dist` into the image).
 
 ### Docker (Raspberry Pi 5)
 
