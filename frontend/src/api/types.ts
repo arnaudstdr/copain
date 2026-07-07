@@ -82,6 +82,7 @@ export interface NextEventCard {
   end: string;
   location: string | null;
   calendar_name: string;
+  actions?: Action[];
 }
 
 export interface TaskCard {
@@ -311,6 +312,7 @@ export interface CalendarEventItem {
   location: string | null;
   description: string | null;
   calendar_name: string;
+  actions?: Action[];
 }
 
 export interface EventsListResponse {

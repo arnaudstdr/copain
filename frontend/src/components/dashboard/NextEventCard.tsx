@@ -2,6 +2,7 @@
 import { Calendar } from "lucide-react";
 import type { NextEventCard as EventData } from "../../api/types";
 import { formatHM, formatRelativeDay, isAllDayEvent, sameDay } from "../../lib/format";
+import { ActionButtons } from "../ActionButtons";
 import { Card, CardHead } from "./Card";
 
 interface Props {
@@ -30,6 +31,11 @@ export function NextEventCard({ event, onOpen }: Props) {
       <CardHead icon={Calendar} label={`Prochain évènement · ${event.calendar_name}`} />
       <div className="card-primary">{`${dayLabel} — ${event.title}`}</div>
       {event.location && <div className="card-secondary">{event.location}</div>}
+      {/* La card est tappable (ouvre l'agenda) : on isole le clic du bouton pour
+          que « Y aller » ouvre Plans sans aussi ouvrir l'overlay. */}
+      <div onClick={(e) => e.stopPropagation()}>
+        <ActionButtons actions={event.actions} variant="subtle" />
+      </div>
     </Card>
   );
 }

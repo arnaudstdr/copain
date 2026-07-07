@@ -203,6 +203,7 @@ class NextEventCard(BaseModel):
     end: str
     location: str | None
     calendar_name: str
+    actions: list[Action] = Field(default_factory=list)
 
 
 class TaskCard(BaseModel):
@@ -497,6 +498,7 @@ class CalendarEventItem(BaseModel):
     location: str | None
     description: str | None
     calendar_name: str
+    actions: list[Action] = Field(default_factory=list)
 
 
 class EventsListResponse(BaseModel):
@@ -529,20 +531,32 @@ def _refresh_cards_for(meta: Meta) -> list[str]:
     return list(_REFRESH_BY_INTENT.get(meta["intent"], []))
 
 
+def navigate_action(location: str | None, *, label: str = "Y aller") -> Action | None:
+    """Action « itinéraire » vers un lieu, ou None si pas de lieu (helper partagé).
+
+    Deep-link Apple Plans construit et validé côté serveur (le lieu n'est utilisé
+    qu'url-encodé en query param). Réutilisé par `actions_for` (chemin chat/meta)
+    ET par les surfaces persistantes des évents (card prochain évent, agenda).
+    """
+    if not location:
+        return None
+    url = "https://maps.apple.com/?daddr=" + quote(location)
+    return Action(type="navigate", label=label, open=url)
+
+
 def actions_for(meta: Meta) -> list[Action]:
     """Actions concrètes dérivées d'un intent résolu (pure, `Meta` uniquement).
 
     Miroir de `_refresh_cards_for` : le code dérive des actions *sûres* à
-    partir de ce que l'intent a produit — le LLM n'en fabrique aucune. Phase 1 :
-    un évent créé AVEC un lieu → bouton « Y aller » (itinéraire Apple Plans). Le
-    lieu vient de `meta` (les évents ne sont pas géocodés : `event.location`
-    est identique au champ meta), il n'est utilisé qu'url-encodé en query param.
+    partir de ce que l'intent a produit — le LLM n'en fabrique aucune. Un évent
+    créé AVEC un lieu → bouton « Y aller » (itinéraire). Le lieu vient de `meta`
+    (les évents ne sont pas géocodés : `event.location` est identique au champ
+    meta). Le libellé embarque le lieu ici : le chat n'affiche pas le lieu à côté.
     """
     if meta["intent"] == "event" and meta["event"]["action"] == "create":
         location = meta["event"]["location"]
-        if location:
-            url = "https://maps.apple.com/?daddr=" + quote(location)
-            return [Action(type="navigate", label=f"Y aller — {location}", open=url)]
+        act = navigate_action(location, label=f"Y aller — {location}") if location else None
+        return [act] if act else []
     return []
 
 
@@ -1621,6 +1635,7 @@ def create_app(state: AppState) -> FastAPI:
                 location=e.location,
                 description=e.description,
                 calendar_name=e.calendar_name,
+                actions=[a] if (a := navigate_action(e.location)) else [],
             )
             for e in events_raw
         ]
@@ -1678,6 +1693,7 @@ def _snapshot_to_response(snap: DashboardSnapshot) -> DashboardResponse:
             end=snap.next_event.end.isoformat(),
             location=snap.next_event.location,
             calendar_name=snap.next_event.calendar_name,
+            actions=[a] if (a := navigate_action(snap.next_event.location)) else [],
         )
         if snap.next_event is not None
         else None

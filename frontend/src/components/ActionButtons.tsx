@@ -11,14 +11,23 @@ import type { Action } from "../api/types";
 // type d'action → pictogramme (catalogue fermé, aligné sur le modèle Pydantic).
 const ICON: Record<string, typeof Navigation> = { navigate: Navigation };
 
-export function ActionButtons({ actions }: { actions?: Action[] }) {
+// variant "solid" (défaut, CTA du chat/éphémère) vs "subtle" (contour discret,
+// surfaces persistantes : card prochain évent, agenda — évite un vert plein bruyant).
+export function ActionButtons({
+  actions,
+  variant = "solid",
+}: {
+  actions?: Action[];
+  variant?: "solid" | "subtle";
+}) {
   if (!actions || actions.length === 0) return null;
+  const cls = variant === "subtle" ? "action-btn action-btn--subtle" : "action-btn";
   return (
     <div className="msg-actions">
       {actions.map((action, i) => {
         const Icon = ICON[action.type];
         return (
-          <a key={i} className="action-btn" href={action.open} rel="noopener noreferrer">
+          <a key={i} className={cls} href={action.open} rel="noopener noreferrer">
             {Icon && <Icon size={14} />}
             {action.label}
           </a>

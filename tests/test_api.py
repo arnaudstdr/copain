@@ -20,7 +20,7 @@ import pytest
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from bot.api import Action, AppState, actions_for, create_app
+from bot.api import Action, AppState, actions_for, create_app, navigate_action
 from bot.chat.manager import ChatHistoryManager
 from bot.db import create_shared_engine
 from bot.locations.store import LocationEventStore
@@ -402,6 +402,56 @@ async def test_ask_event_create_with_location_returns_navigate_action(
     assert len(body["actions"]) == 1
     assert body["actions"][0]["type"] == "navigate"
     assert body["actions"][0]["open"].startswith("https://maps.apple.com/?daddr=")
+
+
+def test_navigate_action_builds_deep_link() -> None:
+    act = navigate_action("3 rue des Fleurs")
+    assert act is not None
+    assert act.type == "navigate"
+    assert act.label == "Y aller"  # libellé court par défaut (surfaces persistantes)
+    assert act.open == "https://maps.apple.com/?daddr=3%20rue%20des%20Fleurs"
+
+
+def test_navigate_action_custom_label() -> None:
+    act = navigate_action("Bureau", label="Y aller — Bureau")
+    assert act is not None
+    assert act.label == "Y aller — Bureau"
+
+
+def test_navigate_action_none_without_location() -> None:
+    assert navigate_action(None) is None
+    assert navigate_action("") is None
+
+
+async def test_dashboard_next_event_carries_navigate_action(
+    client: AsyncClient, state: AppState
+) -> None:
+    """La card prochain évent porte une action navigate quand l'évent a un lieu."""
+    from datetime import UTC, datetime, timedelta
+
+    from bot.calendar.models import CalendarEvent
+    from bot.weather.client import WeatherError
+
+    now = datetime.now(UTC)
+    ev = CalendarEvent(
+        uid="e1",
+        title="RDV dentiste",
+        start=now + timedelta(hours=3),
+        end=now + timedelta(hours=4),
+        location="3 rue des Fleurs",
+        description=None,
+        calendar_name="Perso",
+    )
+    state.deps.calendar.is_connected = True
+    state.deps.calendar.list_all_upcoming = AsyncMock(return_value=[ev])
+    state.deps.weather.get_today = AsyncMock(side_effect=WeatherError("down"))
+    state.deps.tasks.list_pending = AsyncMock(return_value=[])
+
+    response = await client.get("/dashboard", headers={"X-API-Key": API_KEY})
+    assert response.status_code == 200
+    body = response.json()
+    assert body["next_event"]["actions"][0]["type"] == "navigate"
+    assert body["next_event"]["actions"][0]["label"] == "Y aller"
 
 
 # --- GET /foryou ------------------------------------------------------------
@@ -1212,6 +1262,8 @@ async def test_events_returns_upcoming_list(client: AsyncClient, state: AppState
     assert len(body["events"]) == 1
     assert body["events"][0]["title"] == "Réunion équipe"
     assert body["events"][0]["location"] == "Bureau"
+    assert body["events"][0]["actions"][0]["type"] == "navigate"
+    assert body["events"][0]["actions"][0]["label"] == "Y aller"
 
 
 async def test_events_empty_when_calendar_disconnected(

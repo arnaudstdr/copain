@@ -9,6 +9,7 @@ import { Calendar, MapPin } from "lucide-react";
 import { apiGet } from "../../api/client";
 import type { EventsListResponse, CalendarEventItem } from "../../api/types";
 import { formatHM, formatRelativeDay, isAllDayEvent } from "../../lib/format";
+import { ActionButtons } from "../ActionButtons";
 import { Overlay, PanelEmpty } from "../Overlay";
 
 interface Props {
@@ -94,6 +95,7 @@ function EventItem({ event }: { event: CalendarEventItem }) {
         </div>
       )}
       <div className="event-calendar">{event.calendar_name}</div>
+      <ActionButtons actions={event.actions} variant="subtle" />
     </div>
   );
 }
