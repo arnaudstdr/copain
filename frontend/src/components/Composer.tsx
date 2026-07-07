@@ -41,12 +41,16 @@ export function Composer({ onSend, busy, variant = "dashboard" }: Props) {
     onError: () => toast("Erreur micro"),
   });
 
-  // Auto-resize de la zone de saisie (frappe ET insertion micro).
+  // Auto-resize de la zone de saisie (frappe ET insertion micro). À vide on
+  // laisse `height: auto` (hauteur naturelle d'une ligne, robuste au chargement
+  // différé de la webfont) et on ne fige une hauteur mesurée que s'il y a du
+  // texte — sinon une mesure au montage (police pas encore prête) décale le
+  // placeholder. Le vanilla n'appelait autoResize qu'après interaction.
   useLayoutEffect(() => {
     const ta = inputRef.current;
     if (!ta) return;
     ta.style.height = "auto";
-    ta.style.height = `${Math.min(ta.scrollHeight, MAX_INPUT_HEIGHT)}px`;
+    if (draft) ta.style.height = `${Math.min(ta.scrollHeight, MAX_INPUT_HEIGHT)}px`;
   }, [draft]);
 
   const canSend = (draft.trim().length > 0 || attachment !== null) && !busy;

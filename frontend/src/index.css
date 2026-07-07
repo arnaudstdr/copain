@@ -114,7 +114,6 @@
 
 body {
   margin: 0;
-  background: rgb(var(--bg));
   color: rgb(var(--text));
   font-family: var(--font-body);
   -webkit-font-smoothing: antialiased;
