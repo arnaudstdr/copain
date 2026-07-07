@@ -6,6 +6,7 @@
 
 import { AlertTriangle, Bot } from "lucide-react";
 import { Markdown } from "../Markdown";
+import { ActionButtons } from "../ActionButtons";
 import type { ChatMessage } from "../../lib/chatStore";
 
 export function MessageBubble({ message }: { message: ChatMessage }) {
@@ -26,7 +27,10 @@ export function MessageBubble({ message }: { message: ChatMessage }) {
         ) : isUser ? (
           message.text ? <span className="bubble-text">{message.text}</span> : null
         ) : (
-          <Markdown className="bubble-text chat-md">{message.text}</Markdown>
+          <>
+            <Markdown className="bubble-text chat-md">{message.text}</Markdown>
+            <ActionButtons actions={message.actions} />
+          </>
         )}
       </div>
     </div>

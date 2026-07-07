@@ -8,6 +8,7 @@
 
 import { useCallback, useState } from "react";
 import { streamAsk } from "../api/client";
+import type { Action } from "../api/types";
 import { appendMessage } from "../lib/chatStore";
 
 const FALLBACK = "Impossible de joindre Copain.";
@@ -35,6 +36,7 @@ export function useChatStream({ onRefreshCards }: UseChatStreamOptions) {
       setHasDelta(false);
 
       let acc = "";
+      let actions: Action[] = [];
       let streamError: string | null = null;
       try {
         await streamAsk(text, {
@@ -48,8 +50,9 @@ export function useChatStream({ onRefreshCards }: UseChatStreamOptions) {
             setLiveText(acc);
             setHasDelta(true);
           },
-          onDone(_intent, refreshCards) {
+          onDone(_intent, refreshCards, doneActions) {
             if (refreshCards.length > 0) onRefreshCards(refreshCards);
+            actions = doneActions;
           },
           onError(t) {
             streamError = t || FALLBACK;
@@ -58,7 +61,12 @@ export function useChatStream({ onRefreshCards }: UseChatStreamOptions) {
         appendMessage(
           streamError
             ? { role: "assistant", text: streamError, error: true, createdAt: new Date().toISOString() }
-            : { role: "assistant", text: acc, createdAt: new Date().toISOString() },
+            : {
+                role: "assistant",
+                text: acc,
+                actions: actions.length > 0 ? actions : undefined,
+                createdAt: new Date().toISOString(),
+              },
         );
       } catch {
         appendMessage({ role: "assistant", text: FALLBACK, error: true, createdAt: new Date().toISOString() });

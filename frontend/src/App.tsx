@@ -11,7 +11,7 @@ import { useDashboard } from "./hooks/useDashboard";
 import { useNews } from "./hooks/useNews";
 import { useToast } from "./components/Toast";
 import { askImage, askText } from "./api/client";
-import type { ExpenseDraft } from "./api/types";
+import type { Action, ExpenseDraft } from "./api/types";
 import { greetingDate } from "./lib/format";
 import { Composer } from "./components/Composer";
 import type { Attachment } from "./components/Composer";
@@ -121,17 +121,27 @@ export default function App() {
   };
 
   // Traitement de la réponse /ask (portage de handleAskResponse du vanilla) :
-  // brouillon de dépense → Budget pré-rempli ; action (refresh_cards) → toast +
-  // resync des cards ; sinon → réponse texte en bulle éphémère.
+  // brouillon de dépense → Budget pré-rempli ; action proposée → bulle
+  // persistante avec bouton (+ resync silencieux des cards) ; action seule
+  // (refresh_cards) → toast + resync ; sinon → réponse texte en bulle éphémère.
   const handleAskResponse = (body: {
     response: string;
     intent: string;
     refresh_cards: string[];
+    actions?: Action[];
     expense_draft: ExpenseDraft | null;
   }) => {
     if (body.expense_draft) {
       setBudgetDraft(body.expense_draft);
       setOpenOverlay("budget");
+      return;
+    }
+    const actions = body.actions ?? [];
+    if (actions.length > 0) {
+      // La bulle porte le(s) bouton(s) et reste jusqu'au tap : on resync les
+      // cards en silence (pas de toast redondant avec la bulle affichée).
+      if (body.refresh_cards.length > 0) handleRefreshCards(body.refresh_cards);
+      setEphemeral({ text: body.response, isError: false, actions });
       return;
     }
     if (body.refresh_cards.length > 0) {

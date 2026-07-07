@@ -20,14 +20,14 @@ import pytest
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from bot.api import AppState, create_app
+from bot.api import Action, AppState, actions_for, create_app
 from bot.chat.manager import ChatHistoryManager
 from bot.db import create_shared_engine
 from bot.locations.store import LocationEventStore
 from bot.notifications.store import NotificationStore
 from bot.pipeline import BotDeps
 from bot.profile import UserProfile
-from tests.conftest import make_settings
+from tests.conftest import make_meta, make_settings
 
 API_KEY = "test-secret"
 
@@ -326,6 +326,82 @@ async def test_ask_depot_intent_refreshes_foryou_card(client: AsyncClient, state
     body = response.json()
     assert body["intent"] == "depot"
     assert body["refresh_cards"] == ["foryou"]
+
+
+# --- actions_for (dérivation pure des actions proposées) --------------------
+
+
+def test_actions_for_event_create_with_location_returns_navigate() -> None:
+    """Évent créé avec un lieu → une action navigate (itinéraire Apple Plans)."""
+    meta = make_meta(intent="event", event={"action": "create", "location": "3 rue des Fleurs"})
+    actions = actions_for(meta)
+    assert len(actions) == 1
+    assert isinstance(actions[0], Action)
+    assert actions[0].type == "navigate"
+    assert actions[0].open.startswith("https://maps.apple.com/?daddr=")
+    assert "3%20rue%20des%20Fleurs" in actions[0].open  # lieu url-encodé
+
+
+def test_actions_for_event_create_without_location_returns_empty() -> None:
+    meta = make_meta(intent="event", event={"action": "create", "location": None})
+    assert actions_for(meta) == []
+
+
+def test_actions_for_event_list_returns_empty() -> None:
+    """action=list est une lecture pure → aucune action, même avec un lieu."""
+    meta = make_meta(intent="event", event={"action": "list", "location": "quelque part"})
+    assert actions_for(meta) == []
+
+
+def test_actions_for_non_event_intent_returns_empty() -> None:
+    meta = make_meta(intent="task", task={"content": "acheter du pain", "due_str": None})
+    assert actions_for(meta) == []
+
+
+async def test_ask_event_create_with_location_returns_navigate_action(
+    client: AsyncClient, state: AppState
+) -> None:
+    """Bout en bout : /ask sur un évent avec lieu renvoie l'action navigate."""
+    from datetime import UTC, datetime
+
+    from bot.calendar.models import CalendarEvent
+
+    ev = CalendarEvent(
+        uid="u1",
+        title="RDV dentiste",
+        start=datetime(2026, 7, 10, 15, 0, tzinfo=UTC),
+        end=datetime(2026, 7, 10, 16, 0, tzinfo=UTC),
+        location="3 rue des Fleurs",
+        description=None,
+        calendar_name="Personnel",
+    )
+    state.deps.calendar.is_connected = True
+    state.deps.calendar.create_event = AsyncMock(return_value=ev)
+    state.deps.calendar.list_all_between = AsyncMock(return_value=[])
+    state.deps.llm.call = AsyncMock(
+        return_value=(
+            "OK, je l'ajoute.\n"
+            '<meta>{"intent":"event","store_memory":false,"memory_content":null,'
+            '"task":{"content":null,"due_str":null},'
+            '"feed":{"action":null,"name":null,"url":null},'
+            '"event":{"action":"create","title":"RDV dentiste","start_str":"vendredi 15h",'
+            '"end_str":null,"location":"3 rue des Fleurs","description":null,'
+            '"range_str":null,"calendar_name":null},'
+            '"fuel":{"fuel_type":null,"radius_km":null,"location":null},'
+            '"weather":{"location":null,"when":null},"search_query":null}</meta>'
+        )
+    )
+    response = await client.post(
+        "/ask",
+        headers={"X-API-Key": API_KEY},
+        json={"message": "RDV dentiste vendredi 15h au 3 rue des Fleurs"},
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["intent"] == "event"
+    assert len(body["actions"]) == 1
+    assert body["actions"][0]["type"] == "navigate"
+    assert body["actions"][0]["open"].startswith("https://maps.apple.com/?daddr=")
 
 
 # --- GET /foryou ------------------------------------------------------------

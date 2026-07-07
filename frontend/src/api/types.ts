@@ -35,10 +35,20 @@ export interface ExpenseDraft {
   recurring_key: string | null;
 }
 
+// Action concrète proposée par copain, rendue en bouton tappable (miroir du
+// modèle Pydantic `Action`). `open` = deep-link construit côté serveur ; un tap
+// l'ouvre (jamais d'exécution automatique).
+export interface Action {
+  type: string;
+  label: string;
+  open: string;
+}
+
 export interface AskResponse {
   response: string;
   intent: string;
   refresh_cards: string[];
+  actions?: Action[];
   expense_draft: ExpenseDraft | null;
 }
 
@@ -339,6 +349,7 @@ export interface StreamDone {
   type: "done";
   intent: string;
   refresh_cards: string[];
+  actions?: Action[];
 }
 
 export interface StreamErrorEvent {
@@ -352,6 +363,6 @@ export type StreamFrame = StreamDelta | StreamReplace | StreamDone | StreamError
 export interface StreamHandlers {
   onDelta: (text: string) => void;
   onReplace: (text: string) => void;
-  onDone: (intent: string, refreshCards: string[]) => void;
+  onDone: (intent: string, refreshCards: string[], actions: Action[]) => void;
   onError: (text: string) => void;
 }

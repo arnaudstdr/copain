@@ -12,6 +12,8 @@
 
 import { useSyncExternalStore } from "react";
 
+import type { Action } from "../api/types";
+
 /** Bulle du fil : messages restaurés (avec `id` serveur) ou envoyés en session. */
 export interface ChatMessage {
   id?: number; // présent pour les messages restaurés depuis /history
@@ -20,6 +22,7 @@ export interface ChatMessage {
   createdAt: string; // ISO 8601
   error?: boolean; // bulle d'erreur (message FR convivial, non persisté)
   imgSrc?: string; // aperçu (data URL) d'une photo jointe en session (non persisté)
+  actions?: Action[]; // actions proposées (deep-links tappables, non persisté)
 }
 
 interface ChatState {

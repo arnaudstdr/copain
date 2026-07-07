@@ -67,7 +67,12 @@ export function ChatView({ onClose, onRefreshCards }: Props) {
       setImgBusy(true);
       try {
         const body = await askImage(text, att.b64, att.mediaType);
-        appendMessage({ role: "assistant", text: body.response, createdAt: new Date().toISOString() });
+        appendMessage({
+          role: "assistant",
+          text: body.response,
+          actions: body.actions?.length ? body.actions : undefined,
+          createdAt: new Date().toISOString(),
+        });
         if (body.refresh_cards.length > 0) onRefreshCards(body.refresh_cards);
       } catch {
         appendMessage({

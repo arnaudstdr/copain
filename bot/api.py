@@ -27,6 +27,7 @@ from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
 from typing import TYPE_CHECKING, Literal
+from urllib.parse import quote
 from zoneinfo import ZoneInfo
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request, status
@@ -152,10 +153,24 @@ class ExpenseDraft(BaseModel):
     recurring_key: str | None = None
 
 
+class Action(BaseModel):
+    """Action concrète proposée à l'utilisateur, rendue en bouton tappable.
+
+    Principe : copain *propose*, l'utilisateur *tape* — rien ne s'exécute sans
+    action de sa part (le client ouvre le deep-link `open`). Catalogue fermé
+    (`type`) : le deep-link est construit et validé côté serveur.
+    """
+
+    type: Literal["navigate"]  # catalogue fermé (extensible)
+    label: str  # texte du bouton
+    open: str  # deep-link construit côté serveur (le client l'ouvre)
+
+
 class AskResponse(BaseModel):
     response: str
     intent: str = "answer"
     refresh_cards: list[str] = Field(default_factory=list)
+    actions: list[Action] = Field(default_factory=list)
     expense_draft: ExpenseDraft | None = None
 
 
@@ -514,6 +529,23 @@ def _refresh_cards_for(meta: Meta) -> list[str]:
     return list(_REFRESH_BY_INTENT.get(meta["intent"], []))
 
 
+def actions_for(meta: Meta) -> list[Action]:
+    """Actions concrètes dérivées d'un intent résolu (pure, `Meta` uniquement).
+
+    Miroir de `_refresh_cards_for` : le code dérive des actions *sûres* à
+    partir de ce que l'intent a produit — le LLM n'en fabrique aucune. Phase 1 :
+    un évent créé AVEC un lieu → bouton « Y aller » (itinéraire Apple Plans). Le
+    lieu vient de `meta` (les évents ne sont pas géocodés : `event.location`
+    est identique au champ meta), il n'est utilisé qu'url-encodé en query param.
+    """
+    if meta["intent"] == "event" and meta["event"]["action"] == "create":
+        location = meta["event"]["location"]
+        if location:
+            url = "https://maps.apple.com/?daddr=" + quote(location)
+            return [Action(type="navigate", label=f"Y aller — {location}", open=url)]
+    return []
+
+
 def _expense_draft_for(meta: Meta, timezone: str) -> ExpenseDraft | None:
     """Construit un brouillon de dépense depuis le `<meta>` d'une capture image.
 
@@ -719,7 +751,10 @@ def create_app(state: AppState) -> FastAPI:
                 detail="Internal error",
             ) from exc
         return AskResponse(
-            response=reply, intent=meta["intent"], refresh_cards=_refresh_cards_for(meta)
+            response=reply,
+            intent=meta["intent"],
+            refresh_cards=_refresh_cards_for(meta),
+            actions=actions_for(meta),
         )
 
     @app.post(
@@ -749,6 +784,7 @@ def create_app(state: AppState) -> FastAPI:
                                 "type": "done",
                                 "intent": meta["intent"],
                                 "refresh_cards": _refresh_cards_for(meta),
+                                "actions": [a.model_dump() for a in actions_for(meta)],
                             }
                         )
                     else:
@@ -828,7 +864,10 @@ def create_app(state: AppState) -> FastAPI:
                 response=reply, intent=meta["intent"], refresh_cards=[], expense_draft=draft
             )
         return AskResponse(
-            response=reply, intent=meta["intent"], refresh_cards=_refresh_cards_for(meta)
+            response=reply,
+            intent=meta["intent"],
+            refresh_cards=_refresh_cards_for(meta),
+            actions=actions_for(meta),
         )
 
     @app.get(

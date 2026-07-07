@@ -5,7 +5,7 @@
 // PWA vanilla actuelle), gardée en mémoire, puis injectée sur chaque appel
 // authentifié. Aucun changement backend (Décision 7 du SPEC).
 
-import type { AskResponse, ConfigResponse, StreamHandlers } from "./types";
+import type { Action, AskResponse, ConfigResponse, StreamHandlers } from "./types";
 
 const DEFAULT_TIMEOUT_MS = 30_000;
 // /ask et /ask/image appellent le LLM en un bloc (pas de streaming) ; la vision
@@ -244,7 +244,13 @@ export async function streamAsk(
       buf = buf.slice(sep + 2);
       const line = frame.split("\n").find((l) => l.startsWith("data: "));
       if (!line) continue;
-      let evt: { type?: string; text?: string; intent?: string; refresh_cards?: string[] };
+      let evt: {
+        type?: string;
+        text?: string;
+        intent?: string;
+        refresh_cards?: string[];
+        actions?: Action[];
+      };
       try {
         evt = JSON.parse(line.slice(6));
       } catch {
@@ -252,7 +258,8 @@ export async function streamAsk(
       }
       if (evt.type === "delta") handlers.onDelta(evt.text ?? "");
       else if (evt.type === "replace") handlers.onReplace(evt.text ?? "");
-      else if (evt.type === "done") handlers.onDone(evt.intent ?? "answer", evt.refresh_cards ?? []);
+      else if (evt.type === "done")
+        handlers.onDone(evt.intent ?? "answer", evt.refresh_cards ?? [], evt.actions ?? []);
       else if (evt.type === "error") handlers.onError(evt.text ?? "");
     }
   }

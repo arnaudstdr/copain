@@ -7,10 +7,13 @@
 import { useEffect, useRef } from "react";
 import { AlertTriangle } from "lucide-react";
 import { Markdown } from "./Markdown";
+import { ActionButtons } from "./ActionButtons";
+import type { Action } from "../api/types";
 
 export interface EphemeralData {
   text: string;
   isError: boolean;
+  actions?: Action[];
 }
 
 export function Ephemeral({ data, onHide }: { data: EphemeralData; onHide: () => void }) {
@@ -19,11 +22,15 @@ export function Ephemeral({ data, onHide }: { data: EphemeralData; onHide: () =>
   const onHideRef = useRef(onHide);
   onHideRef.current = onHide;
 
-  // Auto-masquage 8 s, réarmé uniquement à chaque nouveau contenu.
+  // Auto-masquage 8 s, réarmé uniquement à chaque nouveau contenu. Quand la
+  // réponse porte une action tappable, on NE l'arme PAS : la bulle (et ses
+  // boutons) reste jusqu'à ce que l'utilisateur tape une action ou la ferme.
+  const hasActions = (data.actions?.length ?? 0) > 0;
   useEffect(() => {
+    if (hasActions) return;
     const id = setTimeout(() => onHideRef.current(), 8000);
     return () => clearTimeout(id);
-  }, [data]);
+  }, [data, hasActions]);
 
   return (
     <div
@@ -36,7 +43,10 @@ export function Ephemeral({ data, onHide }: { data: EphemeralData; onHide: () =>
           <AlertTriangle size={16} className="lucide-warn" /> {data.text}
         </span>
       ) : (
-        <Markdown className="chat-md">{data.text}</Markdown>
+        <>
+          <Markdown className="chat-md">{data.text}</Markdown>
+          <ActionButtons actions={data.actions} />
+        </>
       )}
     </div>
   );
