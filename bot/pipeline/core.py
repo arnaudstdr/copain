@@ -235,6 +235,7 @@ async def process_message(
 async def process_message_stream(
     user_text: str,
     deps: BotDeps,
+    think: bool | None = None,
 ) -> AsyncIterator[StreamEvent]:
     """Variante streamée de `process_message`, consommée par `POST /ask/stream`.
 
@@ -250,6 +251,9 @@ async def process_message_stream(
 
     Chemin texte uniquement : pas d'images (les photos restent sur
     `POST /ask/image`) ni de voice_mode (Siri reste sur `POST /ask`).
+
+    `think` override le défaut `OLLAMA_THINK` pour ce message (toggle
+    « réflexion » du chat ; `None` = défaut configuré).
     """
     system_prompt = await _build_prompt(user_text, deps, voice_mode=False)
 
@@ -259,7 +263,8 @@ async def process_message_stream(
         messages=[
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_text},
-        ]
+        ],
+        think=think,
     ):
         visible = meta_filter.feed(chunk)
         if not emitted_any:

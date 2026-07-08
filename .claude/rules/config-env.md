@@ -21,6 +21,7 @@ OLLAMA_LLM_MODEL=gemma4:31b-cloud
 OLLAMA_EMBED_MODEL=nomic-embed-text
 OLLAMA_TIMEOUT_SEC=120               # primary timeout (cloud LLM, 2-call chains)
 OLLAMA_NUM_CTX=32768                 # explicit num_ctx to dodge cloud defaults
+OLLAMA_THINK=false                   # reasoning du modèle principal (opt-in ; thinking dans un canal séparé, fallback jamais concerné)
 
 # Optional local fallback — kicks in when the primary times out or errors
 # (never for multimodal/photo calls). Leave OLLAMA_FALLBACK_MODEL empty to

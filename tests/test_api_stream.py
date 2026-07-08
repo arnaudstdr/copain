@@ -240,3 +240,44 @@ async def test_stream_task_intent_applies_side_effects_and_refresh_cards(
     assert frames[-1]["intent"] == "task"
     assert "today_tasks" in frames[-1]["refresh_cards"]
     state.deps.tasks.create.assert_awaited_once()
+
+
+# --- toggle « réflexion » (think) --------------------------------------
+
+
+def _recording_stream(recorder: dict[str, Any]) -> Any:
+    """Faux `chat_stream` qui enregistre le kwarg `think` reçu et répond answer."""
+
+    def factory(*args: Any, **kwargs: Any) -> AsyncIterator[str]:
+        recorder["think"] = kwargs.get("think")
+
+        async def gen() -> AsyncIterator[str]:
+            yield "ok.\n"
+            yield _ANSWER_META
+
+        return gen()
+
+    return factory
+
+
+async def test_stream_forwards_think_true(client: AsyncClient, state: AppState) -> None:
+    recorder: dict[str, Any] = {}
+    state.deps.llm.chat_stream = _recording_stream(recorder)
+    await client.post(
+        "/ask/stream",
+        headers={"X-API-Key": API_KEY},
+        json={"message": "combien font 17 x 23 ?", "think": True},
+    )
+    assert recorder["think"] is True
+
+
+async def test_stream_think_absent_defaults_to_none(client: AsyncClient, state: AppState) -> None:
+    recorder: dict[str, Any] = {}
+    state.deps.llm.chat_stream = _recording_stream(recorder)
+    await client.post(
+        "/ask/stream",
+        headers={"X-API-Key": API_KEY},
+        json={"message": "salut"},
+    )
+    # think absent du body → None → chat_stream applique le défaut self._think.
+    assert recorder["think"] is None

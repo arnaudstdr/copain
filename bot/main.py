@@ -100,6 +100,7 @@ async def _build_state(
         num_ctx=settings.ollama_num_ctx,
         cache_ttl_sec=settings.cache_llm_ttl_sec,
         cache_max_size=settings.cache_llm_max_size,
+        think=settings.ollama_think,
         fallback_model=settings.ollama_fallback_model,
         fallback_base_url=settings.ollama_fallback_base_url,
         fallback_timeout_sec=settings.ollama_fallback_timeout_sec,

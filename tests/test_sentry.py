@@ -19,6 +19,7 @@ def _settings(sentry_dsn: str | None, traces: float = 0.0) -> Settings:
         ollama_embed_model="e",
         ollama_timeout_sec=60.0,
         ollama_num_ctx=32768,
+        ollama_think=False,
         ollama_fallback_model=None,
         ollama_fallback_base_url=None,
         ollama_fallback_timeout_sec=60.0,

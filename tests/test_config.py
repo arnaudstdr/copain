@@ -113,6 +113,18 @@ def test_ollama_num_ctx_custom(monkeypatch: pytest.MonkeyPatch) -> None:
     assert settings.ollama_num_ctx == 16384
 
 
+def test_ollama_think_default_false(monkeypatch: pytest.MonkeyPatch) -> None:
+    _minimal_env(monkeypatch)
+    monkeypatch.delenv("OLLAMA_THINK", raising=False)
+    assert load_settings().ollama_think is False
+
+
+def test_ollama_think_custom(monkeypatch: pytest.MonkeyPatch) -> None:
+    _minimal_env(monkeypatch)
+    monkeypatch.setenv("OLLAMA_THINK", "true")
+    assert load_settings().ollama_think is True
+
+
 def test_pipeline_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
     _minimal_env(monkeypatch)
     monkeypatch.delenv("MAX_HISTORY", raising=False)

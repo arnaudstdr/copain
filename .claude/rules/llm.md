@@ -79,6 +79,25 @@ primary:
   so that handler-level UX messages (`LLMTimeoutError` → "le modèle met
   trop longtemps") stay consistent.
 
+### Reasoning (thinking)
+
+`gemma4:31b-cloud` déclare la capacité `thinking` (Ollama). Elle est **opt-in**
+via `OLLAMA_THINK` (défaut `false`), câblée jusqu'au paramètre `think` de
+`LLMClient` puis aux appels `chat`/`chat_stream` du **modèle principal
+uniquement** (le fallback local reste toujours `think=False`). Quand elle est
+active, Ollama renvoie le raisonnement dans un champ **séparé**
+`message.thinking` : `content` (donc le bloc `<meta>`) reste propre. Le code ne
+lit que `content` — le thinking est ignoré côté texte et seulement tracé en
+`log.debug("ollama_thinking", …)`. Contrepartie : tokens/latence en plus à
+chaque appel principal.
+
+**Override par requête** : `chat_stream(messages, think=…)` accepte un `think`
+optionnel (`None` = défaut `OLLAMA_THINK`) qui prime sur `self._think` le temps
+d'un appel. C'est le levier du **toggle « réflexion » du chat** : `AskRequest.think`
+(body de `POST /ask/stream`) → `process_message_stream(think=…)` → `chat_stream`.
+Seul le chemin streamé le porte ; `/ask` (Siri) et `/ask/image` gardent le défaut.
+Le fallback local reste toujours `think=False`.
+
 ### The `<meta>` block
 
 The LLM emits the `<meta>` JSON block at the **end** of its response.

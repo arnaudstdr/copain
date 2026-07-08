@@ -126,7 +126,12 @@ pour vider des pensées parasites sans tenter de les traiter.
   historique de bulles** : les échanges streamés (`/ask/stream` uniquement —
   ni Siri, ni photos, ni bulle éphémère) sont persistés en SQLite et
   réaffichés datés au reload via `GET /history` (scroll infini avec
-  séparateurs de jour, fenêtre glissante `CHAT_HISTORY_RETENTION_DAYS`).
+  séparateurs de jour, fenêtre glissante `CHAT_HISTORY_RETENTION_DAYS`). Le
+  composer du chat porte un **toggle « réflexion »** (bouton cerveau, état
+  session-only) qui active le reasoning du modèle pour le message envoyé
+  (`AskRequest.think` → `process_message_stream` → `chat_stream(think=)`,
+  override du défaut `OLLAMA_THINK`) ; un discret « réflexion en cours… »
+  s'affiche pendant que le modèle pense avant de streamer.
   **Plus de briefing matin automatique ni de card carburant**
   (intentionnellement, pour ne pas pousser d'info entrante non sollicitée).
   Code sous `frontend/` : **app React 18 + TypeScript + Vite + Tailwind 3**

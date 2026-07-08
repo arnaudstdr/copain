@@ -597,7 +597,9 @@ async def test_ask_stream_without_api_key_returns_403(client: AsyncClient) -> No
 async def test_ask_stream_emits_sse_frames(client: AsyncClient) -> None:
     from unittest.mock import patch
 
-    async def fake_stream(message: str, deps: BotDeps) -> AsyncIterator[dict[str, object]]:
+    async def fake_stream(
+        message: str, deps: BotDeps, think: bool | None = None
+    ) -> AsyncIterator[dict[str, object]]:
         yield {"type": "delta", "text": "Bon"}
         yield {"type": "delta", "text": "jour"}
         yield {"type": "done", "meta": _NEUTRAL_META}
@@ -623,7 +625,9 @@ async def test_ask_stream_task_intent_lists_refresh_cards(client: AsyncClient) -
     task_meta = dict(_NEUTRAL_META)
     task_meta["intent"] = "task"
 
-    async def fake_stream(message: str, deps: BotDeps) -> AsyncIterator[dict[str, object]]:
+    async def fake_stream(
+        message: str, deps: BotDeps, think: bool | None = None
+    ) -> AsyncIterator[dict[str, object]]:
         yield {"type": "delta", "text": "Noté."}
         yield {"type": "done", "meta": task_meta}
 
@@ -642,7 +646,9 @@ async def test_ask_stream_llm_timeout_emits_error_frame(client: AsyncClient) -> 
 
     from bot.llm.client import LLMTimeoutError
 
-    async def fake_stream(message: str, deps: BotDeps) -> AsyncIterator[dict[str, object]]:
+    async def fake_stream(
+        message: str, deps: BotDeps, think: bool | None = None
+    ) -> AsyncIterator[dict[str, object]]:
         yield {"type": "delta", "text": "déb"}
         raise LLMTimeoutError("slow")
 
@@ -663,7 +669,9 @@ async def test_ask_stream_llm_error_emits_error_frame(client: AsyncClient) -> No
 
     from bot.llm.client import LLMError
 
-    async def fake_stream(message: str, deps: BotDeps) -> AsyncIterator[dict[str, object]]:
+    async def fake_stream(
+        message: str, deps: BotDeps, think: bool | None = None
+    ) -> AsyncIterator[dict[str, object]]:
         raise LLMError("down")
         yield  # pragma: no cover — fait de la fonction un générateur async
 

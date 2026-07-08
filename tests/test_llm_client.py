@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import base64
+from collections.abc import AsyncIterator
+from typing import Any
 from unittest.mock import AsyncMock
 
 import pytest
@@ -95,6 +97,91 @@ async def test_chat_uses_configured_num_ctx() -> None:
     await client.chat([{"role": "user", "content": "salut"}])
     args = client._client.chat.call_args  # type: ignore[attr-defined]
     assert args.kwargs["options"] == {"num_ctx": 16384}
+
+
+async def test_chat_think_disabled_by_default(fake_client: LLMClient) -> None:
+    """Sans OLLAMA_THINK, le paramètre think passé à Ollama est False."""
+    await fake_client.chat([{"role": "user", "content": "salut"}])
+    args = fake_client._client.chat.call_args  # type: ignore[attr-defined]
+    assert args.kwargs["think"] is False
+
+
+async def test_chat_forwards_think_when_enabled() -> None:
+    """think=True au constructeur → think=True sur l'appel Ollama principal."""
+    client = LLMClient(base_url="http://x", model="m", think=True, cache_ttl_sec=None)
+    client._client = AsyncMock()  # type: ignore[assignment]
+    client._client.chat = AsyncMock(return_value={"message": {"content": "ok"}})
+    await client.chat([{"role": "user", "content": "salut"}])
+    args = client._client.chat.call_args  # type: ignore[attr-defined]
+    assert args.kwargs["think"] is True
+
+
+async def test_stream_forwards_think_when_enabled() -> None:
+    """Le mode streamé transmet aussi le flag think au modèle principal."""
+
+    async def _empty_stream() -> AsyncIterator[dict[str, Any]]:
+        for _ in ():
+            yield {}
+
+    client = LLMClient(base_url="http://x", model="m", think=True, cache_ttl_sec=None)
+    client._client = AsyncMock()  # type: ignore[assignment]
+    client._client.chat = AsyncMock(return_value=_empty_stream())
+    async for _ in client.chat_stream([{"role": "user", "content": "salut"}]):
+        pass
+    args = client._client.chat.call_args  # type: ignore[attr-defined]
+    assert args.kwargs["think"] is True
+
+
+async def test_stream_think_param_overrides_configured_default() -> None:
+    """chat_stream(think=True) force think même si self._think=False (toggle chat)."""
+
+    async def _empty_stream() -> AsyncIterator[dict[str, Any]]:
+        for _ in ():
+            yield {}
+
+    client = LLMClient(base_url="http://x", model="m", think=False, cache_ttl_sec=None)
+    client._client = AsyncMock()  # type: ignore[assignment]
+    client._client.chat = AsyncMock(return_value=_empty_stream())
+    async for _ in client.chat_stream([{"role": "user", "content": "salut"}], think=True):
+        pass
+    args = client._client.chat.call_args  # type: ignore[attr-defined]
+    assert args.kwargs["think"] is True
+
+
+async def test_stream_think_none_falls_back_to_configured_default() -> None:
+    """chat_stream(think=None) retombe sur self._think (ici True)."""
+
+    async def _empty_stream() -> AsyncIterator[dict[str, Any]]:
+        for _ in ():
+            yield {}
+
+    client = LLMClient(base_url="http://x", model="m", think=True, cache_ttl_sec=None)
+    client._client = AsyncMock()  # type: ignore[assignment]
+    client._client.chat = AsyncMock(return_value=_empty_stream())
+    async for _ in client.chat_stream([{"role": "user", "content": "salut"}], think=None):
+        pass
+    args = client._client.chat.call_args  # type: ignore[attr-defined]
+    assert args.kwargs["think"] is True
+
+
+async def test_fallback_never_uses_think() -> None:
+    """Le fallback local reste toujours think=False, même si le primary l'a."""
+    client = LLMClient(
+        base_url="http://x",
+        model="primary",
+        think=True,
+        cache_ttl_sec=None,
+        fallback_model="gemma3:4b",
+    )
+    client._client = AsyncMock()  # type: ignore[assignment]
+    client._client.chat = AsyncMock(side_effect=ConnectionError("primary down"))  # type: ignore[attr-defined]
+    assert client._fallback is not None
+    client._fallback.client = AsyncMock()
+    client._fallback.client.chat = AsyncMock(return_value={"message": {"content": "repli"}})
+    result = await client.chat([{"role": "user", "content": "salut"}])
+    assert result == "repli"
+    fb_args = client._fallback.client.chat.call_args
+    assert fb_args.kwargs["think"] is False
 
 
 async def test_chat_cacheable_hit_does_not_call_ollama() -> None:

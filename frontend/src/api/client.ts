@@ -5,7 +5,13 @@
 // PWA vanilla actuelle), gardée en mémoire, puis injectée sur chaque appel
 // authentifié. Aucun changement backend (Décision 7 du SPEC).
 
-import type { Action, AskResponse, ConfigResponse, StreamHandlers } from "./types";
+import type {
+  Action,
+  AskResponse,
+  AskStreamRequest,
+  ConfigResponse,
+  StreamHandlers,
+} from "./types";
 
 const DEFAULT_TIMEOUT_MS = 30_000;
 // /ask et /ask/image appellent le LLM en un bloc (pas de streaming) ; la vision
@@ -219,13 +225,14 @@ export function askImage(
 export async function streamAsk(
   message: string,
   handlers: StreamHandlers,
+  think = false,
   signal?: AbortSignal,
 ): Promise<void> {
   const key = await ensureApiKey();
   const res = await fetch("/ask/stream", {
     method: "POST",
     headers: { "Content-Type": "application/json", "X-API-Key": key },
-    body: JSON.stringify({ message }),
+    body: JSON.stringify({ message, think } satisfies AskStreamRequest),
     signal,
   });
   if (!res.ok || !res.body) {

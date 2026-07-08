@@ -117,6 +117,10 @@ MAX_IMAGE_B64_CHARS = 20_000_000
 
 class AskRequest(BaseModel):
     message: str = Field(min_length=1, max_length=MAX_MESSAGE_CHARS)
+    # Override du mode « réflexion » (thinking) pour ce message. Seul
+    # `/ask/stream` le consomme (toggle du chat PWA) ; `/ask` (Siri) l'ignore.
+    # None = défaut configuré (OLLAMA_THINK).
+    think: bool | None = None
 
 
 class AskImageRequest(BaseModel):
@@ -790,7 +794,9 @@ def create_app(state: AppState) -> FastAPI:
 
         async def event_source() -> AsyncIterator[str]:
             try:
-                async for event in process_message_stream(payload.message, deps):
+                async for event in process_message_stream(
+                    payload.message, deps, think=payload.think
+                ):
                     if event["type"] == "done":
                         meta = event["meta"]
                         yield _sse_frame(

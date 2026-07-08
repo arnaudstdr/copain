@@ -63,6 +63,7 @@ class LLMClient:
         num_ctx: int = DEFAULT_NUM_CTX,
         cache_ttl_sec: float | None = DEFAULT_CACHE_TTL_SEC,
         cache_max_size: int = DEFAULT_CACHE_MAX_SIZE,
+        think: bool = False,
         fallback_model: str | None = None,
         fallback_base_url: str | None = None,
         fallback_timeout_sec: float = DEFAULT_FALLBACK_TIMEOUT_SEC,
@@ -80,6 +81,11 @@ class LLMClient:
         self._model = model
         self._timeout_sec = timeout
         self._num_ctx = num_ctx
+        # Mode raisonnement (opt-in) : appliqué UNIQUEMENT au modèle principal.
+        # gemma4:31b-cloud renvoie alors le raisonnement dans un champ
+        # `message.thinking` séparé — `content` (donc le bloc <meta>) reste
+        # propre. Le fallback local (gemma3:4b) reste toujours en think=False.
+        self._think = think
         self._fallback: _Endpoint | None = None
         if fallback_model:
             # Même host par défaut : un Ollama local sur le Pi sert souvent à la
@@ -255,6 +261,7 @@ class LLMClient:
                 timeout_sec=self._timeout_sec,
                 num_ctx=self._num_ctx,
                 messages=messages,
+                think=self._think,
             )
         except (LLMTimeoutError, LLMError) as primary_exc:
             # Pas de fallback possible si la requête embarque des images :
@@ -340,6 +347,7 @@ class LLMClient:
         self,
         messages: list[dict[str, Any]],
         cacheable: bool = False,
+        think: bool | None = None,
     ) -> AsyncIterator[str]:
         """Version streamée de `chat` : yield des chunks de texte au fil de l'eau.
 
@@ -350,7 +358,13 @@ class LLMClient:
         l'exception est ré-émise (impossible d'« annuler » ce qu'on a déjà
         affiché à l'utilisateur). Ne fallback pas si la requête contient des
         images.
+
+        `think` override le défaut `OLLAMA_THINK` pour cet appel (`None` = défaut
+        configuré) : c'est le levier du toggle « réflexion » du chat. Le
+        raisonnement éventuel arrive dans `message.thinking` (non yieldé, seul
+        `content` est streamé), le fallback pré-chunk reste toujours `think=False`.
         """
+        effective_think = self._think if think is None else think
         cache_key: str | None = None
         if cacheable and self._cache is not None:
             cache_key = hash_key("llm", self._model, messages)
@@ -368,6 +382,7 @@ class LLMClient:
                 model=self._model,
                 messages=messages,
                 options={"num_ctx": self._num_ctx},
+                think=effective_think,
                 stream=True,
             )
             async for chunk in stream:
@@ -450,14 +465,21 @@ class LLMClient:
         timeout_sec: float,
         num_ctx: int,
         messages: list[dict[str, Any]],
+        think: bool = False,
     ) -> str:
-        """Appel Ollama unitaire (un endpoint), utilisé par primary et fallback."""
+        """Appel Ollama unitaire (un endpoint), utilisé par primary et fallback.
+
+        `think=True` active le raisonnement du modèle : Ollama le renvoie dans
+        `message.thinking` (séparé de `content`), qu'on ignore côté texte mais
+        qu'on trace en debug.
+        """
         self._log_prompt_size(model, messages)
         try:
             response: Any = await client.chat(
                 model=model,
                 messages=messages,
                 options={"num_ctx": num_ctx},
+                think=think,
             )
         except httpx.TimeoutException as exc:
             log.warning("ollama_chat_timeout", model=model, timeout_sec=timeout_sec)
@@ -468,7 +490,11 @@ class LLMClient:
             log.error("ollama_chat_failed", model=model, error=str(exc))
             raise LLMError(f"Appel Ollama échoué : {exc}") from exc
 
-        content = response.get("message", {}).get("content")
+        message = response.get("message", {})
+        thinking = message.get("thinking")
+        if thinking:
+            log.debug("ollama_thinking", model=model, chars=len(thinking))
+        content = message.get("content")
         if not isinstance(content, str) or not content:
             raise LLMError("Réponse Ollama sans contenu texte")
         return content

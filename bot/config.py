@@ -27,6 +27,7 @@ class Settings:
     ollama_embed_model: str
     ollama_timeout_sec: float
     ollama_num_ctx: int
+    ollama_think: bool
 
     ollama_fallback_model: str | None
     ollama_fallback_base_url: str | None
@@ -180,6 +181,7 @@ def load_settings() -> Settings:
         ollama_embed_model=os.getenv("OLLAMA_EMBED_MODEL", "nomic-embed-text"),
         ollama_timeout_sec=_env_float("OLLAMA_TIMEOUT_SEC", 120.0),
         ollama_num_ctx=_env_int("OLLAMA_NUM_CTX", 32768),
+        ollama_think=_env_bool("OLLAMA_THINK", False),
         ollama_fallback_model=os.getenv("OLLAMA_FALLBACK_MODEL") or None,
         ollama_fallback_base_url=os.getenv("OLLAMA_FALLBACK_BASE_URL") or None,
         ollama_fallback_timeout_sec=_env_float("OLLAMA_FALLBACK_TIMEOUT_SEC", 60.0),

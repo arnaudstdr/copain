@@ -31,6 +31,9 @@ export function ChatView({ onClose, onRefreshCards }: Props) {
   // Envoi photo (non streamé) en cours : partage l'indicateur « écrit… » avec le
   // streaming texte et désactive le composer.
   const [imgBusy, setImgBusy] = useState(false);
+  // Mode « réflexion » (thinking) : toggle à la volée, session-only (remis à off
+  // au reload). Override OLLAMA_THINK pour le prochain message streamé.
+  const [think, setThink] = useState(false);
   const feedRef = useRef<HTMLDivElement>(null);
   // Hauteur du feed AVANT un prepend de page ancienne : sert à recaler le scroll
   // après re-rendu pour éviter le saut visuel (null hors prepend).
@@ -91,9 +94,9 @@ export function ChatView({ onClose, onRefreshCards }: Props) {
   const onSend = useCallback(
     (text: string, attachment: Attachment | null) => {
       if (attachment) void sendChatImage(text, attachment);
-      else void send(text);
+      else void send(text, think);
     },
-    [sendChatImage, send],
+    [sendChatImage, send, think],
   );
 
   const busy = streaming || imgBusy;
@@ -118,9 +121,15 @@ export function ChatView({ onClose, onRefreshCards }: Props) {
               <Bot size={16} />
             </div>
             <div className="bubble bot typing">
-              <span className="dot" />
-              <span className="dot" />
-              <span className="dot" />
+              {think && streaming ? (
+                <span className="thinking-label">réflexion en cours…</span>
+              ) : (
+                <>
+                  <span className="dot" />
+                  <span className="dot" />
+                  <span className="dot" />
+                </>
+              )}
             </div>
           </div>
         )}
@@ -136,7 +145,13 @@ export function ChatView({ onClose, onRefreshCards }: Props) {
         )}
       </div>
 
-      <Composer variant="chat" busy={busy} onSend={onSend} />
+      <Composer
+        variant="chat"
+        busy={busy}
+        onSend={onSend}
+        think={think}
+        onToggleThink={() => setThink((v) => !v)}
+      />
     </div>
   );
 }

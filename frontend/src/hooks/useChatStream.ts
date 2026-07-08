@@ -25,7 +25,7 @@ export function useChatStream({ onRefreshCards }: UseChatStreamOptions) {
   const [hasDelta, setHasDelta] = useState(false); // false → indicateur « écrit… »
 
   const send = useCallback(
-    async (raw: string) => {
+    async (raw: string, think = false) => {
       const text = raw.trim();
       if (!text || streaming) return;
 
@@ -39,25 +39,29 @@ export function useChatStream({ onRefreshCards }: UseChatStreamOptions) {
       let actions: Action[] = [];
       let streamError: string | null = null;
       try {
-        await streamAsk(text, {
-          onDelta(t) {
-            acc += t;
-            setLiveText(acc);
-            setHasDelta(true);
+        await streamAsk(
+          text,
+          {
+            onDelta(t) {
+              acc += t;
+              setLiveText(acc);
+              setHasDelta(true);
+            },
+            onReplace(t) {
+              acc = t;
+              setLiveText(acc);
+              setHasDelta(true);
+            },
+            onDone(_intent, refreshCards, doneActions) {
+              if (refreshCards.length > 0) onRefreshCards(refreshCards);
+              actions = doneActions;
+            },
+            onError(t) {
+              streamError = t || FALLBACK;
+            },
           },
-          onReplace(t) {
-            acc = t;
-            setLiveText(acc);
-            setHasDelta(true);
-          },
-          onDone(_intent, refreshCards, doneActions) {
-            if (refreshCards.length > 0) onRefreshCards(refreshCards);
-            actions = doneActions;
-          },
-          onError(t) {
-            streamError = t || FALLBACK;
-          },
-        });
+          think,
+        );
         appendMessage(
           streamError
             ? { role: "assistant", text: streamError, error: true, createdAt: new Date().toISOString() }

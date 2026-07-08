@@ -7,7 +7,7 @@
 // (send, handleFileChange, removeAttachment, _toggleMic, autoResize).
 
 import { useLayoutEffect, useRef, useState } from "react";
-import { Mic, Paperclip, Send, X } from "lucide-react";
+import { Brain, Mic, Paperclip, Send, X } from "lucide-react";
 import { useToast } from "./Toast";
 import { useSpeechRecognition } from "../hooks/useSpeechRecognition";
 
@@ -27,9 +27,19 @@ interface Props {
   busy: boolean;
   /** `chat` ajoute la classe de la barre du mode dialogue (z-index supérieur). */
   variant?: "dashboard" | "chat";
+  /** Mode réflexion actif (toggle affiché uniquement en variant `chat`). */
+  think?: boolean;
+  /** Bascule le mode réflexion. Absent → bouton non rendu. */
+  onToggleThink?: () => void;
 }
 
-export function Composer({ onSend, busy, variant = "dashboard" }: Props) {
+export function Composer({
+  onSend,
+  busy,
+  variant = "dashboard",
+  think = false,
+  onToggleThink,
+}: Props) {
   const toast = useToast();
   const [draft, setDraft] = useState("");
   const [attachment, setAttachment] = useState<Attachment | null>(null);
@@ -135,6 +145,17 @@ export function Composer({ onSend, busy, variant = "dashboard" }: Props) {
         >
           <Mic size={17} />
         </button>
+        {variant === "chat" && onToggleThink && (
+          <button
+            className={`icon-btn${think ? " thinking-on" : ""}`}
+            title={think ? "Mode réflexion activé" : "Activer le mode réflexion"}
+            aria-pressed={think}
+            type="button"
+            onClick={onToggleThink}
+          >
+            <Brain size={17} />
+          </button>
+        )}
         <textarea
           ref={inputRef}
           className="msg-input"

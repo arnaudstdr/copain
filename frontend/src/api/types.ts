@@ -337,6 +337,13 @@ export interface LocationEventResponse {
 // ── SSE /ask/stream ───────────────────────────────────────────────────────────────
 // Frames `data: {json}\n\n` émises par process_message_stream (cf. bot/api.py).
 
+// Body de POST /ask/stream (miroir de bot.api.AskRequest). `think` override le
+// mode réflexion pour ce message (toggle du chat) ; absent = défaut OLLAMA_THINK.
+export interface AskStreamRequest {
+  message: string;
+  think?: boolean;
+}
+
 export interface StreamDelta {
   type: "delta";
   text: string;
