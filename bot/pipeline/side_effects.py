@@ -20,7 +20,7 @@ from bot.thoughts.restitution import LOOP_WINDOW_DAYS, is_loop
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
-    from bot.finance.budget import PendingRecurring
+    from bot.finance.budget import BudgetSummary, PendingRecurring
     from bot.llm.parser import Meta
     from bot.pipeline.core import BotDeps
     from bot.thoughts.models import Thought
@@ -378,3 +378,25 @@ async def safe_pending_recurring(deps: BotDeps) -> Sequence[PendingRecurring]:
     except Exception as exc:
         log.warning("pending_recurring_skipped", error=str(exc))
         return ()
+
+
+async def safe_budget_summary(deps: BotDeps) -> BudgetSummary | None:
+    """Résumé budgétaire complet pour injection dans le system prompt.
+
+    Permet au LLM de répondre factuellement à une question sur l'état des
+    finances (restant prévisionnel, dépensé, alertes) en un seul tour. Réutilise
+    `load_budget_summary` (déjà fail-soft) ; renvoie `None` si la finance n'est
+    pas configurée ou en cas d'erreur (YAML mal formé, SQLite indisponible) →
+    le bloc budget est alors omis du prompt.
+    """
+    try:
+        from bot.finance.config import extract_finance_config
+        from bot.finance.summary import load_budget_summary
+
+        config = extract_finance_config(deps.profile.data)
+        return await load_budget_summary(
+            expenses=deps.expenses, config=config, timezone=deps.settings.timezone
+        )
+    except Exception as exc:
+        log.warning("budget_summary_skipped", error=str(exc))
+        return None

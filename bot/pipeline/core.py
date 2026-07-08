@@ -21,6 +21,7 @@ from bot.logging_conf import get_logger
 from bot.pipeline.handlers import FALLBACK_TEXT, run_intent_handler
 from bot.pipeline.side_effects import (
     apply_side_effects,
+    safe_budget_summary,
     safe_open_worries,
     safe_pending_recurring,
 )
@@ -421,6 +422,7 @@ async def _build_prompt(
     current_location = await deps.location_events.get_current_location()
     pending_recurring = await safe_pending_recurring(deps)
     envelopes = extract_finance_config(deps.profile.data).envelopes
+    budget = await safe_budget_summary(deps)
     open_worries = await safe_open_worries(deps)
     return build_system_prompt(
         memory_context=memory_context,
@@ -434,5 +436,6 @@ async def _build_prompt(
         timezone=deps.settings.timezone,
         pending_recurring=pending_recurring,
         envelopes=envelopes,
+        budget=budget,
         open_worries=open_worries,
     )

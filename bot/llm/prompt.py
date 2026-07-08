@@ -7,7 +7,7 @@ from datetime import UTC
 from typing import TYPE_CHECKING
 from zoneinfo import ZoneInfo
 
-from bot.finance.budget import PendingRecurring
+from bot.finance.budget import BudgetSummary, PendingRecurring
 from bot.finance.config import EnvelopeItem
 from bot.locations.presence import LocationPresence
 from bot.profile import UserProfile
@@ -427,7 +427,13 @@ Réponse attendue :
 Je cherche.
 <meta>{{"intent":"memory","store_memory":false,"memory_content":null,"search_query":null,"memory_query":"idée sur le pipeline"}}</meta>
 
-{profile_section}{location_section}{pending_recurring_section}{envelopes_section}{open_worries_section}--- Contexte mémoire (notes et conversations passées pertinentes) ---
+Exemple 22 (avis sur les finances — PAS une saisie) :
+Utilisateur : « comment vont mes finances ce mois-ci ? »
+Réponse attendue (t'appuyer sur le bloc « État du budget », factuel et apaisant, aucun montant inventé) :
+Ça va, il te reste de la marge et rien n'est en retard.
+<meta>{{"intent":"answer","store_memory":false,"memory_content":null,"search_query":null,"memory_query":null}}</meta>
+
+{profile_section}{location_section}{pending_recurring_section}{envelopes_section}{budget_section}{open_worries_section}--- Contexte mémoire (notes et conversations passées pertinentes) ---
 {memory_context}
 
 --- Historique récent de la conversation ---
@@ -497,6 +503,36 @@ def _format_pending_recurring_section(pending: Sequence[PendingRecurring]) -> st
     return "\n".join(lines) + "\n\n"
 
 
+def _format_budget_section(summary: BudgetSummary | None) -> str:
+    """Construit le bloc "État du budget" (uniquement si la finance est configurée).
+
+    Donne au LLM les chiffres réels pour répondre factuellement à une question
+    sur les finances (« comment vont mes finances ? ») en un seul tour. Le
+    header porte le cadrage de ton (factuel, apaisant, jamais dramatisant) :
+    sans lui, gemma4 tend à commenter des chiffres qu'il n'a pas.
+    """
+    if summary is None:
+        return ""
+    spent = summary.spent_punctual_cents + summary.spent_recurring_cents
+    lines = [
+        "--- État du budget (mois en cours) ---",
+        "(Pour répondre à une question sur les finances : appuie-toi UNIQUEMENT "
+        "sur ces chiffres, reste factuel et sans dramatiser — rassure si le "
+        "budget est sain, signale calmement les points d'attention s'il est tendu.)",
+        f"- Restant prévisionnel : {_format_amount_eur(summary.remaining_cents)}",
+        f"- Revenu du cycle : {_format_amount_eur(summary.income_cents)}",
+        f"- Déjà dépensé (ponctuel + récurrent) : {_format_amount_eur(spent)}",
+        f"- Épargne du mois : {_format_amount_eur(summary.saved_this_month_cents)}",
+    ]
+    pending = summary.pending_recurring_count
+    if pending:
+        retard = " (dont au moins une en retard)" if summary.has_overdue else ""
+        lines.append(f"- Récurrentes encore à pointer : {pending}{retard}")
+    if summary.has_envelope_overrun:
+        lines.append("- Point d'attention : au moins une enveloppe est dépassée")
+    return "\n".join(lines) + "\n\n"
+
+
 def _format_envelopes_section(envelopes: Sequence[EnvelopeItem]) -> str:
     """Construit le bloc des enveloppes budgétaires (uniquement si non-vide).
 
@@ -546,6 +582,7 @@ def build_system_prompt(
     pending_recurring: Sequence[PendingRecurring] | None = None,
     envelopes: Sequence[EnvelopeItem] | None = None,
     open_worries: Sequence[Thought] | None = None,
+    budget: BudgetSummary | None = None,
 ) -> str:
     """Formate le template avec les blocs mémoire, historique, profil, datetime et ville.
 
@@ -583,6 +620,11 @@ def build_system_prompt(
     ouverts (id + contenu + date de dépôt) pour que le LLM puisse désigner
     un `depot.thought_id` valide lors d'une clôture en langage naturel.
     Même logique d'omission quand la liste est vide.
+
+    Quand `budget` est fourni (finance configurée), un bloc "État du budget"
+    donne les chiffres réels (restant prévisionnel, revenu, dépensé, alertes)
+    pour que le LLM réponde factuellement à une question sur les finances.
+    Omis quand `budget is None` (non configuré / panne).
     """
     if user_profile.is_loaded:
         profile_section = (
@@ -597,6 +639,7 @@ def build_system_prompt(
         location_section = ""
     pending_recurring_section = _format_pending_recurring_section(pending_recurring or ())
     envelopes_section = _format_envelopes_section(envelopes or ())
+    budget_section = _format_budget_section(budget)
     open_worries_section = _format_open_worries_section(open_worries or (), timezone)
     body = SYSTEM_PROMPT_TEMPLATE.format(
         current_datetime=current_datetime,
@@ -605,6 +648,7 @@ def build_system_prompt(
         location_section=location_section,
         pending_recurring_section=pending_recurring_section,
         envelopes_section=envelopes_section,
+        budget_section=budget_section,
         open_worries_section=open_worries_section,
         memory_context=_format_block(memory_context, "élément pertinent"),
         recent_history=_format_block(recent_history, "échange récent"),

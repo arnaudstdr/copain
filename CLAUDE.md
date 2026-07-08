@@ -99,7 +99,13 @@ pour vider des pensées parasites sans tenter de les traiter.
   réutilisent les mêmes méthodes `ExpenseManager`, donc aucune divergence de
   calcul possible. Export tableur via `GET /expenses/export.csv`, rappel
   quotidien des récurrentes dues non pointées via `FinanceReminderJob` (cron
-  APScheduler, `bot/finance/cron.py`).
+  APScheduler, `bot/finance/cron.py`). Enfin, quand la finance est configurée,
+  le **résumé budgétaire complet** (restant prévisionnel, revenu, dépensé,
+  récurrentes en retard, enveloppes dépassées) est injecté dans le system
+  prompt (`safe_budget_summary` → `_format_budget_section`) : le LLM peut
+  répondre factuellement et sans dramatiser à une question sur l'état des
+  finances (« comment vont mes finances ? », intent `answer`, aucun montant
+  inventé), en un seul tour.
 - **Opt-in proactivity** (`PROACTIVITY_ENABLED=true`): rain alerts + event
   reminders with five safeguards (feature flag, time window, daily budget,
   dedup, cooldown). Disabled by default.

@@ -25,6 +25,7 @@ from bot.pipeline.side_effects import (
     euros_to_cents,
     handle_expense_side_effect,
     record_depot,
+    safe_budget_summary,
     safe_open_worries,
     safe_pending_recurring,
 )
@@ -372,3 +373,22 @@ async def test_safe_pending_recurring_not_configured(
     cfg.is_configured = False
     monkeypatch.setattr("bot.finance.config.extract_finance_config", lambda _data: cfg)
     assert await safe_pending_recurring(bot_deps) == ()
+
+
+async def test_safe_budget_summary_failure_returns_none(
+    bot_deps: BotDeps, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    cfg = MagicMock()
+    cfg.is_configured = True
+    monkeypatch.setattr("bot.finance.config.extract_finance_config", lambda _data: cfg)
+    bot_deps.expenses.current_cycle_bounds = AsyncMock(side_effect=RuntimeError("db down"))
+    assert await safe_budget_summary(bot_deps) is None
+
+
+async def test_safe_budget_summary_not_configured(
+    bot_deps: BotDeps, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    cfg = MagicMock()
+    cfg.is_configured = False
+    monkeypatch.setattr("bot.finance.config.extract_finance_config", lambda _data: cfg)
+    assert await safe_budget_summary(bot_deps) is None
