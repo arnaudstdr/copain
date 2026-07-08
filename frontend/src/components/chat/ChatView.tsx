@@ -8,7 +8,7 @@
 // (réponse en un bloc, bulles poussées dans le fil comme le vanilla).
 
 import { useCallback, useLayoutEffect, useRef, useState } from "react";
-import { Bot, ChevronLeft } from "lucide-react";
+import { Bot, Brain, ChevronLeft } from "lucide-react";
 import { useHistory } from "../../hooks/useHistory";
 import { useChatStream } from "../../hooks/useChatStream";
 import { askImage } from "../../api/client";
@@ -27,7 +27,7 @@ interface Props {
 
 export function ChatView({ onClose, onRefreshCards }: Props) {
   const { messages, loaded, loadOlder } = useHistory();
-  const { send, streaming, liveText, hasDelta } = useChatStream({ onRefreshCards });
+  const { send, streaming, liveText } = useChatStream({ onRefreshCards });
   // Envoi photo (non streamé) en cours : partage l'indicateur « écrit… » avec le
   // streaming texte et désactive le composer.
   const [imgBusy, setImgBusy] = useState(false);
@@ -100,6 +100,11 @@ export function ChatView({ onClose, onRefreshCards }: Props) {
   );
 
   const busy = streaming || imgBusy;
+  // Bulle live seulement quand il y a du texte visible ; sinon indicateur
+  // d'attente. Se baser sur liveText (et pas un flag « a reçu un delta ») évite
+  // le blanc après un `replace("")` (search/recall/handlers) où plus rien ne
+  // s'affichait.
+  const showLive = streaming && liveText.length > 0;
 
   return (
     <div id="chat-view">
@@ -111,11 +116,20 @@ export function ChatView({ onClose, onRefreshCards }: Props) {
           <div className="greeting-name">Conversation</div>
           <div className="greeting-date">Mode dialogue</div>
         </div>
+        <button
+          className={`header-btn${think ? " thinking-on" : ""}`}
+          title={think ? "Mode réflexion activé" : "Activer le mode réflexion"}
+          aria-pressed={think}
+          type="button"
+          onClick={() => setThink((v) => !v)}
+        >
+          <Brain size={18} />
+        </button>
       </header>
 
       <div className="chat-feed" ref={feedRef} onScroll={onScroll}>
         {renderFeed(messages, loaded)}
-        {busy && !hasDelta && (
+        {busy && !showLive && (
           <div className="row bot typing-row">
             <div className="avatar-sm">
               <Bot size={16} />
@@ -133,7 +147,7 @@ export function ChatView({ onClose, onRefreshCards }: Props) {
             </div>
           </div>
         )}
-        {streaming && hasDelta && (
+        {showLive && (
           <div className="row bot">
             <div className="avatar-sm">
               <Bot size={16} />
@@ -145,13 +159,7 @@ export function ChatView({ onClose, onRefreshCards }: Props) {
         )}
       </div>
 
-      <Composer
-        variant="chat"
-        busy={busy}
-        onSend={onSend}
-        think={think}
-        onToggleThink={() => setThink((v) => !v)}
-      />
+      <Composer variant="chat" busy={busy} onSend={onSend} />
     </div>
   );
 }

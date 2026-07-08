@@ -173,6 +173,7 @@ header { display: flex; align-items: center; gap: 12px; padding: 12px 16px; padd
 .header-btn { position: relative; width: 38px; height: 38px; border-radius: 50%; background: var(--glass-fill); -webkit-backdrop-filter: var(--glass-blur); backdrop-filter: var(--glass-blur); border: 1px solid var(--glass-edge); box-shadow: var(--glass-shadow), var(--glass-inset); color: rgb(var(--text2)); cursor: pointer; display: flex; align-items: center; justify-content: center; flex-shrink: 0; transition: transform 0.1s, background 0.15s; }
 .header-btn:active { transform: scale(0.92); }
 .header-btn:hover { background: var(--glass-fill-2); }
+.header-btn.thinking-on { background: var(--flash-bg); border-color: rgb(var(--accent)); color: rgb(var(--accent)); }
 .badge { position: absolute; top: -3px; right: -3px; background: rgb(var(--red)); color: #fff; font-size: 9px; font-weight: 700; min-width: 16px; height: 16px; padding: 0 4px; border-radius: 8px; display: flex; align-items: center; justify-content: center; }
 
 /* ── Dashboard feed ── */
@@ -253,7 +254,6 @@ header { display: flex; align-items: center; gap: 12px; padding: 12px 16px; padd
 .icon-btn:active { transform: scale(0.9); }
 .icon-btn:hover { background: var(--glass-fill); border-color: var(--glass-edge); }
 .icon-btn.recording { background: var(--flash-bg); border-color: rgb(var(--accent)); color: rgb(var(--accent)); }
-.icon-btn.thinking-on { background: var(--flash-bg); border-color: rgb(var(--accent)); color: rgb(var(--accent)); }
 .thinking-label { font-size: 13px; color: rgb(var(--text2)); font-style: italic; }
 .msg-input { flex: 1; min-width: 0; background: var(--glass-fill); border: 1px solid var(--glass-edge); border-radius: 22px; padding: 9px 15px; color: rgb(var(--text)); font-size: 16px; resize: none; line-height: 1.4; font-family: inherit; max-height: 110px; overflow-y: auto; outline: none; transition: border-color 0.15s; }
 .msg-input:focus { border-color: rgb(var(--accent)); }

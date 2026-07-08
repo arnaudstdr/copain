@@ -22,7 +22,6 @@ interface UseChatStreamOptions {
 export function useChatStream({ onRefreshCards }: UseChatStreamOptions) {
   const [streaming, setStreaming] = useState(false);
   const [liveText, setLiveText] = useState(""); // texte assistant accumulé (live)
-  const [hasDelta, setHasDelta] = useState(false); // false → indicateur « écrit… »
 
   const send = useCallback(
     async (raw: string, think = false) => {
@@ -33,7 +32,6 @@ export function useChatStream({ onRefreshCards }: UseChatStreamOptions) {
       appendMessage({ role: "user", text, createdAt: now });
       setStreaming(true);
       setLiveText("");
-      setHasDelta(false);
 
       let acc = "";
       let actions: Action[] = [];
@@ -45,12 +43,10 @@ export function useChatStream({ onRefreshCards }: UseChatStreamOptions) {
             onDelta(t) {
               acc += t;
               setLiveText(acc);
-              setHasDelta(true);
             },
             onReplace(t) {
               acc = t;
               setLiveText(acc);
-              setHasDelta(true);
             },
             onDone(_intent, refreshCards, doneActions) {
               if (refreshCards.length > 0) onRefreshCards(refreshCards);
@@ -77,11 +73,10 @@ export function useChatStream({ onRefreshCards }: UseChatStreamOptions) {
       } finally {
         setStreaming(false);
         setLiveText("");
-        setHasDelta(false);
       }
     },
     [streaming, onRefreshCards],
   );
 
-  return { send, streaming, liveText, hasDelta };
+  return { send, streaming, liveText };
 }
