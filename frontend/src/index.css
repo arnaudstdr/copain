@@ -450,7 +450,7 @@ button.group-row:active { background: rgb(var(--bg3)); }
 .depot-entry-btn:active { transform: scale(0.97); }
 .depot-entry-done { flex-shrink: 0; align-self: center; font-size: 12px; color: rgb(var(--text2)); font-style: italic; }
 
-/* ── Budget overlay (formulaire de saisie directe + récap) ── */
+/* ── Budget : formulaire de saisie directe + sheet d'édition ── */
 .budget-form { display: flex; flex-direction: column; gap: 10px; background: rgb(var(--bg3)); border: 1px solid rgb(var(--border)); border-radius: 12px; padding: 13px; flex-shrink: 0; }
 .budget-field { display: flex; flex-direction: column; gap: 4px; }
 .budget-label { font-size: 11.5px; font-weight: 600; color: rgb(var(--text2)); }
@@ -463,9 +463,58 @@ select.budget-input { cursor: pointer; }
 .budget-submit:active { transform: scale(0.98); }
 .budget-submit:disabled { opacity: 0.5; pointer-events: none; }
 .budget-detail { display: flex; flex-direction: column; gap: 10px; flex-shrink: 0; }
-.budget-recap { padding: 0; }
 .budget-export { align-self: flex-start; padding: 8px 14px; border-radius: 9px; background: transparent; border: 1px solid rgb(var(--border2)); color: rgb(var(--text2)); font-size: 13px; font-weight: 600; cursor: pointer; }
 .budget-export:active { transform: scale(0.98); }
+/* Contexte non éditable de la sheet d'édition (type d'écriture + récurrente). */
+.budget-context { font-size: 12px; color: rgb(var(--text3)); }
+/* Zone de suppression : sobre, ambre jamais rouge, confirmation en deux temps. */
+.budget-danger { display: flex; flex-direction: column; gap: 8px; margin-top: 12px; }
+.budget-danger-ask { font-size: 13px; color: rgb(var(--text2)); }
+.budget-danger-actions { display: flex; gap: 8px; align-items: center; }
+.budget-delete { align-self: flex-start; padding: 8px 14px; border-radius: 9px; background: transparent; border: 1px solid rgb(var(--orange)); color: rgb(var(--orange)); font-size: 13px; font-weight: 600; cursor: pointer; transition: opacity 0.15s, transform 0.1s; }
+.budget-delete:active { transform: scale(0.98); }
+.budget-delete:disabled { opacity: 0.5; pointer-events: none; }
+
+/* ── Budget : héros (restant prévisionnel + projection fin de cycle) ──
+   Restant en gros chiffre tabulaire, ambre (jamais rouge) si négatif ;
+   projection factuelle et calme en sous-titre. */
+.budget-hero { display: flex; flex-direction: column; gap: 2px; padding: 4px 4px 2px; flex-shrink: 0; }
+.budget-hero-label { font-size: 13px; color: rgb(var(--text3)); text-transform: uppercase; letter-spacing: 0.02em; }
+.budget-hero-amount { font-family: var(--font-display); font-size: 40px; font-weight: 700; letter-spacing: -1px; line-height: 1.05; font-variant-numeric: tabular-nums; color: rgb(var(--text)); }
+.budget-hero-amount.is-amber { color: rgb(var(--orange)); }
+.budget-hero-projection { font-size: 14px; color: rgb(var(--text2)); font-variant-numeric: tabular-nums; margin-top: 2px; }
+
+/* ── Budget : sparkline « rythme de dépense » (SVG inline maison, step 05) ──
+   Scaling uniforme (largeur 100 %, hauteur auto) → traits et point non
+   distordus. Réel en --accent (ambre si au-dessus du rythme), droite idéale
+   pointillée récessive en --text3. Aucune animation. */
+.budget-spark { background: rgb(var(--bg2)); border: 1px solid rgb(var(--border)); border-radius: 16px; box-shadow: var(--card-shadow); padding: 14px; display: flex; flex-direction: column; gap: 10px; flex-shrink: 0; }
+.budget-spark-svg { width: 100%; height: auto; display: block; }
+.spark-real { fill: none; stroke: rgb(var(--accent)); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.spark-real.is-amber { stroke: rgb(var(--orange)); }
+.spark-ideal { fill: none; stroke: rgb(var(--text3)); stroke-width: 1.5; stroke-dasharray: 3 3; }
+.spark-dot { fill: rgb(var(--accent)); }
+.spark-dot.is-amber { fill: rgb(var(--orange)); }
+.spark-legend { display: flex; gap: 16px; font-size: 12px; color: rgb(var(--text3)); }
+.spark-legend-item { display: flex; align-items: center; gap: 6px; }
+.spark-swatch { width: 16px; border-top: 2px solid rgb(var(--accent)); }
+.spark-swatch.is-amber { border-top-color: rgb(var(--orange)); }
+.spark-swatch.ideal { border-top: 0; border-bottom: 1.5px dashed rgb(var(--text3)); }
+
+/* ── Budget : enveloppes en barres de progression (step 05) ──
+   Rows dans un .group iOS ; piste --track-bg, remplissage vert sain / ambre
+   dépassement, teinte neutre --text3 pour le compte joint (hors budget perso). */
+.env-row { display: flex; flex-direction: column; gap: 7px; padding: 12px 14px; }
+.env-row + .env-row { border-top: 1px solid rgb(var(--border)); }
+.env-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+.env-label { font-size: 15px; color: rgb(var(--text)); }
+.env-tag { font-size: 11px; color: rgb(var(--text3)); margin-left: 6px; }
+.env-amounts { font-size: 13px; color: rgb(var(--text3)); font-variant-numeric: tabular-nums; flex-shrink: 0; }
+.env-track { height: 6px; border-radius: 3px; background: var(--track-bg); overflow: hidden; }
+.env-fill { height: 100%; border-radius: 3px; background: rgb(var(--green)); transition: none; }
+.env-fill.is-amber { background: rgb(var(--orange)); }
+.env-fill.is-shared { background: rgb(var(--text3)); }
+.env-overrun { font-size: 12px; color: rgb(var(--orange)); font-variant-numeric: tabular-nums; }
 
 /* ──────────────────────────────────────────────────────────────────────────
    Mode dialogue : écran d'onglet .chat-screen (fond plat), feed de bulles,

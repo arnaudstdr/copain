@@ -15,16 +15,17 @@ from typing import Literal
 from sqlalchemy import and_, select, text
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
 
+from bot.finance.budget import OPEN_CYCLE_END as OPEN_CYCLE_END  # ré-export explicite (mypy strict)
 from bot.finance.models import BudgetCycle, Expense
 from bot.logging_conf import get_logger
 from bot.tasks.models import Base
 
 log = get_logger(__name__)
 
-# Borne haute d'un cycle « ouvert » (aucun salaire suivant déclaré). Sert de
-# sentinelle pour les requêtes `occurred_on < end` : tout est dans le cycle
-# courant jusqu'à la prochaine ancre.
-OPEN_CYCLE_END: date = date(9999, 12, 31)
+# `OPEN_CYCLE_END` (borne haute sentinelle d'un cycle ouvert) est défini dans
+# `bot.finance.budget` — module pur d'arithmétique de cycle — et ré-exporté ici
+# (importé + utilisé plus bas) pour les appelants historiques (`api.py`,
+# requêtes `occurred_on < end`).
 
 
 def _month_bounds(month: date) -> tuple[date, date]:
@@ -320,6 +321,60 @@ class ExpenseManager:
             )
             result = await session.execute(stmt)
             return result.first() is not None
+
+    async def update(
+        self,
+        expense_id: int,
+        *,
+        amount_cents: int | None = None,
+        label: str | None = None,
+        category: str | None = None,
+        occurred_on: date | None = None,
+        shared: bool | None = None,
+    ) -> Expense | None:
+        """Met à jour partiellement une écriture (correction de saisie).
+
+        Sémantique PATCH : seuls les champs non-`None` sont écrits. `kind` et
+        `recurring_key` ne sont pas éditables (corriger un kind = supprimer +
+        recréer). Retourne l'`Expense` mise à jour, ou `None` si l'id est
+        inconnu.
+        """
+        async with self._sessionmaker() as session:
+            # Annotation explicite : le mypy pre-commit (contexte limité aux
+            # fichiers modifiés) voit `session.get` comme `Any` et refuse le
+            # `return expense` final (no-any-return). Cf. mémoire projet.
+            expense: Expense | None = await session.get(Expense, expense_id)
+            if expense is None:
+                return None
+            if amount_cents is not None:
+                expense.amount_cents = amount_cents
+            if label is not None:
+                expense.label = label
+            if category is not None:
+                expense.category = category
+            if occurred_on is not None:
+                expense.occurred_on = occurred_on
+            if shared is not None:
+                expense.shared = shared
+            await session.commit()
+            await session.refresh(expense)
+            return expense
+
+    async def delete(self, expense_id: int) -> bool:
+        """Supprime une écriture. Retourne `False` si l'id est inconnu.
+
+        Supprimer un `recurring_tick` « dépointe » la récurrente : elle
+        redevient pending au prochain `compute_budget` (aucune trace ne reste
+        dans le cycle). Supprimer un `income` ne touche pas l'ancre de cycle
+        (`budget_cycles`, table séparée).
+        """
+        async with self._sessionmaker() as session:
+            expense = await session.get(Expense, expense_id)
+            if expense is None:
+                return False
+            await session.delete(expense)
+            await session.commit()
+        return True
 
     async def _persist(self, expense: Expense) -> Expense:
         async with self._sessionmaker() as session:

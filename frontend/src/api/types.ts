@@ -231,10 +231,16 @@ export interface BudgetEnvelopeDetail {
   shared: boolean; // True → compte joint, hors restant perso
 }
 
+export interface SpendPoint {
+  date: string; // ISO date — un point par jour écoulé du cycle
+  cumulative_eur: number; // cumul des ponctuelles perso (enveloppes incluses, shared exclu)
+}
+
 export interface BudgetMonthDetail {
   month: string; // ISO date du début de cycle
   cycle_start: string; // ISO date — début du cycle (inclus)
   cycle_end: string; // ISO date — dernier jour du cycle (inclus)
+  spend_horizon: string; // ISO date — fin de cycle visée par la projection/sparkline (horizon)
   currency: string;
   income_eur: number;
   spent_punctual_eur: number;
@@ -242,9 +248,13 @@ export interface BudgetMonthDetail {
   saved_this_month_eur: number;
   saved_this_year_eur: number;
   remaining_eur: number;
+  projected_remaining_eur: number; // projection fin de cycle (rythme extrapolé)
+  daily_rate_eur: number; // rythme quotidien constaté (0 au jour du salaire)
+  spendable_eur: number; // cible « rythme idéal » = income - récurrentes - épargne
   transactions: BudgetTransaction[];
   pending: BudgetPendingItem[];
   envelopes: BudgetEnvelopeDetail[];
+  spend_curve: SpendPoint[];
 }
 
 export interface CoursesShareCard {
@@ -274,6 +284,18 @@ export interface ExpenseCreateResponse {
   // recorded=false → tick de récurrente déjà pointé (idempotent), transaction=null
   recorded: boolean;
   transaction: BudgetTransaction | null;
+}
+
+// Édition partielle d'une écriture (PATCH /expenses/{id}, miroir d'ExpenseUpdate
+// Pydantic). Tous champs optionnels (sémantique PATCH) ; `kind`/`recurring_key`
+// ne sont pas éditables (corriger un kind = supprimer + recréer). La réponse est
+// la transaction mise à jour (BudgetTransaction).
+export interface ExpenseUpdate {
+  amount_eur?: number | null;
+  label?: string | null;
+  category?: string | null;
+  occurred_on?: string | null; // ISO YYYY-MM-DD
+  shared?: boolean | null;
 }
 
 // ── /weather/forecast ───────────────────────────────────────────────────────────

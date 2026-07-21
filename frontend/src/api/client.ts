@@ -167,6 +167,19 @@ export function apiPost<T>(path: string, body?: unknown, opts?: RequestOptions):
   );
 }
 
+/** PATCH JSON typé sur un endpoint authentifié (miroir d'`apiPost`). */
+export function apiPatch<T>(path: string, body?: unknown, opts?: RequestOptions): Promise<T> {
+  return apiFetch<T>(
+    path,
+    {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: body === undefined ? undefined : JSON.stringify(body),
+    },
+    opts,
+  );
+}
+
 /** GET authentifié renvoyant un binaire (ex. export CSV → téléchargement blob). */
 export async function apiGetBlob(path: string, opts: RequestOptions = {}): Promise<Blob> {
   const key = await ensureApiKey();

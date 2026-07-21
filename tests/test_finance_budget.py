@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import date
 
-from bot.finance.budget import compute_budget
+from bot.finance.budget import OPEN_CYCLE_END, compute_budget, compute_trend
 from bot.finance.config import EnvelopeItem, FinanceConfig, RecurringItem
 from bot.finance.models import Expense
 
@@ -459,3 +459,186 @@ def test_pending_overdue_within_cycle() -> None:
     pending = summary.pending_recurring[0]
     assert pending.day == 5
     assert pending.is_overdue is True  # 10/05 > 05/05
+
+
+# --- Tendance : projection + rythme + courbe (compute_trend) --------------
+
+
+def _perso_punctual(cents: int, day: int, category: str | None = None) -> Expense:
+    return Expense(
+        kind="punctual",
+        amount_cents=cents,
+        label="Achat",
+        category=category,
+        occurred_on=date(2026, 5, day),
+        shared=False,
+    )
+
+
+def test_trend_happy_path() -> None:
+    """Cycle civil 01→31/05, 10 jours écoulés au 11/05.
+
+    Ponctuelles perso : 80€ essence (enveloppe) + 40€ hors enveloppe.
+    Une dépense shared de 50€ (exclue partout). Loyer pointé, PEL pending.
+    """
+    cfg = _config(
+        RecurringItem("loyer", "Loyer", 80000, 5, "expense"),
+        RecurringItem("pel", "PEL", 20000, 5, "saving"),
+        envelopes=(EnvelopeItem("essence", "Essence", 20000),),
+    )
+    month_expenses = [
+        _income(250000),
+        _perso_punctual(8000, day=3, category="essence"),  # dans l'enveloppe
+        _perso_punctual(4000, day=8),  # hors enveloppe
+        _punctual_cat(5000, "nourriture", day=6, shared=True),  # shared, exclu
+        _tick("loyer", 80000),  # récurrente pointée
+    ]
+    summary = compute_budget(
+        config=cfg,
+        month_expenses=month_expenses,
+        year_savings=[],
+        today=date(2026, 5, 11),
+        cycle_start=date(2026, 5, 1),
+        cycle_end=date(2026, 5, 31),
+    )
+    # remaining = 250000 - 4000 (hors env) - 80000 (loyer) - 20000 (pel pending)
+    #             - 20000 (alloc essence) - 0 (overrun) = 126000
+    assert summary.remaining_cents == 126000
+
+    trend = compute_trend(summary=summary, month_expenses=month_expenses, today=date(2026, 5, 11))
+
+    # rythme = ponctuelles perso HORS enveloppes (4000) / (10 jours écoulés + 1
+    # = 11 jours civils du 01 au 11 inclus, même fenêtre que le numérateur) = 364
+    assert trend.daily_rate_cents == 364
+    # projection = remaining (126000) - rythme (364) * jours restants STRICTEMENT
+    # après aujourd'hui (31/05 - 11/05 - 1 = 19) = 119084
+    assert trend.projected_remaining_cents == 119084
+    # spendable = income - récurrentes totales (loyer 80000) - épargne (pel 20000 pending) = 150000
+    assert trend.spendable_cents == 150000
+    # courbe : un point par jour du 01 au 11 inclus = 11 points
+    assert len(trend.spend_curve) == 11
+    assert trend.spend_curve[0].day == date(2026, 5, 1)
+    assert trend.spend_curve[0].cumulative_cents == 0
+    assert trend.spend_curve[-1].day == date(2026, 5, 11)
+    # cumul final = ponctuelles perso enveloppes incluses (8000 + 4000), shared exclu
+    assert trend.spend_curve[-1].cumulative_cents == 12000
+    # palier au 03 (essence) et au 08 (hors env)
+    by_day = {p.day: p.cumulative_cents for p in trend.spend_curve}
+    assert by_day[date(2026, 5, 2)] == 0
+    assert by_day[date(2026, 5, 3)] == 8000
+    assert by_day[date(2026, 5, 7)] == 8000
+    assert by_day[date(2026, 5, 8)] == 12000
+
+
+def test_trend_day_zero_no_division_and_flat_projection() -> None:
+    """Jour du salaire (today == cycle_start) : rythme 0, projection = restant, 1 point."""
+    cfg = _config()
+    month_expenses = [_income(250000), _perso_punctual(4000, day=5)]
+    summary = compute_budget(
+        config=cfg,
+        month_expenses=month_expenses,
+        year_savings=[],
+        today=date(2026, 5, 5),
+        cycle_start=date(2026, 5, 5),
+        cycle_end=date(2026, 6, 5),
+    )
+    trend = compute_trend(summary=summary, month_expenses=month_expenses, today=date(2026, 5, 5))
+    assert trend.daily_rate_cents == 0
+    assert trend.projected_remaining_cents == summary.remaining_cents
+    # « 1 seul jour » : un unique point (le jour du cycle_start).
+    assert len(trend.spend_curve) == 1
+    assert trend.spend_curve[0].day == date(2026, 5, 5)
+    assert trend.spend_curve[0].cumulative_cents == 4000
+
+
+def test_trend_open_cycle_projects_to_same_day_next_month() -> None:
+    """Cycle ouvert (cycle_end sentinelle) : borne de projection = cycle_start + 1 mois."""
+    cfg = _config()
+    month_expenses = [_income(250000), _perso_punctual(3000, day=1)]  # occurred 01/05
+    summary = compute_budget(
+        config=cfg,
+        month_expenses=month_expenses,
+        year_savings=[],
+        today=date(2026, 5, 10),
+        cycle_start=date(2026, 4, 28),
+        cycle_end=OPEN_CYCLE_END,
+    )
+    trend = compute_trend(summary=summary, month_expenses=month_expenses, today=date(2026, 5, 10))
+    # rythme = 3000 / (10/05 - 28/04 = 12 jours écoulés + 1 = 13) = 231
+    assert trend.daily_rate_cents == 231
+    # borne nominale (horizon) = 28/05 ; jours restants STRICTEMENT après
+    # aujourd'hui = 28/05 - 10/05 - 1 = 17 ; projection = remaining - 231 * 17
+    assert trend.spend_horizon == date(2026, 5, 28)
+    assert trend.projected_remaining_cents == summary.remaining_cents - 231 * 17
+
+
+def test_trend_flat_curve_when_days_without_spending() -> None:
+    """Jours sans dépense : la courbe reste plate (un point par jour quand même)."""
+    cfg = _config()
+    month_expenses = [_income(250000), _perso_punctual(5000, day=2)]
+    summary = compute_budget(
+        config=cfg,
+        month_expenses=month_expenses,
+        year_savings=[],
+        today=date(2026, 5, 5),
+        cycle_start=date(2026, 5, 1),
+        cycle_end=date(2026, 5, 31),
+    )
+    trend = compute_trend(summary=summary, month_expenses=month_expenses, today=date(2026, 5, 5))
+    cumulatives = [p.cumulative_cents for p in trend.spend_curve]
+    assert cumulatives == [0, 5000, 5000, 5000, 5000]  # 01,02,03,04,05
+
+
+def test_trend_same_day_multiple_expenses_cumulate() -> None:
+    cfg = _config()
+    month_expenses = [
+        _income(250000),
+        _perso_punctual(3000, day=3),
+        _perso_punctual(2000, day=3),
+    ]
+    summary = compute_budget(
+        config=cfg,
+        month_expenses=month_expenses,
+        year_savings=[],
+        today=date(2026, 5, 3),
+        cycle_start=date(2026, 5, 1),
+        cycle_end=date(2026, 5, 31),
+    )
+    trend = compute_trend(summary=summary, month_expenses=month_expenses, today=date(2026, 5, 3))
+    assert trend.spend_curve[-1].cumulative_cents == 5000
+
+
+def test_trend_spendable_income_minus_recurring_and_savings() -> None:
+    cfg = _config(
+        RecurringItem("loyer", "Loyer", 80000, 5, "expense"),
+        RecurringItem("netflix", "Netflix", 1799, 12, "expense"),
+        RecurringItem("pel", "PEL", 20000, 5, "saving"),
+    )
+    month_expenses = [_income(250000), _tick("loyer", 80000)]
+    summary = compute_budget(
+        config=cfg,
+        month_expenses=month_expenses,
+        year_savings=[],
+        today=date(2026, 5, 10),
+        cycle_start=date(2026, 5, 1),
+        cycle_end=date(2026, 5, 31),
+    )
+    trend = compute_trend(summary=summary, month_expenses=month_expenses, today=date(2026, 5, 10))
+    # loyer 80000 (pointé) + netflix 1799 (pending) = récurrentes ; pel 20000 = épargne
+    assert trend.spendable_cents == 250000 - (80000 + 1799) - 20000
+
+
+def test_trend_spendable_can_be_negative() -> None:
+    """spendable ≤ 0 (récurrentes > revenu) : renvoyé négatif, le front ne trace pas la cible."""
+    cfg = _config(RecurringItem("loyer", "Loyer", 80000, 5, "expense"))
+    month_expenses = [_income(50000)]
+    summary = compute_budget(
+        config=cfg,
+        month_expenses=month_expenses,
+        year_savings=[],
+        today=date(2026, 5, 1),
+        cycle_start=date(2026, 5, 1),
+        cycle_end=date(2026, 5, 31),
+    )
+    trend = compute_trend(summary=summary, month_expenses=month_expenses, today=date(2026, 5, 1))
+    assert trend.spendable_cents == 50000 - 80000

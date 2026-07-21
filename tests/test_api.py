@@ -1831,6 +1831,101 @@ async def test_budget_returns_summary_with_transactions(
     assert body["pending"][0]["key"] == "loyer"
 
 
+async def test_budget_exposes_trend_fields(client: AsyncClient, state: AppState) -> None:
+    """`GET /budget` expose projection, rythme, spendable et courbe de dépense."""
+    from datetime import datetime, timedelta
+    from zoneinfo import ZoneInfo
+
+    from bot.finance.manager import OPEN_CYCLE_END
+    from bot.finance.models import Expense
+    from bot.profile import UserProfile
+
+    today = datetime.now(ZoneInfo("Europe/Paris")).date()
+    cycle_start = today - timedelta(days=10)
+
+    state.deps.profile = UserProfile(
+        raw_yaml="", is_loaded=True, data={"finances": {"currency": "EUR"}}
+    )
+    income = Expense(
+        kind="income",
+        amount_cents=250000,
+        label="Salaire",
+        recurring_key=None,
+        occurred_on=cycle_start,
+    )
+    income.id = 1
+    punctual = Expense(
+        kind="punctual",
+        amount_cents=10000,
+        label="Resto",
+        category=None,
+        recurring_key=None,
+        occurred_on=cycle_start,
+    )
+    punctual.id = 2
+    state.deps.expenses.current_cycle_bounds = AsyncMock(return_value=(cycle_start, OPEN_CYCLE_END))
+    state.deps.expenses.list_for_cycle = AsyncMock(return_value=[income, punctual])
+    state.deps.expenses.list_savings_for_year = AsyncMock(return_value=[])
+
+    response = await client.get("/budget", headers={"X-API-Key": API_KEY})
+    assert response.status_code == 200
+    body = response.json()
+
+    # 100 € de ponctuelles hors enveloppe sur 11 jours civils (jour du salaire
+    # inclus) = 9,09 €/jour (numérateur et dénominateur sur la même fenêtre).
+    assert body["daily_rate_eur"] == 9.09
+    # spendable = income - récurrentes - épargne - pending (aucun ici).
+    assert body["spendable_eur"] == 2500.0
+    # Le rythme > 0 grignote la projection sous le restant courant.
+    assert body["projected_remaining_eur"] < body["remaining_eur"]
+    # spend_horizon vise la FIN de cycle (cycle_start + 1 mois pour un cycle
+    # ouvert), au-delà d'aujourd'hui (= cycle_end ici) : c'est lui, et non
+    # cycle_end, que la sparkline utilise pour ancrer sa droite « rythme idéal ».
+    assert body["spend_horizon"] > body["cycle_end"]
+    # Un point par jour du cycle écoulé, inclus aujourd'hui (11 jours).
+    assert len(body["spend_curve"]) == 11
+    first = body["spend_curve"][0]
+    assert first["date"] == cycle_start.isoformat()
+    assert body["spend_curve"][-1]["cumulative_eur"] == 100.0
+
+
+async def test_budget_trend_day_zero_is_flat(client: AsyncClient, state: AppState) -> None:
+    """Au jour du salaire : rythme nul, projection = restant, courbe à 1 point."""
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+
+    from bot.finance.manager import OPEN_CYCLE_END
+    from bot.finance.models import Expense
+    from bot.profile import UserProfile
+
+    today = datetime.now(ZoneInfo("Europe/Paris")).date()
+
+    state.deps.profile = UserProfile(
+        raw_yaml="", is_loaded=True, data={"finances": {"currency": "EUR"}}
+    )
+    income = Expense(
+        kind="income",
+        amount_cents=250000,
+        label="Salaire",
+        recurring_key=None,
+        occurred_on=today,
+    )
+    income.id = 1
+    state.deps.expenses.current_cycle_bounds = AsyncMock(return_value=(today, OPEN_CYCLE_END))
+    state.deps.expenses.list_for_cycle = AsyncMock(return_value=[income])
+    state.deps.expenses.list_savings_for_year = AsyncMock(return_value=[])
+
+    response = await client.get("/budget", headers={"X-API-Key": API_KEY})
+    assert response.status_code == 200
+    body = response.json()
+
+    assert body["daily_rate_eur"] == 0.0
+    assert body["projected_remaining_eur"] == body["remaining_eur"]
+    assert len(body["spend_curve"]) == 1
+    assert body["spend_curve"][0]["date"] == today.isoformat()
+    assert body["spend_curve"][0]["cumulative_eur"] == 0.0
+
+
 # --- /share/courses -------------------------------------------------------
 
 
@@ -2198,3 +2293,125 @@ async def test_create_expense_bad_date_returns_400(client: AsyncClient) -> None:
         json={"action": "spend", "amount_eur": 10, "occurred_on": "10/06/2026"},
     )
     assert response.status_code == 400
+
+
+# --- PATCH / DELETE /expenses/{id} (correction de saisie, step 03) ----------
+
+
+async def test_update_expense_without_api_key_returns_403(client: AsyncClient) -> None:
+    response = await client.patch("/expenses/1", json={"amount_eur": 10})
+    assert response.status_code == 403
+
+
+async def test_update_expense_happy_path_returns_transaction(
+    client: AsyncClient, state: AppState
+) -> None:
+    """PATCH → réponse au format BudgetTransaction, seuls les champs fournis passent."""
+    from bot.finance.models import Expense
+
+    updated = Expense(
+        kind="punctual",
+        amount_cents=3100,
+        label="Pharmacie",
+        category="santé",
+        occurred_on=date(2026, 5, 18),
+        shared=False,
+    )
+    updated.id = 42
+    state.deps.expenses.update = AsyncMock(return_value=updated)
+
+    response = await client.patch(
+        "/expenses/42",
+        headers={"X-API-Key": API_KEY},
+        json={"amount_eur": 31.0},
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["id"] == 42
+    assert body["amount_eur"] == 31.0
+    assert body["label"] == "Pharmacie"
+
+    kwargs = state.deps.expenses.update.call_args.kwargs
+    assert kwargs["amount_cents"] == 3100
+    # Champs non fournis → None (l'appelant décide de ne rien changer).
+    assert kwargs["label"] is None
+    assert kwargs["category"] is None
+    assert kwargs["occurred_on"] is None
+    assert kwargs["shared"] is None
+    assert state.deps.expenses.update.call_args.args == (42,)
+
+
+async def test_update_expense_resolves_occurred_on(client: AsyncClient, state: AppState) -> None:
+    from bot.finance.models import Expense
+
+    updated = Expense(
+        kind="punctual",
+        amount_cents=1000,
+        label="Resto",
+        category=None,
+        occurred_on=date(2026, 5, 12),
+        shared=False,
+    )
+    updated.id = 5
+    state.deps.expenses.update = AsyncMock(return_value=updated)
+
+    response = await client.patch(
+        "/expenses/5",
+        headers={"X-API-Key": API_KEY},
+        json={"occurred_on": "2026-05-12", "label": "Resto"},
+    )
+    assert response.status_code == 200
+    assert state.deps.expenses.update.call_args.kwargs["occurred_on"] == date(2026, 5, 12)
+
+
+async def test_update_expense_negative_amount_returns_400(
+    client: AsyncClient, state: AppState
+) -> None:
+    state.deps.expenses.update = AsyncMock()
+    response = await client.patch(
+        "/expenses/1",
+        headers={"X-API-Key": API_KEY},
+        json={"amount_eur": -5},
+    )
+    assert response.status_code == 400
+    state.deps.expenses.update.assert_not_called()
+
+
+async def test_update_expense_bad_date_returns_400(client: AsyncClient, state: AppState) -> None:
+    state.deps.expenses.update = AsyncMock()
+    response = await client.patch(
+        "/expenses/1",
+        headers={"X-API-Key": API_KEY},
+        json={"occurred_on": "18/05/2026"},
+    )
+    assert response.status_code == 400
+    state.deps.expenses.update.assert_not_called()
+
+
+async def test_update_expense_unknown_id_returns_404(client: AsyncClient, state: AppState) -> None:
+    state.deps.expenses.update = AsyncMock(return_value=None)
+    response = await client.patch(
+        "/expenses/999",
+        headers={"X-API-Key": API_KEY},
+        json={"amount_eur": 10},
+    )
+    assert response.status_code == 404
+
+
+async def test_delete_expense_without_api_key_returns_403(client: AsyncClient) -> None:
+    response = await client.delete("/expenses/1")
+    assert response.status_code == 403
+
+
+async def test_delete_expense_happy_path_returns_ok(client: AsyncClient, state: AppState) -> None:
+    state.deps.expenses.delete = AsyncMock(return_value=True)
+    response = await client.delete("/expenses/42", headers={"X-API-Key": API_KEY})
+    assert response.status_code == 200
+    assert response.json() == {"ok": True}
+    state.deps.expenses.delete.assert_awaited_once_with(42)
+
+
+async def test_delete_expense_unknown_id_returns_404(client: AsyncClient, state: AppState) -> None:
+    state.deps.expenses.delete = AsyncMock(return_value=False)
+    response = await client.delete("/expenses/999", headers={"X-API-Key": API_KEY})
+    assert response.status_code == 404

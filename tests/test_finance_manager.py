@@ -333,3 +333,92 @@ async def test_tick_recurring_once_is_atomic_under_concurrency(
     assert len(created) == 1
     rows = await manager.list_for_month(date(2026, 5, 1))
     assert len(rows) == 1
+
+
+# --- update / delete (correction de saisie, step 03) ------------------------
+
+
+async def test_update_applies_only_provided_fields(manager: ExpenseManager) -> None:
+    """Update partiel : seuls les champs non-None sont écrits (sémantique PATCH)."""
+    original = await manager.add_punctual(
+        amount_cents=2700,
+        label="Pharmacie",
+        category="santé",
+        occurred_on=date(2026, 5, 18),
+    )
+
+    updated = await manager.update(original.id, amount_cents=3100)
+
+    assert updated is not None
+    assert updated.id == original.id
+    assert updated.amount_cents == 3100  # changé
+    assert updated.label == "Pharmacie"  # inchangé
+    assert updated.category == "santé"  # inchangé
+    assert updated.occurred_on == date(2026, 5, 18)  # inchangé
+
+    # Persistance vérifiée par relecture.
+    rows = await manager.list_for_month(date(2026, 5, 1))
+    assert [(r.amount_cents, r.label) for r in rows] == [(3100, "Pharmacie")]
+
+
+async def test_update_can_change_several_fields_at_once(manager: ExpenseManager) -> None:
+    original = await manager.add_punctual(
+        amount_cents=1000,
+        label="Resto",
+        category=None,
+        occurred_on=date(2026, 5, 10),
+        shared=False,
+    )
+
+    updated = await manager.update(
+        original.id,
+        label="Restaurant",
+        category="sorties",
+        occurred_on=date(2026, 5, 12),
+        shared=True,
+    )
+
+    assert updated is not None
+    assert updated.amount_cents == 1000  # non fourni → inchangé
+    assert updated.label == "Restaurant"
+    assert updated.category == "sorties"
+    assert updated.occurred_on == date(2026, 5, 12)
+    assert updated.shared is True
+
+
+async def test_update_returns_none_for_unknown_id(manager: ExpenseManager) -> None:
+    assert await manager.update(999, amount_cents=500) is None
+
+
+async def test_delete_removes_row(manager: ExpenseManager) -> None:
+    expense = await manager.add_punctual(
+        amount_cents=2700,
+        label="Pharmacie",
+        category="santé",
+        occurred_on=date(2026, 5, 18),
+    )
+
+    assert await manager.delete(expense.id) is True
+
+    rows = await manager.list_for_month(date(2026, 5, 1))
+    assert rows == []
+
+
+async def test_delete_returns_false_for_unknown_id(manager: ExpenseManager) -> None:
+    assert await manager.delete(999) is False
+
+
+async def test_delete_recurring_tick_makes_it_pending_again(manager: ExpenseManager) -> None:
+    """Supprimer un tick « dépointe » la récurrente (redevient pending)."""
+    tick = await manager.tick_recurring(
+        recurring_key="loyer",
+        label="Loyer",
+        amount_cents=80000,
+        kind="expense",
+        occurred_on=date(2026, 5, 5),
+    )
+    assert await manager.is_recurring_ticked_in_cycle("loyer", date(2026, 5, 18))
+
+    assert await manager.delete(tick.id) is True
+
+    assert not await manager.is_recurring_ticked_in_cycle("loyer", date(2026, 5, 18))

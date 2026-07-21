@@ -380,10 +380,16 @@ class BudgetEnvelopeDetail(BaseModel):
     shared: bool = False  # True → compte joint, hors restant perso
 
 
+class SpendPoint(BaseModel):
+    date: str  # ISO date (un point par jour du cycle écoulé)
+    cumulative_eur: float  # cumul des ponctuelles perso (enveloppes incluses, shared exclu)
+
+
 class BudgetMonthDetail(BaseModel):
     month: str  # ISO date du début de cycle (= jour du salaire, ou 1er du mois)
     cycle_start: str  # ISO date — début du cycle budgétaire courant (inclus)
     cycle_end: str  # ISO date — dernier jour du cycle (inclus ; aujourd'hui si ouvert)
+    spend_horizon: str  # ISO date — fin de cycle visée par la projection/sparkline (horizon)
     currency: str
     income_eur: float
     spent_punctual_eur: float
@@ -391,9 +397,13 @@ class BudgetMonthDetail(BaseModel):
     saved_this_month_eur: float
     saved_this_year_eur: float
     remaining_eur: float
+    projected_remaining_eur: float  # projection fin de cycle (rythme extrapolé)
+    daily_rate_eur: float  # rythme quotidien constaté (0 au jour du salaire)
+    spendable_eur: float  # cible « rythme idéal » = income - récurrentes - épargne
     transactions: list[BudgetTransaction]
     pending: list[BudgetPendingItem]
     envelopes: list[BudgetEnvelopeDetail] = Field(default_factory=list)
+    spend_curve: list[SpendPoint] = Field(default_factory=list)
 
 
 class CoursesShareCard(BaseModel):
@@ -447,6 +457,21 @@ class ExpenseCreateResponse(BaseModel):
 
     recorded: bool
     transaction: BudgetTransaction | None = None
+
+
+class ExpenseUpdate(BaseModel):
+    """Édition partielle d'une écriture (`PATCH /expenses/{id}`).
+
+    Tous les champs sont optionnels (sémantique PATCH : seuls les champs
+    fournis sont appliqués). `kind` et `recurring_key` ne sont pas éditables
+    (corriger un kind = supprimer + recréer). Un body vide est un no-op propre.
+    """
+
+    amount_eur: float | None = None
+    label: str | None = None
+    category: str | None = None
+    occurred_on: str | None = None  # ISO YYYY-MM-DD
+    shared: bool | None = None
 
 
 def _expense_to_transaction(e: Expense) -> BudgetTransaction:
@@ -1287,7 +1312,7 @@ def create_app(state: AppState) -> FastAPI:
         """
         from datetime import timedelta
 
-        from bot.finance.budget import compute_budget
+        from bot.finance.budget import compute_budget, compute_trend
         from bot.finance.config import extract_finance_config
         from bot.finance.manager import OPEN_CYCLE_END
 
@@ -1305,6 +1330,7 @@ def create_app(state: AppState) -> FastAPI:
             cycle_start=cycle_start,
             cycle_end=cycle_end,
         )
+        trend = compute_trend(summary=summary, month_expenses=month_rows, today=today_d)
         # Borne haute affichable / exportable (inclusive) : la veille de la
         # prochaine ancre, ou aujourd'hui tant que le cycle est ouvert.
         if cycle_end >= OPEN_CYCLE_END:
@@ -1341,6 +1367,7 @@ def create_app(state: AppState) -> FastAPI:
             month=summary.month.isoformat(),
             cycle_start=cycle_start.isoformat(),
             cycle_end=cycle_end_inclusive.isoformat(),
+            spend_horizon=trend.spend_horizon.isoformat(),
             currency=cfg.currency,
             income_eur=summary.income_cents / 100,
             spent_punctual_eur=summary.spent_punctual_cents / 100,
@@ -1348,9 +1375,16 @@ def create_app(state: AppState) -> FastAPI:
             saved_this_month_eur=summary.saved_this_month_cents / 100,
             saved_this_year_eur=summary.saved_this_year_cents / 100,
             remaining_eur=summary.remaining_cents / 100,
+            projected_remaining_eur=trend.projected_remaining_cents / 100,
+            daily_rate_eur=trend.daily_rate_cents / 100,
+            spendable_eur=trend.spendable_cents / 100,
             transactions=transactions,
             pending=pending,
             envelopes=envelopes_detail,
+            spend_curve=[
+                SpendPoint(date=p.day.isoformat(), cumulative_eur=p.cumulative_cents / 100)
+                for p in trend.spend_curve
+            ],
         )
 
     @app.get(
@@ -1535,6 +1569,64 @@ def create_app(state: AppState) -> FastAPI:
             amount_cents=amount_cents,
         )
         return ExpenseCreateResponse(recorded=True, transaction=_expense_to_transaction(tick))
+
+    @app.patch(
+        "/expenses/{expense_id}",
+        response_model=BudgetTransaction,
+        dependencies=[Depends(verify_api_key)],
+    )
+    async def update_expense(
+        expense_id: int,
+        body: ExpenseUpdate,
+        deps: BotDeps = Depends(get_deps),
+    ) -> BudgetTransaction:
+        """Édite une écriture budgétaire (correction de saisie, sans LLM).
+
+        Sémantique PATCH : seuls les champs fournis changent. 400 si montant
+        ≤ 0 ou date mal formée, 404 si l'id est inconnu.
+        """
+        from bot.pipeline.side_effects import euros_to_cents
+
+        amount_cents: int | None = None
+        if body.amount_eur is not None:
+            amount_cents = euros_to_cents(body.amount_eur)
+            if amount_cents is None:
+                raise HTTPException(status_code=400, detail="Montant requis et > 0")
+
+        occurred_on: date | None = None
+        if body.occurred_on is not None:
+            try:
+                occurred_on = date.fromisoformat(body.occurred_on)
+            except ValueError as exc:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Date invalide (attendu YYYY-MM-DD)",
+                ) from exc
+
+        updated = await deps.expenses.update(
+            expense_id,
+            amount_cents=amount_cents,
+            label=body.label,
+            category=body.category,
+            occurred_on=occurred_on,
+            shared=body.shared,
+        )
+        if updated is None:
+            raise HTTPException(status_code=404, detail="Écriture introuvable")
+        log.info("expense_updated", expense_id=expense_id)
+        return _expense_to_transaction(updated)
+
+    @app.delete(
+        "/expenses/{expense_id}",
+        dependencies=[Depends(verify_api_key)],
+    )
+    async def delete_expense(expense_id: int, deps: BotDeps = Depends(get_deps)) -> dict[str, bool]:
+        """Supprime une écriture budgétaire. 404 si l'id est inconnu."""
+        ok = await deps.expenses.delete(expense_id)
+        if not ok:
+            raise HTTPException(status_code=404, detail="Écriture introuvable")
+        log.info("expense_deleted", expense_id=expense_id)
+        return {"ok": True}
 
     @app.get(
         "/expenses/export.csv",

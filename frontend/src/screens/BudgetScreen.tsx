@@ -5,12 +5,20 @@
 // L'ouverture pré-remplie via `draft` (photo de ticket) est conservée ; une
 // saisie enregistrée rafraîchit le dashboard (`onChanged`).
 
-import { useCallback, useEffect, useState } from "react";
+import { Fragment, useCallback, useEffect, useState } from "react";
 import { AlertTriangle } from "lucide-react";
 import { apiGetBlob, apiGet } from "../api/client";
-import type { BudgetMonthDetail, ExpenseDraft } from "../api/types";
-import { formatEur } from "../lib/format";
+import type {
+  BudgetMonthDetail,
+  BudgetEnvelopeDetail,
+  BudgetPendingItem,
+  BudgetTransaction,
+  ExpenseDraft,
+} from "../api/types";
+import { formatDaySeparator, formatEur } from "../lib/format";
 import { BudgetForm } from "../components/forms/BudgetForm";
+import { BudgetSparkline } from "../components/BudgetSparkline";
+import { ExpenseEditSheet } from "../components/ExpenseEditSheet";
 import { useToast } from "../components/Toast";
 
 interface Props {
@@ -31,6 +39,8 @@ export function BudgetScreen({ draft, onChanged, reloadKey = 0 }: Props) {
   // Remonte à chaque saisie enregistrée → réinitialise le formulaire à ses
   // défauts. Le draft n'agit qu'au 1er montage (formKey === 0).
   const [formKey, setFormKey] = useState(0);
+  // Transaction en cours d'édition (tap sur une row) → sheet montée par-dessus.
+  const [editing, setEditing] = useState<BudgetTransaction | null>(null);
 
   // Fetch pur : renvoie le récap ou lève. Le mapping vers l'état appartient à
   // l'appelant, ce qui laisse l'effet protéger ses setState d'une réponse
@@ -77,6 +87,20 @@ export function BudgetScreen({ draft, onChanged, reloadKey = 0 }: Props) {
     onChanged();
   };
 
+  // Après édition/suppression via la sheet : refetch (le front ne recalcule pas)
+  // puis resync du dashboard. Ne remonte PAS le formulaire (la sheet est un
+  // canal séparé). Fail-soft comme onSubmitted : sur échec on garde l'affichage.
+  const refreshAfterMutation = async () => {
+    try {
+      const detail = await fetchBudget();
+      setData(detail);
+      setError(false);
+    } catch {
+      setError(true);
+    }
+    onChanged();
+  };
+
   return (
     <div className="screen">
       <header>
@@ -97,24 +121,198 @@ export function BudgetScreen({ draft, onChanged, reloadKey = 0 }: Props) {
                   {WARN} Récap non actualisé (réseau). Dernier récap connu affiché.
                 </p>
               )}
+              <BudgetHero data={data} />
+              <BudgetSparkline
+                curve={data.spend_curve}
+                spendableEur={data.spendable_eur}
+                cycleStart={data.cycle_start}
+                horizon={data.spend_horizon}
+              />
+              <EnvelopesSection envelopes={data.envelopes} />
+              <PendingSection pending={data.pending} />
               <BudgetForm
                 key={formKey}
                 data={data}
                 draft={formKey === 0 ? draft : undefined}
                 onSubmitted={() => void onSubmitted()}
               />
-              <BudgetDetail data={data} />
+              <TransactionsSection transactions={data.transactions} onEdit={setEditing} />
+              <ExportButton data={data} />
             </>
           )}
         </div>
       </div>
+      {editing && data && (
+        <ExpenseEditSheet
+          transaction={editing}
+          envelopes={data.envelopes}
+          onClose={() => setEditing(null)}
+          onMutated={refreshAfterMutation}
+        />
+      )}
     </div>
   );
 }
 
-// ── Récap (markdown-body iso-visuel) + export CSV ────────────────────────────
+// ── Héros : restant prévisionnel + projection fin de cycle ───────────────────
 
-function BudgetDetail({ data }: { data: BudgetMonthDetail }) {
+function BudgetHero({ data }: { data: BudgetMonthDetail }) {
+  // Ambre (jamais rouge) quand le restant prévisionnel passe négatif.
+  const amber = data.remaining_eur < 0;
+  // Jour du salaire (jour 0) : aucun jour écoulé → rythme nul et projection ==
+  // restant. On masque alors la ligne de projection (rien à extrapoler).
+  const dayZero = data.daily_rate_eur === 0 && data.projected_remaining_eur === data.remaining_eur;
+
+  return (
+    <section className="budget-hero">
+      <div className="budget-hero-label">Restant prévisionnel</div>
+      <div className={`budget-hero-amount${amber ? " is-amber" : ""}`}>
+        {formatEur(data.remaining_eur)}
+      </div>
+      {!dayZero && (
+        <div className="budget-hero-projection">
+          {`À ce rythme : ${formatEur(data.projected_remaining_eur)} en fin de cycle`}
+        </div>
+      )}
+    </section>
+  );
+}
+
+// ── Section « À pointer » : récurrentes en attente de pointage (.group iOS) ───
+
+function PendingSection({ pending }: { pending: BudgetPendingItem[] }) {
+  if (pending.length === 0) return null;
+  return (
+    <>
+      <div className="group-label">{`À pointer (${pending.length})`}</div>
+      <div className="group">
+        {pending.map((p) => (
+          <div className="group-row" key={p.key}>
+            <div className="row-body">
+              <div className="row-title">{p.label}</div>
+              <div className="row-sub">
+                {`prévu le ${p.day}`}
+                {p.kind === "saving" && " · épargne"}
+              </div>
+            </div>
+            {p.is_overdue && <span className="row-pastille">en retard</span>}
+            <span className="row-value">{formatEur(p.amount_eur)}</span>
+          </div>
+        ))}
+      </div>
+    </>
+  );
+}
+
+// ── Section « Enveloppes » : barres de progression (step 05) ─────────────────
+// Mapping données → pixels : remplissage = dépensé / alloué borné à 100 %, vert
+// si sain, ambre si dépassement (+ mention factuelle, jamais rouge). Une
+// enveloppe shared (compte joint) est hors budget perso : teinte neutre + badge,
+// aucun jugement de santé (pas de vert/ambre).
+
+function EnvelopesSection({ envelopes }: { envelopes: BudgetEnvelopeDetail[] }) {
+  if (envelopes.length === 0) return null;
+  return (
+    <>
+      <div className="group-label">Enveloppes</div>
+      <div className="group">
+        {envelopes.map((env) => {
+          const ratio = env.allocated_eur > 0 ? env.spent_eur / env.allocated_eur : 0;
+          const width = `${Math.min(Math.max(ratio, 0), 1) * 100}%`;
+          const fillClass = env.shared ? " is-shared" : env.is_overrun ? " is-amber" : "";
+          return (
+            <div className="env-row" key={env.category}>
+              <div className="env-head">
+                <span className="env-label">
+                  {env.label}
+                  {env.shared && <span className="env-tag">compte joint</span>}
+                </span>
+                <span className="env-amounts">
+                  {`${formatEur(env.spent_eur)} / ${formatEur(env.allocated_eur)}`}
+                </span>
+              </div>
+              <div className="env-track">
+                <div className={`env-fill${fillClass}`} style={{ width }} />
+              </div>
+              {env.is_overrun && !env.shared && (
+                <div className="env-overrun">{`Dépassement de ${formatEur(env.overrun_eur)}`}</div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </>
+  );
+}
+
+const WARN = <AlertTriangle size={14} className="lucide-warn" />;
+
+// ── Section « Transactions » : écritures du cycle groupées par jour ──────────
+// Groupage pur front depuis `transactions[]` (déjà chargé, aucun nouvel appel).
+// Jours du plus récent au plus ancien, libellé FR (« Aujourd'hui »/« Hier »/date).
+// Chaque row est tappable → sheet d'édition. Badge shared neutre conservé.
+
+function groupByDay(transactions: BudgetTransaction[]): { day: string; items: BudgetTransaction[] }[] {
+  const byDay = new Map<string, BudgetTransaction[]>();
+  for (const t of transactions) {
+    const items = byDay.get(t.occurred_on) ?? [];
+    items.push(t);
+    byDay.set(t.occurred_on, items);
+  }
+  // Tri décroissant sur la date ISO (comparaison lexicale suffisante en YYYY-MM-DD).
+  return [...byDay.entries()]
+    .sort(([a], [b]) => (a < b ? 1 : a > b ? -1 : 0))
+    .map(([day, items]) => ({ day, items }));
+}
+
+function TransactionsSection({
+  transactions,
+  onEdit,
+}: {
+  transactions: BudgetTransaction[];
+  onEdit: (t: BudgetTransaction) => void;
+}) {
+  if (transactions.length === 0) {
+    return (
+      <>
+        <div className="group-label">Transactions</div>
+        <p className="placeholder-text">Aucune écriture ce cycle.</p>
+      </>
+    );
+  }
+
+  return (
+    <>
+      {groupByDay(transactions).map(({ day, items }) => (
+        <Fragment key={day}>
+          <div className="group-label">{formatDaySeparator(new Date(`${day}T00:00:00`))}</div>
+          <div className="group">
+            {items.map((t) => {
+              // Revenu = crédit (+), tout le reste = débit (−), comme l'ex-récap.
+              const sign = t.kind === "income" ? "+" : "−";
+              return (
+                <button className="group-row" type="button" key={t.id} onClick={() => onEdit(t)}>
+                  <div className="row-body">
+                    <div className="row-title">
+                      {t.label}
+                      {t.shared && <span className="env-tag">compte joint</span>}
+                    </div>
+                    {t.category && <div className="row-sub">{t.category}</div>}
+                  </div>
+                  <span className="row-value">{`${sign}${formatEur(t.amount_eur)}`}</span>
+                </button>
+              );
+            })}
+          </div>
+        </Fragment>
+      ))}
+    </>
+  );
+}
+
+// ── Export CSV du cycle courant ──────────────────────────────────────────────
+
+function ExportButton({ data }: { data: BudgetMonthDetail }) {
   const toast = useToast();
 
   const exportCsv = async () => {
@@ -139,115 +337,9 @@ function BudgetDetail({ data }: { data: BudgetMonthDetail }) {
 
   return (
     <div className="budget-detail">
-      <BudgetRecap data={data} />
       <button className="budget-export" type="button" onClick={() => void exportCsv()}>
         Exporter CSV
       </button>
-    </div>
-  );
-}
-
-const WARN = <AlertTriangle size={14} className="lucide-warn" />;
-
-function BudgetRecap({ data }: { data: BudgetMonthDetail }) {
-  const fmtShort = (iso: string) =>
-    new Date(`${iso}T00:00:00`).toLocaleDateString("fr-FR", { day: "numeric", month: "long" });
-
-  // cycle_start / cycle_end sont garantis par le contrat backend (non nullable).
-  const header = `Cycle du ${fmtShort(data.cycle_start)} au ${fmtShort(data.cycle_end)}`;
-
-  return (
-    <div className="markdown-body budget-recap">
-      <h2>{header}</h2>
-      <p>
-        <strong>{`Restant prévisionnel : ${formatEur(data.remaining_eur)}`}</strong>
-      </p>
-      <ul>
-        <li>{`Revenu : ${formatEur(data.income_eur)}`}</li>
-        <li>{`Récurrentes pointées : ${formatEur(data.spent_recurring_eur)}`}</li>
-        <li>{`Ponctuelles : ${formatEur(data.spent_punctual_eur)}`}</li>
-        <li>{`Épargne ce cycle : ${formatEur(data.saved_this_month_eur)}`}</li>
-        <li>{`Épargné cette année : ${formatEur(data.saved_this_year_eur)}`}</li>
-      </ul>
-
-      {data.envelopes.length > 0 && (
-        <>
-          <h3>Enveloppes</h3>
-          <ul>
-            {data.envelopes.map((env) => (
-              <li key={env.category}>
-                <strong>{env.label}</strong>
-                {env.shared && (
-                  <>
-                    {" "}
-                    <em>(compte joint)</em>
-                  </>
-                )}
-                {` : ${formatEur(env.spent_eur)} / ${formatEur(env.allocated_eur)}`}
-                {env.is_overrun && (
-                  <>
-                    {" "}
-                    {WARN} {`dépassement de ${formatEur(env.overrun_eur)}`}
-                  </>
-                )}
-              </li>
-            ))}
-          </ul>
-        </>
-      )}
-
-      {data.pending.length > 0 && (
-        <>
-          <h3>{`À pointer (${data.pending.length})`}</h3>
-          <ul>
-            {data.pending.map((p) => (
-              <li key={p.key}>
-                <strong>{p.label}</strong>
-                {` ${formatEur(p.amount_eur)}, prévu le ${p.day}`}
-                {p.kind === "saving" && " (épargne)"}
-                {p.is_overdue && (
-                  <>
-                    {" "}
-                    {WARN} en retard
-                  </>
-                )}
-              </li>
-            ))}
-          </ul>
-        </>
-      )}
-
-      {data.transactions.length > 0 ? (
-        <>
-          <h3>Transactions du mois</h3>
-          <ul>
-            {data.transactions.map((t) => {
-              const day = new Date(`${t.occurred_on}T00:00:00`).toLocaleDateString("fr-FR", {
-                day: "numeric",
-                month: "short",
-              });
-              const sign = t.kind === "income" ? "+" : "−";
-              return (
-                <li key={t.id}>
-                  {`${day} — ${t.label}`}
-                  {t.category && ` (${t.category})`}
-                  {t.shared && (
-                    <>
-                      {" "}
-                      <em>(compte joint)</em>
-                    </>
-                  )}
-                  {` : ${sign}${formatEur(t.amount_eur)}`}
-                </li>
-              );
-            })}
-          </ul>
-        </>
-      ) : (
-        <p>
-          <em>Aucune transaction enregistrée ce mois.</em>
-        </p>
-      )}
     </div>
   );
 }

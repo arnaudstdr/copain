@@ -10,10 +10,15 @@ from __future__ import annotations
 import calendar as _calendar
 from collections.abc import Sequence
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, timedelta
 
 from bot.finance.config import EnvelopeItem, FinanceConfig, RecurringItem, RecurringKind
 from bot.finance.models import Expense
+
+# Borne haute sentinelle d'un cycle budgétaire encore ouvert (pas d'ancre
+# suivante connue). Vit ici, dans le module pur d'arithmétique de cycle ;
+# `manager.py` la ré-exporte pour compatibilité.
+OPEN_CYCLE_END: date = date(9999, 12, 31)
 
 
 @dataclass(frozen=True, slots=True)
@@ -94,6 +99,18 @@ class BudgetSummary:
         return sum(e.overrun_cents for e in self.envelopes if not e.shared)
 
     @property
+    def punctual_outside_envelopes_cents(self) -> int:
+        """Ponctuelles perso qui NE puisent dans aucune enveloppe perso.
+
+        `spent_punctual_cents` exclut déjà les dépenses shared en amont ; on
+        en retire la part consommée dans les enveloppes perso pour ne garder
+        que les ponctuelles « libres ». Sert de source unique à `remaining_cents`
+        et au rythme de dépense de `compute_trend`.
+        """
+        in_envelopes = sum(e.spent_cents for e in self.envelopes if not e.shared)
+        return self.spent_punctual_cents - in_envelopes
+
+    @property
     def remaining_cents(self) -> int:
         """Restant previsionnel (uniquement périmètre perso).
 
@@ -116,13 +133,11 @@ class BudgetSummary:
           - allocated total des enveloppes perso
           - overrun total des enveloppes perso
         """
-        # Ponctuelles consommées dans les enveloppes PERSO uniquement.
-        # Ce montant a déjà été "soustrait" via l'allocation + l'overrun ;
-        # on l'enlève de spent_punctual_cents pour ne pas le compter deux fois.
-        punctual_in_envelopes = sum(e.spent_cents for e in self.envelopes if not e.shared)
-        punctual_hors_envelopes = self.spent_punctual_cents - punctual_in_envelopes
+        # Les ponctuelles consommées dans les enveloppes PERSO ont déjà été
+        # "soustraites" via l'allocation + l'overrun ; on ne garde que les
+        # ponctuelles hors enveloppes pour ne pas les compter deux fois.
         out = (
-            punctual_hors_envelopes
+            self.punctual_outside_envelopes_cents
             + self.spent_recurring_cents
             + self.saved_this_month_cents
             + self.pending_total_cents
@@ -142,6 +157,30 @@ class BudgetSummary:
     @property
     def has_envelope_overrun(self) -> bool:
         return any(e.is_overrun for e in self.envelopes)
+
+
+@dataclass(frozen=True, slots=True)
+class SpendPoint:
+    """Un point de la courbe de dépense cumulée (un par jour du cycle écoulé)."""
+
+    day: date
+    cumulative_cents: int
+
+
+@dataclass(frozen=True, slots=True)
+class BudgetTrend:
+    """Tendance du cycle : projection fin de cycle + courbe de rythme.
+
+    Calculé à part de `BudgetSummary` car dépend de `today` (que le summary,
+    frozen, ne stocke pas). Toutes les valeurs sont figées à `today` — pas de
+    property dépendante de l'horloge.
+    """
+
+    daily_rate_cents: int  # rythme quotidien constaté (ponctuelles hors env / jours écoulés)
+    projected_remaining_cents: int  # restant extrapolé à la fin du cycle
+    spendable_cents: int  # cible « rythme idéal » = income - récurrentes - épargne (peut être ≤ 0)
+    spend_curve: tuple[SpendPoint, ...]  # cumul journalier des ponctuelles perso (env. incluses)
+    spend_horizon: date  # fin de cycle visée par la projection (borne haute exclue / horizon)
 
 
 def compute_budget(
@@ -203,12 +242,110 @@ def compute_budget(
     )
 
 
+def compute_trend(
+    *,
+    summary: BudgetSummary,
+    month_expenses: Sequence[Expense],
+    today: date,
+) -> BudgetTrend:
+    """Projection fin de cycle + courbe de dépense journalière.
+
+    Fonction pure : les bornes du cycle sont lues sur `summary` (`month` =
+    début, `cycle_end` = borne haute exclue ou sentinelle `OPEN_CYCLE_END`).
+
+    - `daily_rate_cents` : ponctuelles perso HORS enveloppes / jours écoulés
+      (0 au jour du salaire, pas de division par zéro) ;
+    - `projected_remaining_cents` : `remaining - rythme x jours restants`,
+      horizon = `cycle_end` (cycle fermé) ou `cycle_start + 1 mois` (ouvert) ;
+    - `spendable_cents` : `income - récurrentes totales (pointées + pending)
+      - épargne` — cible de la droite « rythme idéal » (peut être <= 0) ;
+    - `spend_curve` : un point par jour de `cycle_start` à `today` inclus,
+      cumul des ponctuelles perso, **enveloppes incluses**, shared exclu.
+    """
+    cycle_start = summary.month
+    elapsed_days = (today - cycle_start).days
+
+    if elapsed_days <= 0:
+        daily_rate = 0
+    else:
+        # Le numérateur (`punctual_outside_envelopes_cents`) agrège les dépenses
+        # de `cycle_start` à `today` INCLUS, soit `elapsed_days + 1` jours
+        # civils : on divise par ce même nombre pour que numérateur et
+        # dénominateur portent sur la même fenêtre (sinon le rythme est
+        # surévalué, surtout juste après le salaire).
+        daily_rate = round(summary.punctual_outside_envelopes_cents / (elapsed_days + 1))
+
+    end = summary.cycle_end
+    horizon = _same_day_next_month(cycle_start) if end is None or end >= OPEN_CYCLE_END else end
+    # Les dépenses d'aujourd'hui sont déjà décomptées dans `remaining_cents` :
+    # on ne projette le rythme que sur les jours STRICTEMENT après aujourd'hui
+    # (`horizon` est une borne exclue, `(horizon - today).days` inclut today).
+    remaining_days = max(0, (horizon - today).days - 1)
+    projected_remaining = summary.remaining_cents - daily_rate * remaining_days
+
+    spendable = (
+        summary.income_cents
+        - summary.spent_recurring_cents
+        - summary.saved_this_month_cents
+        - summary.pending_total_cents
+    )
+
+    curve = _spend_curve(month_expenses, cycle_start, today)
+
+    return BudgetTrend(
+        daily_rate_cents=daily_rate,
+        projected_remaining_cents=projected_remaining,
+        spendable_cents=spendable,
+        spend_curve=curve,
+        spend_horizon=horizon,
+    )
+
+
+def _spend_curve(
+    month_expenses: Sequence[Expense],
+    cycle_start: date,
+    today: date,
+) -> tuple[SpendPoint, ...]:
+    """Cumul journalier des ponctuelles perso (enveloppes incluses, shared exclu).
+
+    Un point par jour de `cycle_start` à `today` inclus ; les jours sans
+    dépense reportent le cumul précédent (courbe plate).
+    """
+    daily_totals: dict[date, int] = {}
+    for e in month_expenses:
+        if e.kind != "punctual" or e.shared:
+            continue
+        daily_totals[e.occurred_on] = daily_totals.get(e.occurred_on, 0) + e.amount_cents
+
+    points: list[SpendPoint] = []
+    cumulative = 0
+    day = cycle_start
+    while day <= today:
+        cumulative += daily_totals.get(day, 0)
+        points.append(SpendPoint(day=day, cumulative_cents=cumulative))
+        day += timedelta(days=1)
+    return tuple(points)
+
+
 def _first_of_next_month(d: date) -> date:
     """1er du mois suivant le mois de `d` (borne haute exclue du mois civil)."""
     first = d.replace(day=1)
     if first.month == 12:
         return first.replace(year=first.year + 1, month=1)
     return first.replace(month=first.month + 1)
+
+
+def _same_day_next_month(d: date) -> date:
+    """Même quantième le mois suivant (capé au dernier jour pour les mois courts).
+
+    Durée nominale d'un cycle de paie ancré le 28 : 28/04 → 28/05, 31/01 → 28/02.
+    """
+    if d.month == 12:
+        year, month = d.year + 1, 1
+    else:
+        year, month = d.year, d.month + 1
+    last = _calendar.monthrange(year, month)[1]
+    return date(year, month, min(d.day, last))
 
 
 def next_recurring_occurrence(day: int, on_or_after: date) -> date:
