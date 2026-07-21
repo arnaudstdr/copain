@@ -1,10 +1,10 @@
 // ── Composer d'entrée (dashboard + chat) ────────────────────────────────────
-// Barre de saisie mutualisée : texte + pièce jointe photo (base64) + dictée
-// vocale. Porte l'UI et l'état local (brouillon, photo, micro, auto-resize) ;
-// l'envoi réel est délégué au parent via `onSend(text, attachment)` — le
-// dashboard route vers /ask (bulle éphémère) et le chat vers /ask/stream ou
-// /ask/image selon la présence d'une photo. Portage de bot/static/js/composer.js
-// (send, handleFileChange, removeAttachment, _toggleMic, autoResize).
+// Barre de saisie mutualisée : texte + dictée vocale, et pièce jointe photo
+// (base64) UNIQUEMENT dans le Chat (variant="chat"). Porte l'UI et l'état local
+// (brouillon, photo, micro, auto-resize) ; l'envoi réel est délégué au parent
+// via `onSend(text, attachment)` — la barre de l'Accueil (variant="dashboard",
+// texte seul) bascule vers le Chat qui streame ; le Chat route vers /ask/stream
+// (texte) ou /ask/image (photo). Portage de bot/static/js/composer.js.
 
 import { useLayoutEffect, useRef, useState } from "react";
 import { Mic, Paperclip, Send, X } from "lucide-react";
@@ -53,6 +53,9 @@ export function Composer({ onSend, busy, variant = "dashboard" }: Props) {
     if (draft) ta.style.height = `${Math.min(ta.scrollHeight, MAX_INPUT_HEIGHT)}px`;
   }, [draft]);
 
+  // La photo n'est proposée que dans le Chat : l'Accueil est texte seul et
+  // bascule vers le Chat à l'envoi (le canal photo a son foyer dans le Chat).
+  const allowPhoto = variant === "chat";
   const canSend = (draft.trim().length > 0 || attachment !== null) && !busy;
 
   const submit = () => {
@@ -112,21 +115,25 @@ export function Composer({ onSend, busy, variant = "dashboard" }: Props) {
         </div>
       )}
       <div className="bar">
-        <input
-          ref={fileRef}
-          type="file"
-          accept="image/*"
-          style={{ display: "none" }}
-          onChange={handleFile}
-        />
-        <button
-          className="icon-btn"
-          title="Joindre une photo"
-          type="button"
-          onClick={() => fileRef.current?.click()}
-        >
-          <Paperclip size={17} />
-        </button>
+        {allowPhoto && (
+          <>
+            <input
+              ref={fileRef}
+              type="file"
+              accept="image/*"
+              style={{ display: "none" }}
+              onChange={handleFile}
+            />
+            <button
+              className="icon-btn"
+              title="Joindre une photo"
+              type="button"
+              onClick={() => fileRef.current?.click()}
+            >
+              <Paperclip size={17} />
+            </button>
+          </>
+        )}
         <button
           className={`icon-btn${recording ? " recording" : ""}`}
           title="Dicter"

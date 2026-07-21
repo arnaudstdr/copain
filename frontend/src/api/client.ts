@@ -125,7 +125,17 @@ async function apiFetch<T>(path: string, init: RequestInit, opts: RequestOptions
       headers: { ...(init.headers ?? {}), "X-API-Key": key },
     });
     if (!res.ok) {
-      throw new ApiError(`${init.method ?? "GET"} ${path} → ${res.status}`, res.status);
+      // Remonte le message FR du backend (FastAPI : { "detail": "..." }) plutôt
+      // qu'un code brut, pour que les toasts d'erreur soient parlants. Fail-soft :
+      // corps non-JSON, ou `detail` non-textuel (422 = liste) → message technique.
+      let detail = "";
+      try {
+        const body = (await res.json()) as { detail?: unknown };
+        if (typeof body?.detail === "string") detail = body.detail;
+      } catch {
+        // corps illisible : on garde le message technique ci-dessous
+      }
+      throw new ApiError(detail || `${init.method ?? "GET"} ${path} → ${res.status}`, res.status);
     }
     return (await res.json()) as T;
   } catch (err) {
@@ -188,15 +198,6 @@ export async function apiDelete(path: string, opts: RequestOptions = {}): Promis
   } finally {
     clear();
   }
-}
-
-/**
- * Envoi texte non streamé (POST /ask) : réponse en un bloc affichée en bulle
- * éphémère + toast côté dashboard (le mode dialogue passe par `streamAsk`).
- * Portage de `callText` (bot/static/js/api.js).
- */
-export function askText(message: string): Promise<AskResponse> {
-  return apiPost<AskResponse>("/ask", { message }, { timeoutMs: ASK_TIMEOUT_MS });
 }
 
 /**

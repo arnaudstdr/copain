@@ -1,43 +1,33 @@
-// ── Écran unique : dashboard + shell (header, composer, bord bas iOS 26) ─────
-// Le dashboard (GET /dashboard) est chargé au boot puis rafraîchi (120 s). Les
-// overlays de consultation (step 05 : notifs, tâches, météo, évents, actu) sont
-// pilotés par `openOverlay`. Les overlays interactifs (dépôt/pour toi/budget,
-// step 06) et le chat (07) complètent l'UI. Le composer (step 08) envoie sur
-// /ask (bulle éphémère + toast) ou /ask/image (photo).
+// ── Coquille de navigation : 4 onglets + tab bar iOS ────────────────────────
+// L'onglet actif est un `useState<TabName>` (décision 1 SPEC, ouverture toujours
+// sur Accueil, pas de routeur). Seul l'écran actif est monté (décision 2) ;
+// l'état du chat vit hors React (`chatStore`) et les données dashboard restent
+// ici (useDashboard/useNews), passées en props à l'Accueil. Les overlays de
+// consultation/interaction (météo, agenda, notifs, dépôt, pour toi, budget,
+// actu) sont rendus au niveau `App`, ouverts par `setOpenOverlay`.
 
-import { useEffect, useRef, useState } from "react";
-import { Bell, Check, MessageSquare } from "lucide-react";
+import { useCallback, useEffect, useState } from "react";
+import { Check } from "lucide-react";
 import { useDashboard } from "./hooks/useDashboard";
 import { useNews } from "./hooks/useNews";
 import { useToast } from "./components/Toast";
-import { askImage, askText } from "./api/client";
-import type { Action, ExpenseDraft } from "./api/types";
-import { greetingDate } from "./lib/format";
-import { Composer } from "./components/Composer";
-import type { Attachment } from "./components/Composer";
-import { Ephemeral } from "./components/Ephemeral";
-import type { EphemeralData } from "./components/Ephemeral";
-import { BudgetCard } from "./components/dashboard/BudgetCard";
-import { DepotExpressCard } from "./components/dashboard/DepotExpressCard";
-import { ForYouCard } from "./components/dashboard/ForYouCard";
-import { NewsCard } from "./components/dashboard/NewsCard";
-import { NextEventCard } from "./components/dashboard/NextEventCard";
-import { WeatherCard } from "./components/dashboard/WeatherCard";
+import type { AskResponse, ExpenseDraft } from "./api/types";
+import { TabBar } from "./components/TabBar";
+import type { TabName } from "./components/TabBar";
+import { Fab } from "./components/Fab";
+import { FabSheet } from "./components/FabSheet";
+import { AccueilScreen } from "./screens/AccueilScreen";
+import { BudgetScreen } from "./screens/BudgetScreen";
+import { ChatScreen } from "./screens/ChatScreen";
+import { PenseesScreen } from "./screens/PenseesScreen";
 import { NotificationsOverlay } from "./components/overlays/NotificationsOverlay";
 import { TasksOverlay } from "./components/overlays/TasksOverlay";
 import { WeatherOverlay } from "./components/overlays/WeatherOverlay";
 import { EventsOverlay } from "./components/overlays/EventsOverlay";
-import { DepotExpressOverlay } from "./components/overlays/DepotExpressOverlay";
-import { ForYouOverlay } from "./components/overlays/ForYouOverlay";
-import { BudgetOverlay } from "./components/overlays/BudgetOverlay";
 import { MarkdownView } from "./components/MarkdownView";
-import { ChatView } from "./components/chat/ChatView";
 import { invalidateForYou } from "./lib/foryouCache";
 
-const PROFILE_NAME = "Arnaud";
-
 // Toast de retour d'action (intent modifiant l'état) — pastille verte + libellé.
-// Portage de actionToast() de bot/static/js/composer.js.
 function actionToast(intent: string) {
   const labels: Record<string, string> = {
     task: "Tâche ajoutée",
@@ -54,218 +44,170 @@ function actionToast(intent: string) {
   );
 }
 
-// Overlays et vues plein écran ouvertes depuis les taps de card / header.
-// L'entrée chat est posée mais rendue au step 07 ; son tap ne rend rien encore.
-type OverlayName =
-  | "weather"
-  | "events"
-  | "tasks"
-  | "depot"
-  | "foryou"
-  | "budget"
-  | "news"
-  | "notifications"
-  | "chat";
+// Overlays de consultation ouverts depuis les taps de card / header. Budget,
+// « Pour toi » et les dépôts sont devenus des onglets (step 03) — ils ne
+// passent plus par un overlay.
+type OverlayName = "weather" | "events" | "tasks" | "news" | "notifications";
 
 export default function App() {
   const { data, error, refresh } = useDashboard();
   const { news, open: openNews, refresh: refreshNews, refreshing: newsRefreshing } = useNews();
   const toast = useToast();
+  const [tab, setTab] = useState<TabName>("accueil");
   const [openOverlay, setOpenOverlay] = useState<OverlayName | null>(null);
-  // Envoi /ask en cours (désactive le composer), bulle éphémère affichée, et
-  // brouillon de dépense lu d'une capture (ouvre le Budget pré-rempli).
-  const [asking, setAsking] = useState(false);
-  const [ephemeral, setEphemeral] = useState<EphemeralData | null>(null);
+  // FAB global : feuille d'actions ouverte + compteur bumpé à chaque saisie
+  // réussie (dépôt/dépense). Le compteur force le refetch de l'écran monté
+  // (Budget/Pensées) puisque le FAB vit hors des écrans.
+  const [fabOpen, setFabOpen] = useState(false);
+  const [fabTick, setFabTick] = useState(0);
+  // Message saisi depuis la barre de l'Accueil, en attente de streaming par le
+  // Chat au montage (bascule Accueil → Chat). Brouillon de dépense lu d'une
+  // capture photo (ouvre l'onglet Budget pré-rempli).
+  const [pendingChat, setPendingChat] = useState<string | null>(null);
   const [budgetDraft, setBudgetDraft] = useState<ExpenseDraft | null>(null);
   // unread affiché : forcé à 0 dès que l'overlay notifs a lu (le GET purge côté
   // backend), en attendant le prochain refresh du dashboard.
   const [notifsRead, setNotifsRead] = useState(false);
-  // Révélation échelonnée des cards au 1er rendu seulement (cf. .revealed dans
-  // index.css) : on fige après la 1re animation pour ne pas la rejouer aux
-  // refresh périodiques.
-  const [revealed, setRevealed] = useState(false);
-  const revealedOnce = useRef(false);
-
-  useEffect(() => {
-    if (data && !revealedOnce.current) {
-      revealedOnce.current = true;
-      const id = setTimeout(() => setRevealed(true), 600);
-      return () => clearTimeout(id);
-    }
-    return undefined;
-  }, [data]);
 
   // Le masque local du badge non-lu (posé à la lecture des notifs, cf. notifsRead)
   // est levé dès qu'un refresh rapporte l'état serveur à jour : de nouvelles
-  // notifs réapparaissent alors normalement. Parité vanilla, où le prochain
-  // loadDashboard réécrasait la valeur locale forcée à 0.
+  // notifs réapparaissent alors normalement.
   useEffect(() => {
     setNotifsRead(false);
   }, [data]);
 
   const close = () => setOpenOverlay(null);
   // Fermeture d'un overlay qui a pu bouger l'état du dashboard (cochage de
-  // tâche, lecture de notifs) → on re-synchronise les cards (comme le vanilla).
+  // tâche, lecture de notifs) → on re-synchronise les cards.
   const closeAndRefresh = () => {
     close();
     void refresh();
   };
 
+  // Navigation d'onglet manuelle (tab bar ou card Accueil) : purge toujours le
+  // brouillon de dépense. Un brouillon n'existe que le temps d'une bascule
+  // automatique vers Budget après lecture d'une photo (cf. handleAskResponse) ;
+  // tout tap explicite repart donc d'un formulaire vierge.
+  const goTab = useCallback((next: TabName) => {
+    setBudgetDraft(null);
+    setTab(next);
+  }, []);
+
   // Frame `done` du stream chat : rafraîchit les cards impactées. « foryou »
   // invalide le cache de restitution (refetch au prochain tap, canal pull) ;
-  // le reste passe par le refresh du dashboard (portage de invalidateCards +
-  // loadDashboard du vanilla).
-  const handleRefreshCards = (cards: string[]) => {
-    if (cards.includes("foryou")) invalidateForYou();
+  // le reste passe par le refresh du dashboard.
+  const handleRefreshCards = useCallback(
+    (cards: string[]) => {
+      if (cards.includes("foryou")) invalidateForYou();
+      void refresh();
+    },
+    [refresh],
+  );
+
+  // Barre de l'Accueil (texte seul) : on met le message en attente puis on
+  // bascule sur le Chat, qui le streame à son montage (un seul historique, plus
+  // de bulle éphémère). setTab direct (pas goTab) : goTab purgerait un éventuel
+  // budgetDraft, sans intérêt ici mais on garde la bascule minimale.
+  const handleDashboardSend = useCallback((text: string) => {
+    setPendingChat(text);
+    setTab("chat");
+  }, []);
+
+  // Effets de bord d'une réponse /ask/image émise depuis le Chat (reprend la
+  // logique de l'ex-bulle éphémère) : brouillon de dépense → bascule Budget
+  // pré-rempli (renvoie true = navigation, le Chat ne pousse pas de bulle) ;
+  // sinon resync des cards impactées, avec toast SAUF si la réponse porte des
+  // actions (leurs boutons dans la bulle rendent le toast redondant). La réponse
+  // texte est rendue en bulle par le Chat.
+  const handlePhotoSideEffects = useCallback(
+    (body: AskResponse): boolean => {
+      if (body.expense_draft) {
+        // setTab direct : on CONSERVE le brouillon jusqu'au montage de BudgetScreen.
+        setBudgetDraft(body.expense_draft);
+        setTab("budget");
+        return true;
+      }
+      if (body.refresh_cards.length > 0) {
+        if (!body.actions?.length) toast(actionToast(body.intent));
+        handleRefreshCards(body.refresh_cards);
+      }
+      return false;
+    },
+    [toast, handleRefreshCards],
+  );
+
+  // Saisie FAB réussie : ferme la feuille, resync le dashboard et bumpe le
+  // compteur pour rafraîchir la liste visible de l'écran monté (Budget/Pensées).
+  const handleFabSubmitted = useCallback(() => {
+    setFabOpen(false);
+    setFabTick((t) => t + 1);
     void refresh();
-  };
+  }, [refresh]);
 
-  // Traitement de la réponse /ask (portage de handleAskResponse du vanilla) :
-  // brouillon de dépense → Budget pré-rempli ; action proposée → bulle
-  // persistante avec bouton (+ resync silencieux des cards) ; action seule
-  // (refresh_cards) → toast + resync ; sinon → réponse texte en bulle éphémère.
-  const handleAskResponse = (body: {
-    response: string;
-    intent: string;
-    refresh_cards: string[];
-    actions?: Action[];
-    expense_draft: ExpenseDraft | null;
-  }) => {
-    if (body.expense_draft) {
-      setBudgetDraft(body.expense_draft);
-      setOpenOverlay("budget");
-      return;
-    }
-    const actions = body.actions ?? [];
-    if (actions.length > 0) {
-      // La bulle porte le(s) bouton(s) et reste jusqu'au tap : on resync les
-      // cards en silence (pas de toast redondant avec la bulle affichée).
-      if (body.refresh_cards.length > 0) handleRefreshCards(body.refresh_cards);
-      setEphemeral({ text: body.response, isError: false, actions });
-      return;
-    }
-    if (body.refresh_cards.length > 0) {
-      toast(actionToast(body.intent));
-      handleRefreshCards(body.refresh_cards);
-    } else {
-      setEphemeral({ text: body.response, isError: false });
-    }
-  };
+  // Callbacks inline mémoïsés (passés aux écrans/overlays) : identités stables
+  // pour ne pas déstabiliser les hooks des écrans (notamment ChatScreen).
+  const handleOpenNews = useCallback(
+    () => void openNews(() => setOpenOverlay("news")),
+    [openNews],
+  );
+  const handleOpenOverlay = useCallback((name: OverlayName) => setOpenOverlay(name), []);
+  const handlePendingConsumed = useCallback(() => setPendingChat(null), []);
+  const openFab = useCallback(() => setFabOpen(true), []);
 
-  // Composer du dashboard : /ask (texte) ou /ask/image (photo), non streamé.
-  const handleDashboardSend = (text: string, attachment: Attachment | null) => {
-    setAsking(true);
-    const call = attachment
-      ? askImage(text, attachment.b64, attachment.mediaType)
-      : askText(text);
-    call
-      .then(handleAskResponse)
-      .catch(() => setEphemeral({ text: "Impossible de joindre Copain. Vérifie Tailscale.", isError: true }))
-      .finally(() => setAsking(false));
-  };
+  // CR-012 : le FAB ne doit jamais pouvoir s'empiler par-dessus (ou glisser sous)
+  // un overlay ouvert ou en cours d'ouverture. On le masque tant qu'un overlay
+  // est monté OU qu'un fetch d'actu est en vol (openNews → setOpenOverlay async).
+  const fabBlocked = openOverlay !== null || news.loading;
 
   const unread = notifsRead ? 0 : (data?.unread_notifications ?? 0);
 
   return (
-    <>
-      <div id="app" data-overlay={openOverlay ?? undefined}>
-        <header>
-          <div className="greeting">
-            <div className="greeting-name">Bonjour {PROFILE_NAME}</div>
-            <div className="greeting-date">{greetingDate()}</div>
-          </div>
-          <button
-            className="header-btn"
-            title="Ouvrir la conversation"
-            type="button"
-            onClick={() => setOpenOverlay("chat")}
-          >
-            <MessageSquare size={18} />
-          </button>
-          <button
-            className="header-btn"
-            title="Notifications"
-            type="button"
-            onClick={() => setOpenOverlay("notifications")}
-          >
-            <Bell size={18} />
-            {unread > 0 && <span className="badge">{unread > 9 ? "9+" : unread}</span>}
-          </button>
-        </header>
+    <div id="app" data-tab={tab}>
+      {tab === "accueil" && (
+        <AccueilScreen
+          data={data}
+          error={Boolean(error)}
+          news={news}
+          onOpenNews={handleOpenNews}
+          unread={unread}
+          onSend={handleDashboardSend}
+          onOpenOverlay={handleOpenOverlay}
+          onNavigate={goTab}
+        />
+      )}
+      {tab === "budget" && (
+        <BudgetScreen draft={budgetDraft} onChanged={refresh} reloadKey={fabTick} />
+      )}
+      {tab === "chat" && (
+        <ChatScreen
+          onRefreshCards={handleRefreshCards}
+          pending={pendingChat}
+          onPendingConsumed={handlePendingConsumed}
+          onPhotoSideEffects={handlePhotoSideEffects}
+        />
+      )}
+      {tab === "pensees" && <PenseesScreen onChanged={refresh} reloadKey={fabTick} />}
 
-        <div id="dashboard" className={revealed ? "revealed" : undefined}>
-          {error ? (
-            <div className="card empty">
-              <div className="card-primary">Dashboard indisponible</div>
-              <div className="card-secondary">
-                Vérifie que le Pi est accessible via Tailscale, puis tire pour rafraîchir.
-              </div>
-            </div>
-          ) : data ? (
-            <>
-              <div className="card-grid">
-                <WeatherCard weather={data.weather} onOpen={() => setOpenOverlay("weather")} />
-                <NextEventCard event={data.next_event} onOpen={() => setOpenOverlay("events")} />
-              </div>
-              <div className="card-grid">
-                <DepotExpressCard onOpen={() => setOpenOverlay("depot")} />
-                <ForYouCard onOpen={() => setOpenOverlay("foryou")} />
-              </div>
-              <BudgetCard
-                budget={data.budget}
-                onOpen={() => {
-                  setBudgetDraft(null);
-                  setOpenOverlay("budget");
-                }}
-              />
-              <NewsCard news={news} onOpen={() => void openNews(() => setOpenOverlay("news"))} />
-            </>
-          ) : null}
-        </div>
+      <TabBar active={tab} onSelect={goTab} />
+      {!fabBlocked && <Fab onClick={openFab} />}
+      {fabOpen && <FabSheet onClose={() => setFabOpen(false)} onSubmitted={handleFabSubmitted} />}
 
-        {/* Bulle éphémère (réponse /ask, non persistée) + composer. */}
-        {ephemeral && <Ephemeral data={ephemeral} onHide={() => setEphemeral(null)} />}
-        <Composer variant="dashboard" busy={asking} onSend={handleDashboardSend} />
-
-        {/* ── Overlays de consultation (step 05) ── */}
-        {openOverlay === "notifications" && (
-          <NotificationsOverlay onClose={closeAndRefresh} onRead={() => setNotifsRead(true)} />
-        )}
-        {openOverlay === "tasks" && <TasksOverlay onClose={closeAndRefresh} />}
-        {openOverlay === "weather" && <WeatherOverlay onClose={close} />}
-        {openOverlay === "events" && <EventsOverlay onClose={close} />}
-
-        {/* ── Overlays interactifs (step 06) ── */}
-        {openOverlay === "depot" && (
-          <DepotExpressOverlay onClose={closeAndRefresh} onRefresh={() => void refresh()} />
-        )}
-        {openOverlay === "foryou" && <ForYouOverlay onClose={closeAndRefresh} />}
-        {openOverlay === "budget" && (
-          <BudgetOverlay
-            draft={budgetDraft}
-            onClose={() => {
-              setBudgetDraft(null);
-              closeAndRefresh();
-            }}
-          />
-        )}
-        {openOverlay === "news" && news.markdown && (
-          <MarkdownView
-            title="Actu du jour"
-            subtitle={news.fetchedAt ?? undefined}
-            markdown={news.markdown}
-            onClose={close}
-            action={{ label: newsRefreshing ? "…" : "Actualiser", onClick: refreshNews }}
-          />
-        )}
-
-        {/* ── Mode dialogue (step 07) ── */}
-        {openOverlay === "chat" && <ChatView onClose={close} onRefreshCards={handleRefreshCards} />}
-      </div>
-
-      {/* Lame de verre échantillonnée par iOS 26 pour peindre la bande système
-          sous le web view (cf. #edge-glass dans index.css). */}
-      <div id="edge-glass" aria-hidden="true" />
-    </>
+      {/* ── Overlays de consultation ── */}
+      {openOverlay === "notifications" && (
+        <NotificationsOverlay onClose={closeAndRefresh} onRead={() => setNotifsRead(true)} />
+      )}
+      {openOverlay === "tasks" && <TasksOverlay onClose={closeAndRefresh} />}
+      {openOverlay === "weather" && <WeatherOverlay onClose={close} />}
+      {openOverlay === "events" && <EventsOverlay onClose={close} />}
+      {openOverlay === "news" && news.markdown && (
+        <MarkdownView
+          title="Actu du jour"
+          subtitle={news.fetchedAt ?? undefined}
+          markdown={news.markdown}
+          onClose={close}
+          action={{ label: newsRefreshing ? "…" : "Actualiser", onClick: refreshNews }}
+        />
+      )}
+    </div>
   );
 }

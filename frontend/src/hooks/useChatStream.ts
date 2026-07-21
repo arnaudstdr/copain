@@ -6,7 +6,7 @@
 // frappe (`liveText`) est un état transitoire d'affichage : il n'entre dans le
 // fil (store) qu'à la fin. Chemin TEXTE uniquement (photos → /ask/image step 08).
 
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { streamAsk } from "../api/client";
 import type { Action } from "../api/types";
 import { appendMessage } from "../lib/chatStore";
@@ -22,6 +22,14 @@ interface UseChatStreamOptions {
 export function useChatStream({ onRefreshCards }: UseChatStreamOptions) {
   const [streaming, setStreaming] = useState(false);
   const [liveText, setLiveText] = useState(""); // texte assistant accumulé (live)
+  // Contrôleur du flux SSE en cours : sert à annuler le fetch/reader au
+  // démontage de l'écran Chat (bascule d'onglet mid-stream). Sans ça, un stream
+  // orphelin continuerait de pousser des bulles dans le `chatStore` partagé,
+  // s'entrelaçant avec un éventuel nouvel envoi.
+  const abortRef = useRef<AbortController | null>(null);
+
+  // Annule le flux en vol au démontage du hook (changement d'onglet).
+  useEffect(() => () => abortRef.current?.abort(), []);
 
   const send = useCallback(
     async (raw: string, think = false) => {
@@ -32,6 +40,9 @@ export function useChatStream({ onRefreshCards }: UseChatStreamOptions) {
       appendMessage({ role: "user", text, createdAt: now });
       setStreaming(true);
       setLiveText("");
+
+      const controller = new AbortController();
+      abortRef.current = controller;
 
       let acc = "";
       let actions: Action[] = [];
@@ -57,6 +68,7 @@ export function useChatStream({ onRefreshCards }: UseChatStreamOptions) {
             },
           },
           think,
+          controller.signal,
         );
         appendMessage(
           streamError
@@ -69,10 +81,15 @@ export function useChatStream({ onRefreshCards }: UseChatStreamOptions) {
               },
         );
       } catch {
+        // Annulation volontaire (démontage) : ne pas polluer le fil partagé
+        // d'une bulle d'erreur ni toucher un état désormais démonté.
+        if (controller.signal.aborted) return;
         appendMessage({ role: "assistant", text: FALLBACK, error: true, createdAt: new Date().toISOString() });
       } finally {
-        setStreaming(false);
-        setLiveText("");
+        if (!controller.signal.aborted) {
+          setStreaming(false);
+          setLiveText("");
+        }
       }
     },
     [streaming, onRefreshCards],

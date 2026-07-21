@@ -10,6 +10,7 @@ import { apiGet } from "../api/client";
 import type { ChatHistoryResponse, ChatMessageItem } from "../api/types";
 import {
   beginHydration,
+  getChatState,
   markLoaded,
   prependOlder,
   setHydrated,
@@ -18,6 +19,9 @@ import {
 } from "../lib/chatStore";
 
 const PAGE_SIZE = 50;
+// Fenêtre de rapprochement pour la dédup d'hydratation : un échange restauré et
+// son homologue de session partagent role + texte à quelques secondes près.
+const DEDUP_WINDOW_MS = 2 * 60 * 1000;
 
 // Miroir des lignes serveur vers le modèle de bulle interne.
 function toMessages(items: ChatMessageItem[]): ChatMessage[] {
@@ -27,6 +31,17 @@ function toMessages(items: ChatMessageItem[]): ChatMessage[] {
     text: m.content,
     createdAt: m.created_at,
   }));
+}
+
+// Même échange qu'une bulle de session (pas d'id à comparer) : role + texte
+// identiques et horodatage proche. Évite d'afficher deux fois le message
+// `pending` envoyé au montage quand /history le renvoie déjà persisté.
+function isSameExchange(a: ChatMessage, b: ChatMessage): boolean {
+  return (
+    a.role === b.role &&
+    a.text === b.text &&
+    Math.abs(Date.parse(a.createdAt) - Date.parse(b.createdAt)) < DEDUP_WINDOW_MS
+  );
 }
 
 export function useHistory() {
@@ -43,7 +58,15 @@ export function useHistory() {
     void (async () => {
       try {
         const data = await apiGet<ChatHistoryResponse>(`/history?limit=${PAGE_SIZE}`);
-        setHydrated(toMessages(data.messages), data.has_more);
+        // Dédup anti-course : le message `pending` streamé au montage peut déjà
+        // être persisté au retour de /history → il serait alors présent en
+        // session (sans id) ET restauré (avec id). On lit l'état live du store
+        // (pas la valeur figée par la clôture de l'effet) juste avant le merge.
+        const session = getChatState().messages;
+        const restored = toMessages(data.messages).filter(
+          (r) => !session.some((s) => isSameExchange(r, s)),
+        );
+        setHydrated(restored, data.has_more);
       } catch {
         markLoaded(); // réaffichage non critique : on garde un fil vide
       }
@@ -68,5 +91,7 @@ export function useHistory() {
     }
   }, [hasMore, oldestId]);
 
-  return { messages, loaded, loadOlder };
+  // `loadingOlder` : ref lue de façon synchrone par `onScroll` pour ne pas
+  // relancer (ni écraser la hauteur mémorisée) tant qu'un fetch est en vol.
+  return { messages, loaded, loadOlder, loadingOlder: loadingOlderRef };
 }

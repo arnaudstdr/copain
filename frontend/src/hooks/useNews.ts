@@ -6,8 +6,15 @@
 import { useCallback, useState } from "react";
 import { apiGet } from "../api/client";
 import type { NewsLatestResponse } from "../api/types";
-import type { NewsState } from "../components/dashboard/NewsCard";
 import { useToast } from "../components/Toast";
+
+// État en mémoire de l'actu (persistant tant que la PWA est ouverte). Vivait
+// dans l'ex-NewsCard ; rapatrié ici, son propriétaire, à la refonte en listes.
+export interface NewsState {
+  loading: boolean;
+  markdown: string | null;
+  fetchedAt: string | null;
+}
 
 const IDLE: NewsState = { loading: false, markdown: null, fetchedAt: null };
 

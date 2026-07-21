@@ -1,33 +1,44 @@
-// ── Mode dialogue (vue plein écran) ─────────────────────────────────────────
-// Bascule depuis l'icône 💬 du header. Feed de bulles (historique persisté +
-// échanges de la session), envoi streamé SSE sur POST /ask/stream, rendu
-// markdown des réponses. Scroll infini vers le haut (pages plus anciennes) avec
-// séparateurs de jour et préservation de la position de lecture au prepend.
-// Portage de bot/static/js/chat.js. Le composer (partagé avec le dashboard,
-// step 08) route le texte vers le streaming et la photo vers /ask/image
-// (réponse en un bloc, bulles poussées dans le fil comme le vanilla).
+// ── Onglet Chat (mode dialogue) ─────────────────────────────────────────────
+// Ex-`ChatView` plein écran (position:fixed), devenu l'écran de l'onglet Chat :
+// il n'est plus un overlay et perd son bouton « retour » (la navigation passe
+// par la tab bar). Feed de bulles (historique persisté + échanges de session),
+// envoi streamé SSE sur POST /ask/stream, rendu markdown. Scroll infini vers le
+// haut avec séparateurs de jour et préservation de la position au prepend.
+// L'état du fil vit hors React (`chatStore`) → il survit au démontage lors d'un
+// changement d'onglet. Le trombone photo route vers /ask/image (réponse en un
+// bloc, bulles poussées dans le fil).
 
-import { useCallback, useLayoutEffect, useRef, useState } from "react";
-import { Bot, Brain, ChevronLeft } from "lucide-react";
-import { useHistory } from "../../hooks/useHistory";
-import { useChatStream } from "../../hooks/useChatStream";
-import { askImage } from "../../api/client";
-import { appendMessage } from "../../lib/chatStore";
-import { formatDaySeparator, sameDay } from "../../lib/format";
-import { Markdown } from "../Markdown";
-import { Composer } from "../Composer";
-import type { Attachment } from "../Composer";
-import { DaySeparator } from "./DaySeparator";
-import { MessageBubble } from "./MessageBubble";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { Bot, Brain } from "lucide-react";
+import { useHistory } from "../hooks/useHistory";
+import { useChatStream } from "../hooks/useChatStream";
+import { askImage } from "../api/client";
+import type { AskResponse } from "../api/types";
+import { appendMessage } from "../lib/chatStore";
+import { formatDaySeparator, sameDay } from "../lib/format";
+import { Markdown } from "../components/Markdown";
+import { Composer } from "../components/Composer";
+import type { Attachment } from "../components/Composer";
+import { DaySeparator } from "../components/chat/DaySeparator";
+import { MessageBubble } from "../components/chat/MessageBubble";
 
 interface Props {
-  onClose: () => void;
   onRefreshCards: (cards: string[]) => void;
+  // Message saisi depuis la barre de l'Accueil, à streamer au montage du Chat
+  // (bascule Accueil → Chat). `null` quand il n'y a rien à consommer.
+  pending: string | null;
+  onPendingConsumed: () => void;
+  // Effets de bord d'une réponse /ask/image (brouillon de dépense, resync, toast) ;
+  // renvoie `true` si la réponse déclenche une navigation (pas de bulle à pousser).
+  onPhotoSideEffects: (body: AskResponse) => boolean;
 }
 
-export function ChatView({ onClose, onRefreshCards }: Props) {
-  const { messages, loaded, loadOlder } = useHistory();
+export function ChatScreen({ onRefreshCards, pending, onPendingConsumed, onPhotoSideEffects }: Props) {
+  const { messages, loaded, loadOlder, loadingOlder } = useHistory();
   const { send, streaming, liveText } = useChatStream({ onRefreshCards });
+  // Verrou de consommation du message en attente : le Chat est monté à neuf à
+  // chaque bascule depuis l'Accueil, on ne streame donc qu'une fois par montage.
+  const pendingConsumed = useRef(false);
   // Envoi photo (non streamé) en cours : partage l'indicateur « écrit… » avec le
   // streaming texte et désactive le composer.
   const [imgBusy, setImgBusy] = useState(false);
@@ -54,29 +65,37 @@ export function ChatView({ onClose, onRefreshCards }: Props) {
 
   const onScroll = useCallback(() => {
     const feed = feedRef.current;
-    if (!feed || feed.scrollTop >= 40) return;
+    // On sort si un chargement est déjà en vol : sinon les onScroll répétés d'un
+    // même geste écraseraient la hauteur mémorisée (et la remettraient à null via
+    // leur `.then`) avant l'arrivée du vrai prepend → saut de scroll. Seul l'appel
+    // qui déclenche réellement le fetch touche `prevHeightRef`.
+    if (!feed || feed.scrollTop >= 40 || loadingOlder.current) return;
     // Mémorise la hauteur avant le prepend ; annulé si loadOlder n'a rien ajouté.
     prevHeightRef.current = feed.scrollHeight;
     void loadOlder().then((didPrepend) => {
       if (!didPrepend) prevHeightRef.current = null;
     });
-  }, [loadOlder]);
+  }, [loadOlder, loadingOlder]);
 
   // Photo : /ask/image (pas de streaming). Bulle utilisateur (avec aperçu) puis
-  // réponse ou message d'erreur, poussés dans le fil. Portage de chatSend (att).
+  // réponse ou message d'erreur, poussés dans le fil. Les effets de bord (brouillon
+  // de dépense → bascule Budget, resync, toast) sont délégués à `App` via
+  // `onPhotoSideEffects` : s'il renvoie `true`, la réponse a déclenché une
+  // navigation (ex. ticket → Budget pré-rempli) et on ne pousse pas de bulle.
+  // Portage de chatSend (att).
   const sendChatImage = useCallback(
     async (text: string, att: Attachment) => {
       appendMessage({ role: "user", text, imgSrc: att.preview, createdAt: new Date().toISOString() });
       setImgBusy(true);
       try {
         const body = await askImage(text, att.b64, att.mediaType);
+        if (onPhotoSideEffects(body)) return;
         appendMessage({
           role: "assistant",
           text: body.response,
           actions: body.actions?.length ? body.actions : undefined,
           createdAt: new Date().toISOString(),
         });
-        if (body.refresh_cards.length > 0) onRefreshCards(body.refresh_cards);
       } catch {
         appendMessage({
           role: "assistant",
@@ -88,8 +107,18 @@ export function ChatView({ onClose, onRefreshCards }: Props) {
         setImgBusy(false);
       }
     },
-    [onRefreshCards],
+    [onPhotoSideEffects],
   );
+
+  // Bascule Accueil → Chat : streame le message en attente une seule fois au
+  // montage (le verrou survit aux re-renders ; `onPendingConsumed` remet le
+  // slot d'`App` à null). think=false : la barre de l'Accueil n'a pas le toggle.
+  useEffect(() => {
+    if (pending == null || pendingConsumed.current) return;
+    pendingConsumed.current = true;
+    void send(pending);
+    onPendingConsumed();
+  }, [pending, send, onPendingConsumed]);
 
   const onSend = useCallback(
     (text: string, attachment: Attachment | null) => {
@@ -106,13 +135,15 @@ export function ChatView({ onClose, onRefreshCards }: Props) {
   // s'affichait.
   const showLive = streaming && liveText.length > 0;
 
+  // Mémoïsé sur [messages, loaded] : chaque delta SSE ne fait varier que
+  // `liveText` (rendu à part), inutile de reparcourir tout l'historique à
+  // chaque chunk.
+  const feed = useMemo(() => renderFeed(messages, loaded), [messages, loaded]);
+
   return (
-    <div id="chat-view">
+    <div className="screen chat-screen">
       <header>
-        <button className="header-btn" title="Retour" type="button" onClick={onClose}>
-          <ChevronLeft size={18} />
-        </button>
-        <div className="greeting" style={{ marginLeft: 8 }}>
+        <div className="greeting">
           <div className="greeting-name">Conversation</div>
           <div className="greeting-date">Mode dialogue</div>
         </div>
@@ -128,7 +159,7 @@ export function ChatView({ onClose, onRefreshCards }: Props) {
       </header>
 
       <div className="chat-feed" ref={feedRef} onScroll={onScroll}>
-        {renderFeed(messages, loaded)}
+        {feed}
         {busy && !showLive && (
           <div className="row bot typing-row">
             <div className="avatar-sm">
