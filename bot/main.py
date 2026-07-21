@@ -15,6 +15,8 @@ import contextlib
 import signal
 from collections import deque
 from collections.abc import Awaitable, Callable
+from datetime import datetime
+from zoneinfo import ZoneInfo
 
 import uvicorn
 
@@ -33,7 +35,8 @@ from bot.locations.store import LocationEventStore
 from bot.logging_conf import configure_logging, get_logger
 from bot.memory.embeddings import Embedder
 from bot.memory.manager import MemoryManager
-from bot.news.client import NewsCurator
+from bot.news.client import NewsCurator, build_curator_persona
+from bot.news.store import NewsDigestStore
 from bot.notifications.pushover import PushoverClient
 from bot.notifications.store import NotificationStore
 from bot.pipeline import BotDeps
@@ -129,7 +132,8 @@ async def _build_state(
     )
 
     profile = load_profile(settings.profile_path)
-    news = NewsCurator(searxng=search, llm=llm)
+    news = NewsCurator(searxng=search, llm=llm, persona=build_curator_persona(profile.data))
+    news_digests = NewsDigestStore(engine)
 
     location_events = LocationEventStore(engine)
 
@@ -173,6 +177,7 @@ async def _build_state(
         proactivity=proactivity,
         history=deque(maxlen=settings.max_history),
         chat_history=chat_history,
+        news_digests=news_digests,
     )
 
     # Initialisations asynchrones — équivalent de l'ancien `post_init` PTB.
@@ -188,6 +193,10 @@ async def _build_state(
     await rss.init_schema()
     await notifications.init_schema()
     await location_events.init_schema()
+    await news_digests.init_schema()
+    # Un seul digest conservé (celui du jour civil courant) : on purge les
+    # digests périmés au démarrage, comme la fenêtre glissante du chat.
+    await news_digests.purge_except(datetime.now(ZoneInfo(settings.timezone)).date())
     await _seed_default_feeds(rss)
     try:
         await calendar.connect()

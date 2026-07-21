@@ -107,7 +107,9 @@ copain/
 │   │   └── presence.py          # dérivation de la position courante
 │   │
 │   ├── news/
-│   │   └── client.py            # NewsCurator (SearXNG news + curation LLM)
+│   │   ├── models.py            # NewsDigest (shares Base with tasks) — digest du jour
+│   │   ├── store.py             # NewsDigestStore (get / save / purge_except, journée civile)
+│   │   └── client.py            # NewsCurator (SearXNG news + curation LLM) + build_curator_persona
 │   │
 │   └── proactivity/
 │       ├── models.py            # NotificationLog (shares Base with tasks)
@@ -140,7 +142,8 @@ copain/
 │   ├── profile.yaml             # profil utilisateur YAML (édité à la main)
 │   ├── tasks.db                 # SQLite : tasks + feeds + notification_logs +
 │   │                            #   pending_notifications + thoughts + expenses +
-│   │                            #   budget_cycles + location_events + chat_messages
+│   │                            #   budget_cycles + location_events + chat_messages +
+│   │                            #   news_digests
 │   └── scheduler.db             # persisted APScheduler jobs
 │
 └── tests/                       # pytest-asyncio, everything mocked (no external I/O)
@@ -150,7 +153,8 @@ copain/
     ├── test_parser.py / test_llm_client.py / test_memory.py / test_embedder.py
     ├── test_finance_{manager,budget,config,cron,csv}.py
     ├── test_tasks.py / test_thoughts.py / test_feeds.py / test_calendar.py
-    ├── test_weather.py / test_fuel_client.py / test_nominatim.py / test_news_curator.py
+    ├── test_weather.py / test_fuel_client.py / test_nominatim.py
+    ├── test_news_curator.py / test_news_store.py
     ├── test_proactivity_{models,rules,service}.py / test_scheduler_interval.py
     ├── test_notifications_store.py / test_pushover.py / test_location_store.py
     └── test_cache.py / test_config.py / test_http_retry.py / test_logging_conf.py / …

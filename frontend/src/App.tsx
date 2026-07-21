@@ -69,7 +69,7 @@ type OverlayName =
 
 export default function App() {
   const { data, error, refresh } = useDashboard();
-  const { news, open: openNews } = useNews();
+  const { news, open: openNews, refresh: refreshNews, refreshing: newsRefreshing } = useNews();
   const toast = useToast();
   const [openOverlay, setOpenOverlay] = useState<OverlayName | null>(null);
   // Envoi /ask en cours (désactive le composer), bulle éphémère affichée, et
@@ -255,6 +255,7 @@ export default function App() {
             subtitle={news.fetchedAt ?? undefined}
             markdown={news.markdown}
             onClose={close}
+            action={{ label: newsRefreshing ? "…" : "Actualiser", onClick: refreshNews }}
           />
         )}
 

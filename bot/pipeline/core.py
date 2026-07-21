@@ -38,6 +38,7 @@ if TYPE_CHECKING:
     from bot.locations.store import LocationEventStore
     from bot.memory.manager import MemoryManager
     from bot.news.client import NewsCurator
+    from bot.news.store import NewsDigestStore
     from bot.proactivity.service import ProactivityService
     from bot.profile import UserProfile
     from bot.rss.fetcher import RssFetcher
@@ -138,6 +139,11 @@ class BotDeps:
     # canal d'affichage non critique, l'absence ne doit jamais bloquer une
     # réponse.
     chat_history: ChatHistoryManager | None = None
+    # Persistance du digest actu de la journée (card Actu). None = pas de
+    # cache : `GET /news/latest` régénère à chaque appel (comportement
+    # historique). Absence traitée en fail-soft à chaque bord (lecture ET
+    # écriture) — un digest raté ne doit jamais casser la réponse.
+    news_digests: NewsDigestStore | None = None
 
 
 @dataclass

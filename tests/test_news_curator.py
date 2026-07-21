@@ -4,7 +4,12 @@ from __future__ import annotations
 
 from unittest.mock import AsyncMock, MagicMock
 
-from bot.news.client import NewsCurator, _dedupe_and_filter
+from bot.news.client import (
+    TOP_K_DEFAULT,
+    NewsCurator,
+    _dedupe_and_filter,
+    build_curator_persona,
+)
 from bot.search.searxng import SearchResult
 
 
@@ -50,6 +55,7 @@ def _make_curator(
     searxng_results: list[list[SearchResult]] | None = None,
     searxng_side_effect: BaseException | None = None,
     llm_response: str = "- **Titre** (source) — résumé\n  https://x.com/1",
+    persona: str | None = None,
 ) -> tuple[NewsCurator, MagicMock, MagicMock]:
     searxng = MagicMock()
     if searxng_side_effect is not None:
@@ -58,7 +64,7 @@ def _make_curator(
         searxng.search = AsyncMock(side_effect=searxng_results or [[]])
     llm = MagicMock()
     llm.chat = AsyncMock(return_value=llm_response)
-    return NewsCurator(searxng=searxng, llm=llm), searxng, llm
+    return NewsCurator(searxng=searxng, llm=llm, persona=persona), searxng, llm
 
 
 async def test_fetch_top_news_empty_topics_returns_empty() -> None:
@@ -138,3 +144,71 @@ async def test_fetch_top_news_applies_domains_blocklist() -> None:
     sent_user = llm.chat.await_args.kwargs["messages"][1]["content"]
     assert "techcrunch.com" in sent_user
     assert "reddit.com" not in sent_user
+
+
+# --- persona injecté dans le prompt de curation ---------------------------
+
+
+async def test_curate_prompt_injects_persona() -> None:
+    """Le persona fourni au constructeur apparaît dans le system prompt."""
+    curator, _searxng, llm = _make_curator(
+        searxng_results=[[_result("X", "https://x.com/1")]],
+        persona="Camille, Data Scientist",
+    )
+    await curator.fetch_top_news(topics=["IA"])
+    system = llm.chat.await_args.kwargs["messages"][0]["content"]
+    assert "Camille, Data Scientist" in system
+
+
+async def test_curate_prompt_falls_back_to_generic_persona() -> None:
+    """Sans persona, le prompt utilise un persona générique (pas de nom en dur)."""
+    curator, _searxng, llm = _make_curator(
+        searxng_results=[[_result("X", "https://x.com/1")]],
+        persona=None,
+    )
+    await curator.fetch_top_news(topics=["IA"])
+    system = llm.chat.await_args.kwargs["messages"][0]["content"]
+    assert "développeur qui suit de près l'actualité tech et IA" in system
+    assert "Arnaud" not in system
+
+
+async def test_curate_prompt_targets_broadened_top_k() -> None:
+    """La cible par défaut est élargie (8 à TOP_K_DEFAULT articles)."""
+    assert TOP_K_DEFAULT == 10
+    curator, _searxng, llm = _make_curator(
+        searxng_results=[[_result("X", "https://x.com/1")]],
+    )
+    await curator.fetch_top_news(topics=["IA"])
+    system = llm.chat.await_args.kwargs["messages"][0]["content"]
+    assert "8" in system
+    assert str(TOP_K_DEFAULT) in system
+
+
+# --- build_curator_persona -----------------------------------------------
+
+
+def test_build_curator_persona_full_profile() -> None:
+    persona = build_curator_persona(
+        {"identity": {"name": "Arnaud"}, "work": {"role": "Développeur Python"}}
+    )
+    assert persona == "Arnaud, Développeur Python"
+
+
+def test_build_curator_persona_identity_only() -> None:
+    assert build_curator_persona({"identity": {"name": "Arnaud"}}) == "Arnaud"
+
+
+def test_build_curator_persona_work_only() -> None:
+    assert build_curator_persona({"work": {"role": "Développeur Python"}}) == "Développeur Python"
+
+
+def test_build_curator_persona_empty_dict() -> None:
+    assert build_curator_persona({}) is None
+
+
+def test_build_curator_persona_non_dict_sections() -> None:
+    assert build_curator_persona({"identity": "oops", "work": ["nope"]}) is None
+
+
+def test_build_curator_persona_blank_values() -> None:
+    assert build_curator_persona({"identity": {"name": "  "}, "work": {"role": ""}}) is None

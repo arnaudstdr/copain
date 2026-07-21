@@ -14,6 +14,9 @@ const IDLE: NewsState = { loading: false, markdown: null, fetchedAt: null };
 export function useNews() {
   const toast = useToast();
   const [news, setNews] = useState<NewsState>(IDLE);
+  // Régénération forcée en cours (bouton « Actualiser » de l'overlay). Séparé de
+  // `news.loading` pour ne pas repasser la card en état « Chargement… ».
+  const [refreshing, setRefreshing] = useState(false);
 
   // `onReady` ouvre la vue markdown (piloté par l'état d'overlay de App).
   const open = useCallback(
@@ -36,5 +39,20 @@ export function useNews() {
     [news.markdown, news.loading, toast],
   );
 
-  return { news, open };
+  // Force une régénération serveur (?refresh=true) sans fermer l'overlay. Garde
+  // anti-réentrance ; en cas d'échec le digest affiché reste en place.
+  const refresh = useCallback(async () => {
+    if (news.loading || refreshing) return;
+    setRefreshing(true);
+    try {
+      const data = await apiGet<NewsLatestResponse>("/news/latest?refresh=true");
+      setNews({ loading: false, markdown: data.markdown, fetchedAt: data.fetched_at });
+    } catch {
+      toast("Impossible de charger les actus");
+    } finally {
+      setRefreshing(false);
+    }
+  }, [news.loading, refreshing, toast]);
+
+  return { news, open, refresh, refreshing };
 }

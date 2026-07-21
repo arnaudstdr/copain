@@ -229,6 +229,10 @@ def build_mock_deps() -> BotDeps:
     weather = MagicMock()
     weather.get_forecast = AsyncMock(return_value=[])
 
+    news_digests = MagicMock()
+    news_digests.get = AsyncMock(return_value=None)
+    news_digests.save = AsyncMock()
+
     return BotDeps(
         settings=settings,
         llm=llm,
@@ -251,6 +255,7 @@ def build_mock_deps() -> BotDeps:
         location_events=MagicMock(),
         proactivity=MagicMock(),
         history=deque(maxlen=settings.max_history),
+        news_digests=news_digests,
     )
 
 

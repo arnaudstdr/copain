@@ -1029,14 +1029,18 @@ def create_app(state: AppState) -> FastAPI:
         response_model=NewsLatestResponse,
         dependencies=[Depends(verify_api_key)],
     )
-    async def news_latest(deps: BotDeps = Depends(get_deps)) -> NewsLatestResponse:
+    async def news_latest(
+        refresh: bool = False, deps: BotDeps = Depends(get_deps)
+    ) -> NewsLatestResponse:
         """Récupère et résume les actus 24h pour la card Actu du dashboard.
 
         Lit les topics + blocklist depuis `data/profile.yaml` (section
-        `news_topics.daily_briefing`), interroge SearXNG via NewsCurator
-        et demande au LLM de curer + résumer. Pas de cache côté backend :
-        SearXNG est déjà caché côté client, et un appel n'a lieu qu'au
-        tap utilisateur (pas en boucle).
+        `news_topics.daily_briefing`), interroge SearXNG via NewsCurator et
+        demande au LLM de curer + résumer. Le digest de la journée est persisté
+        (`deps.news_digests`) : un tap qui trouve le digest du jour le ressert
+        sans relancer le curator ; `?refresh=true` force la régénération. Toute
+        interaction avec le store est fail-soft (un digest raté ne bloque jamais
+        la réponse).
         """
         from bot.news.client import extract_news_config
 
@@ -1050,6 +1054,21 @@ def create_app(state: AppState) -> FastAPI:
                 fetched_at=datetime.now(UTC).isoformat(),
             )
 
+        today = datetime.now(ZoneInfo(deps.settings.timezone)).date()
+
+        if not refresh and deps.news_digests is not None:
+            try:
+                cached = await deps.news_digests.get(today)
+            except Exception as exc:
+                log.warning("news_digest_read_failed", error=str(exc))
+                cached = None
+            if cached is not None:
+                log.info("news_digest_served", digest_date=today.isoformat())
+                return NewsLatestResponse(
+                    markdown=cached.markdown,
+                    fetched_at=cached.fetched_at.isoformat(),
+                )
+
         try:
             markdown = await deps.news.fetch_top_news(topics=topics, domains_blocklist=blocklist)
         except Exception as exc:
@@ -1059,6 +1078,12 @@ def create_app(state: AppState) -> FastAPI:
                 status_code=status.HTTP_502_BAD_GATEWAY,
                 detail="Impossible de récupérer les actus pour le moment.",
             ) from exc
+
+        if markdown and deps.news_digests is not None:
+            try:
+                await deps.news_digests.save(today, markdown)
+            except Exception as exc:
+                log.warning("news_digest_write_failed", error=str(exc))
 
         return NewsLatestResponse(
             markdown=markdown or "Aucune actu pertinente sur les dernières 24h.",

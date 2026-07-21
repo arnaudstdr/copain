@@ -133,7 +133,21 @@ def _build_deps() -> BotDeps:
         location_events=location_events,
         proactivity=proactivity,
         history=deque(maxlen=6),
+        news_digests=_build_news_digests_mock(),
     )
+
+
+def _build_news_digests_mock() -> MagicMock:
+    """Store de digest actu par défaut : miss en lecture, succès en écriture.
+
+    `get` renvoie `None` (aucun digest en base) et `save` accepte tout : le
+    comportement par défaut équivaut donc à « pas de cache », ce qui laisse
+    les tests news pré-existants inchangés (génération à chaque appel).
+    """
+    store = MagicMock()
+    store.get = AsyncMock(return_value=None)
+    store.save = AsyncMock()
+    return store
 
 
 @pytest.fixture
@@ -1333,6 +1347,134 @@ async def test_news_latest_curator_failure_returns_502(
     state.deps.news.fetch_top_news = AsyncMock(side_effect=RuntimeError("searxng down"))
     response = await client.get("/news/latest", headers={"X-API-Key": API_KEY})
     assert response.status_code == 502
+
+
+def _profile_with_topics() -> UserProfile:
+    return UserProfile(
+        raw_yaml="", is_loaded=True, data={"news_topics": {"daily_briefing": ["AI"]}}
+    )
+
+
+async def test_news_latest_serves_cached_digest(client: AsyncClient, state: AppState) -> None:
+    """Digest du jour présent → servi tel quel, sans appel au curator."""
+    from datetime import UTC, datetime
+
+    from bot.news.models import NewsDigest
+
+    state.deps.profile = _profile_with_topics()
+    cached = NewsDigest(
+        digest_date="2026-07-21",
+        markdown="**Digest en cache**",
+        fetched_at=datetime(2026, 7, 21, 6, 0, tzinfo=UTC),
+    )
+    state.deps.news_digests.get = AsyncMock(return_value=cached)
+    state.deps.news.fetch_top_news = AsyncMock()
+
+    response = await client.get("/news/latest", headers={"X-API-Key": API_KEY})
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["markdown"] == "**Digest en cache**"
+    assert body["fetched_at"] == "2026-07-21T06:00:00+00:00"
+    state.deps.news.fetch_top_news.assert_not_called()
+    state.deps.news_digests.save.assert_not_called()
+
+
+async def test_news_latest_generates_and_persists_on_miss(
+    client: AsyncClient, state: AppState
+) -> None:
+    """Aucun digest en base → génération puis persistance."""
+    state.deps.profile = _profile_with_topics()
+    state.deps.news_digests.get = AsyncMock(return_value=None)
+    state.deps.news.fetch_top_news = AsyncMock(return_value="**Frais du jour**")
+
+    response = await client.get("/news/latest", headers={"X-API-Key": API_KEY})
+
+    assert response.status_code == 200
+    assert response.json()["markdown"] == "**Frais du jour**"
+    state.deps.news.fetch_top_news.assert_awaited_once()
+    state.deps.news_digests.save.assert_awaited_once()
+    args = state.deps.news_digests.save.await_args
+    assert args.args[1] == "**Frais du jour**"
+
+
+async def test_news_latest_refresh_forces_regeneration(
+    client: AsyncClient, state: AppState
+) -> None:
+    """`?refresh=true` → régénération même si un digest est en cache."""
+    from datetime import UTC, datetime
+
+    from bot.news.models import NewsDigest
+
+    state.deps.profile = _profile_with_topics()
+    state.deps.news_digests.get = AsyncMock(
+        return_value=NewsDigest(
+            digest_date="2026-07-21",
+            markdown="vieux digest",
+            fetched_at=datetime(2026, 7, 21, 6, 0, tzinfo=UTC),
+        )
+    )
+    state.deps.news.fetch_top_news = AsyncMock(return_value="**Régénéré**")
+
+    response = await client.get("/news/latest?refresh=true", headers={"X-API-Key": API_KEY})
+
+    assert response.status_code == 200
+    assert response.json()["markdown"] == "**Régénéré**"
+    state.deps.news_digests.get.assert_not_called()
+    state.deps.news.fetch_top_news.assert_awaited_once()
+    state.deps.news_digests.save.assert_awaited_once()
+
+
+async def test_news_latest_empty_digest_not_persisted(client: AsyncClient, state: AppState) -> None:
+    """Curator renvoie vide → rien persisté, message d'absence servi."""
+    state.deps.profile = _profile_with_topics()
+    state.deps.news_digests.get = AsyncMock(return_value=None)
+    state.deps.news.fetch_top_news = AsyncMock(return_value="")
+
+    response = await client.get("/news/latest", headers={"X-API-Key": API_KEY})
+
+    assert response.status_code == 200
+    assert "Aucune actu pertinente" in response.json()["markdown"]
+    state.deps.news_digests.save.assert_not_called()
+
+
+async def test_news_latest_read_failure_is_failsoft(client: AsyncClient, state: AppState) -> None:
+    """Erreur de lecture du store → on génère quand même (fail-soft)."""
+    state.deps.profile = _profile_with_topics()
+    state.deps.news_digests.get = AsyncMock(side_effect=RuntimeError("db locked"))
+    state.deps.news.fetch_top_news = AsyncMock(return_value="**Malgré tout**")
+
+    response = await client.get("/news/latest", headers={"X-API-Key": API_KEY})
+
+    assert response.status_code == 200
+    assert response.json()["markdown"] == "**Malgré tout**"
+    state.deps.news.fetch_top_news.assert_awaited_once()
+
+
+async def test_news_latest_write_failure_is_failsoft(client: AsyncClient, state: AppState) -> None:
+    """Erreur d'écriture du store → la réponse part quand même (fail-soft)."""
+    state.deps.profile = _profile_with_topics()
+    state.deps.news_digests.get = AsyncMock(return_value=None)
+    state.deps.news_digests.save = AsyncMock(side_effect=RuntimeError("disk full"))
+    state.deps.news.fetch_top_news = AsyncMock(return_value="**Généré**")
+
+    response = await client.get("/news/latest", headers={"X-API-Key": API_KEY})
+
+    assert response.status_code == 200
+    assert response.json()["markdown"] == "**Généré**"
+
+
+async def test_news_latest_without_store_regenerates(client: AsyncClient, state: AppState) -> None:
+    """`news_digests=None` → comportement historique (génération à chaque appel)."""
+    state.deps.profile = _profile_with_topics()
+    state.deps.news_digests = None
+    state.deps.news.fetch_top_news = AsyncMock(return_value="**Sans store**")
+
+    response = await client.get("/news/latest", headers={"X-API-Key": API_KEY})
+
+    assert response.status_code == 200
+    assert response.json()["markdown"] == "**Sans store**"
+    state.deps.news.fetch_top_news.assert_awaited_once()
 
 
 # --- /thoughts -------------------------------------------------------------

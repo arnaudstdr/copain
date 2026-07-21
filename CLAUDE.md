@@ -68,10 +68,22 @@ pour vider des pensées parasites sans tenter de les traiter.
   dépôt membre · « Garder » → masquage local). État apaisant si rien à sortir.
 - **Web search** via self-hosted SearXNG with FR summary
 - **RSS feeds**: add/list/remove + summary of the latest news on demand
-- **Card Actu (curation IA, fetch au tap)** : `GET /news/latest` interroge
-  SearXNG (news 24h) + LLM (curation/résumé) selon les topics du profil
-  YAML (`news_topics.daily_briefing`). La card du dashboard affiche les
-  états idle/loading/data ; le tap ouvre l'overlay markdown.
+- **Card Actu (digest journalier persisté, fetch au tap)** : `GET
+  /news/latest` sert un **digest de 8-10 articles** (tour d'horizon tech/IA
+  à plat) curé par le LLM depuis SearXNG (news 24h) selon les topics du
+  profil YAML (`news_topics.daily_briefing`). Le digest est **généré au 1er
+  tap du jour puis persisté** (table `news_digests`, `bot/news/store.py`) et
+  resservi tel quel à tous les taps suivants de la **journée civile**
+  (fuseau `settings.timezone`) — survit au reload PWA et au redémarrage du
+  Pi. `?refresh=true` force une régénération (bouton « Actualiser » de
+  l'overlay). Rétention minimale : un seul digest conservé, purge des
+  périmés au boot et à chaque `save`. La **curation est personnalisée** par
+  le métier de l'utilisateur (`build_curator_persona` depuis
+  `identity.name`/`work.role` du profil, fallback générique). Tout est
+  fail-soft : store indisponible → régénération à chaque tap ; digest vide
+  (SearXNG down) → message d'aide **non persisté**, retenté au tap suivant.
+  La card du dashboard affiche les états idle/loading/data ; le tap ouvre
+  l'overlay markdown.
 - **Photo analysis**: image sent in base64 via `POST /ask/image` → LLM
   multimodal vision → routed through the normal pipeline
   (memory/task/event depending on content)
@@ -196,7 +208,7 @@ FastAPI app (bot/api.py, served by uvicorn)
         │     ├── POST /ask/image     → idem avec image (multimodal) → { response, intent, refresh_cards }
         │     ├── GET  /notifications → NotificationStore.get_unread() + mark_read()
         │     ├── GET  /dashboard     → build_dashboard(): météo + next évent + tâches du jour + count notifs + budget
-        │     ├── GET  /news/latest   → NewsCurator.fetch_top_news() → { markdown, fetched_at } (card Actu)
+        │     ├── GET  /news/latest   → digest du jour persisté (NewsDigestStore) sinon NewsCurator.fetch_top_news() + save ; ?refresh=true force → { markdown, fetched_at } (card Actu)
         │     ├── GET  /thoughts      → ThoughtManager.list_recent/list_since → liste des dépôts cognitifs
         │     ├── POST /thoughts        → record_depot() → dépôt express (card dashboard, sans LLM) → accusé + loop_size
         │     ├── POST /thoughts/{id}/close → ThoughtManager.close(id) → tap "C'est réglé" (404 si inconnu)
@@ -302,9 +314,11 @@ FastAPI app (bot/api.py, served by uvicorn)
         │     ├── build_expenses_csv → export CSV locale FR (GET /expenses/export.csv)
         │     └── FinanceReminderJob → cron quotidien : question Pushover si récurrente due non pointée
         │
-        └── News Curator (card Actu, fetch au tap)
-              ├── SearxngClient (categories=news, time_range=day)
-              └── LLM (curation + résumé 1-2 lignes par article)
+        └── News Curator (card Actu, digest journalier persisté — bot/news/)
+              ├── NewsCurator (client.py) → SearxngClient (categories=news, time_range=day)
+              │     + LLM (curation 8-10 articles + résumé 1-2 lignes ; persona profil via build_curator_persona)
+              └── NewsDigestStore (store.py) → table news_digests : get/save/purge_except
+                    (journée civile settings.timezone, un seul digest conservé, fail-soft)
 ```
 
 ---
@@ -349,7 +363,7 @@ Missing or invalid → 403 with a warning logged (source IP included).
 | POST   | `/ask/image`       | `{ "message": str, "image_b64": str, "media_type": str }`         | `{ "response": str, "intent": str, "refresh_cards": [str] }`                                            |
 | GET    | `/notifications`   | —                                                                 | `{ "notifications": [ { "id": int, "text": str, "created_at": str } ] }`                                |
 | GET    | `/dashboard`       | —                                                                 | `{ "weather": …, "next_event": …, "today_tasks": […], "unread_notifications": int }`                    |
-| GET    | `/news/latest`     | —                                                                 | `{ "markdown": str, "fetched_at": str }`                                                                |
+| GET    | `/news/latest`     | `?refresh=<bool>` (défaut false ; true force la régénération)     | `{ "markdown": str, "fetched_at": str }` — digest du jour persisté (généré au 1er tap, resservi ensuite) |
 | GET    | `/thoughts`        | `?since=<ISO>&limit=<int>&kind=worry\|idea\|note` (optionnels ; `kind` invalide → 400) | `{ "thoughts": [ { "id": int, "content": str, "kind": str\|null, "created_at": str, "closed": bool } ] }` |
 | POST   | `/thoughts`        | `{ "content": str, "kind"?: "worry"\|"idea"\|"note"\|null }`      | `{ "recorded": bool, "thought": {…}, "ack": str }` — dépôt express (card dashboard, sans LLM). 400 si content vide / kind invalide |
 | POST   | `/thoughts/{id}/close` | —                                                             | `{ "closed": bool, "thought_id": int }` (idempotent, 404 si id inconnu)                                 |
