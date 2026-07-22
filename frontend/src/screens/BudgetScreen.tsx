@@ -205,10 +205,11 @@ function PendingSection({ pending }: { pending: BudgetPendingItem[] }) {
 }
 
 // ── Section « Enveloppes » : barres de progression (step 05) ─────────────────
-// Mapping données → pixels : remplissage = dépensé / alloué borné à 100 %, vert
-// si sain, ambre si dépassement (+ mention factuelle, jamais rouge). Une
-// enveloppe shared (compte joint) est hors budget perso : teinte neutre + badge,
-// aucun jugement de santé (pas de vert/ambre).
+// Chiffre affiché = le RESTANT (ou le dépassement) plutôt que le dépensé : plus
+// direct à lire (« combien il me reste »). Remplissage = dépensé / alloué borné
+// à 100 %, vert si sain, ambre si dépassement (montant + barre, jamais rouge).
+// Une enveloppe shared (compte joint) est hors budget perso : teinte neutre +
+// badge, aucun jugement de santé (pas de vert/ambre sur le montant).
 
 function EnvelopesSection({ envelopes }: { envelopes: BudgetEnvelopeDetail[] }) {
   if (envelopes.length === 0) return null;
@@ -217,9 +218,17 @@ function EnvelopesSection({ envelopes }: { envelopes: BudgetEnvelopeDetail[] }) 
       <div className="group-label">Enveloppes</div>
       <div className="group">
         {envelopes.map((env) => {
-          const ratio = env.allocated_eur > 0 ? env.spent_eur / env.allocated_eur : 0;
+          // Alloué à 0 mais dépassé → barre pleine (sinon 0 % contredirait le
+          // dépassement affiché) ; sinon dépensé / alloué borné à 100 %.
+          const ratio = env.allocated_eur > 0 ? env.spent_eur / env.allocated_eur : env.is_overrun ? 1 : 0;
           const width = `${Math.min(Math.max(ratio, 0), 1) * 100}%`;
           const fillClass = env.shared ? " is-shared" : env.is_overrun ? " is-amber" : "";
+          // Restant quand c'est sain, dépassement sinon. L'ambre sur le montant
+          // ne s'applique qu'au budget perso (une enveloppe shared reste neutre).
+          const amountLabel = env.is_overrun
+            ? `Dépassement de ${formatEur(env.overrun_eur)}`
+            : `${formatEur(env.remaining_eur)} restants`;
+          const amountClass = !env.shared && env.is_overrun ? " is-amber" : "";
           return (
             <div className="env-row" key={env.category}>
               <div className="env-head">
@@ -227,16 +236,11 @@ function EnvelopesSection({ envelopes }: { envelopes: BudgetEnvelopeDetail[] }) 
                   {env.label}
                   {env.shared && <span className="env-tag">compte joint</span>}
                 </span>
-                <span className="env-amounts">
-                  {`${formatEur(env.spent_eur)} / ${formatEur(env.allocated_eur)}`}
-                </span>
+                <span className={`env-amounts${amountClass}`}>{amountLabel}</span>
               </div>
               <div className="env-track">
                 <div className={`env-fill${fillClass}`} style={{ width }} />
               </div>
-              {env.is_overrun && !env.shared && (
-                <div className="env-overrun">{`Dépassement de ${formatEur(env.overrun_eur)}`}</div>
-              )}
             </div>
           );
         })}

@@ -510,11 +510,11 @@ select.budget-input { cursor: pointer; }
 .env-label { font-size: 15px; color: rgb(var(--text)); }
 .env-tag { font-size: 11px; color: rgb(var(--text3)); margin-left: 6px; }
 .env-amounts { font-size: 13px; color: rgb(var(--text3)); font-variant-numeric: tabular-nums; flex-shrink: 0; }
+.env-amounts.is-amber { color: rgb(var(--orange)); }
 .env-track { height: 6px; border-radius: 3px; background: var(--track-bg); overflow: hidden; }
 .env-fill { height: 100%; border-radius: 3px; background: rgb(var(--green)); transition: none; }
 .env-fill.is-amber { background: rgb(var(--orange)); }
 .env-fill.is-shared { background: rgb(var(--text3)); }
-.env-overrun { font-size: 12px; color: rgb(var(--orange)); font-variant-numeric: tabular-nums; }
 
 /* ──────────────────────────────────────────────────────────────────────────
    Mode dialogue : écran d'onglet .chat-screen (fond plat), feed de bulles,
