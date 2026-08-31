@@ -40,6 +40,12 @@
       "description": "MAJ majeures : PR séparées, jamais d'automerge",
       "matchUpdateTypes": ["major"],
       "automerge": false
+    },
+    {
+      "description": "Geler la version Python (3.12) — pas de bump vers 3.14+",
+      "matchManagers": ["dockerfile", "github-actions"],
+      "matchPackagePatterns": ["python"],
+      "enabled": false
     }
   ]
 }
