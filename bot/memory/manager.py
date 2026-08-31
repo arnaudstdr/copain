@@ -211,7 +211,7 @@ class MemoryManager:
             query_embeddings=[vector],  # type: ignore[arg-type, unused-ignore]
             n_results=top_k,
             where={"kind": "depot"},
-            include=["documents", "metadatas", "distances"],
+            include=["documents", "metadatas", "distances"],  # type: ignore[list-item]
         )
         documents = (result.get("documents") or [[]])[0]
         metadatas = (result.get("metadatas") or [[]])[0]
@@ -246,7 +246,7 @@ class MemoryManager:
             self._collection.query,
             query_embeddings=[vector],  # type: ignore[arg-type, unused-ignore]
             n_results=max(top_k * RAG_OVERSAMPLE, top_k),
-            include=["documents", "metadatas", "distances"],
+            include=["documents", "metadatas", "distances"],  # type: ignore[list-item]
         )
         documents = (result.get("documents") or [[]])[0]
         metadatas = (result.get("metadatas") or [[]])[0]
