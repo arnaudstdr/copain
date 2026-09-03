@@ -1,0 +1,86 @@
+rules:
+  # --- Secrets / credentials ---
+  - id: hardcoded-password
+    pattern: |
+      $VAR = "..."
+      ...
+      $PASSWORD = $VAR
+    metavariable-regex:
+      metavariable: $PASSWORD
+      regex: (?i)(password|passwd|pwd|secret|token|api_?key|credential|auth)
+    message: >
+      Possible hardcoded password. Use environment variables or a secrets manager.
+    languages: [python]
+    severity: WARNING
+    metadata:
+      cwe: ["CWE-798"]
+
+  # --- SQL injection ---
+  - id: sql-injection-string-format
+    pattern: |
+      $CURSOR.execute(f"...")
+    message: >
+      Possible SQL injection via f-string. Use parameterized queries.
+    languages: [python]
+    severity: ERROR
+    metadata:
+      cwe: ["CWE-89"]
+
+  - id: sql-injection-format-method
+    pattern: |
+      $CURSOR.execute("...".format(...))
+    message: >
+      Possible SQL injection via .format(). Use parameterized queries.
+    languages: [python]
+    severity: ERROR
+    metadata:
+      cwe: ["CWE-89"]
+
+  # --- Command injection ---
+  - id: command-injection-os-system
+    pattern: os.system(...)
+    message: >
+      os.system() is vulnerable to command injection. Use subprocess with shell=False.
+    languages: [python]
+    severity: ERROR
+    metadata:
+      cwe: ["CWE-78"]
+
+  - id: command-injection-subprocess-shell
+    pattern: subprocess.call(..., shell=True, ...)
+    message: >
+      subprocess with shell=True is vulnerable to command injection.
+    languages: [python]
+    severity: ERROR
+    metadata:
+      cwe: ["CWE-78"]
+
+  # --- Unsafe deserialization ---
+  - id: unsafe-pickle
+    pattern: pickle.loads(...)
+    message: >
+      pickle.loads() can execute arbitrary code. Avoid deserializing untrusted data.
+    languages: [python]
+    severity: ERROR
+    metadata:
+      cwe: ["CWE-502"]
+
+  # --- SSRF ---
+  - id: ssrf-requests-get
+    pattern: requests.get(...)
+    message: >
+      Check that the URL is not user-controlled to prevent SSRF.
+    languages: [python]
+    severity: WARNING
+    metadata:
+      cwe: ["CWE-918"]
+
+  # --- Debug / info leakage ---
+  - id: debug-true-in-config
+    pattern: DEBUG = True
+    message: >
+      DEBUG=True should not be committed in production code.
+    languages: [python]
+    severity: WARNING
+    metadata:
+      cwe: ["CWE-489"]

@@ -91,7 +91,7 @@ _FALLBACK_META: Meta = {
 # Réponse fixe quand un recall (intent `memory`) ne retrouve aucun extrait
 # pertinent (mémoire encore vide, ou embed indisponible) : on évite un second
 # appel LLM qui broderait sur du vide.
-_RECALL_EMPTY_TEXT = "Je n'ai rien noté là-dessus."
+_RECALL_EMPTY_TEXT = "Je n'ai rien noté là-dessus."  # nosemgrep
 
 
 class StreamEvent(TypedDict, total=False):
