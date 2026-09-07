@@ -1,7 +1,7 @@
 # --- Stage 1 : build du front React (Vite) ------------------------------------
 # Node n'existe que dans ce stage : l'image finale ne contient que le résultat
 # (frontend/dist), copié au stage 2. Build reproductible via npm ci + lockfile.
-FROM node:20-alpine AS frontend-build
+FROM node:22-alpine AS frontend-build
 
 WORKDIR /app/frontend
 
