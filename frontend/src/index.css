@@ -1,6 +1,4 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import "tailwindcss";
 
 /* ──────────────────────────────────────────────────────────────────────────
    Socle de tokens — DA « iOS natif sobre » (refonte UX, step 01). Remplace la
