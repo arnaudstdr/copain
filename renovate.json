@@ -46,6 +46,11 @@
       "matchManagers": ["dockerfile", "github-actions", "pep621"],
       "matchDepNames": ["python"],
       "enabled": false
+    },
+    {
+      "description": "Geler .python-version (3.12) — fichier non couvert par la règle python ci-dessus",
+      "matchFileNames": [".python-version"],
+      "enabled": false
     }
   ]
 }
