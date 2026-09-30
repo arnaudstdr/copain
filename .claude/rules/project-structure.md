@@ -17,10 +17,9 @@ copain/
 ├── docker-compose.yml
 ├── Dockerfile
 ├── Makefile                     # install/run/test/lint/typecheck/docker-*
-├── requirements.txt
-├── requirements-dev.txt
-├── requirements.lock            # pip freeze de référence (traçabilité)
-├── pyproject.toml               # ruff + mypy + pytest config
+├── pyproject.toml               # deps (PEP 621) + groupe dev + ruff/mypy/pytest config
+├── uv.lock                      # lock figé (deps directes + transitives) — source de vérité
+├── .python-version              # version Python figée (3.12)
 ├── .pre-commit-config.yaml
 │
 ├── bot/

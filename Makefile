@@ -1,31 +1,27 @@
-.PHONY: install run test lint typecheck format docker-build docker-up docker-down clean
-
-PYTHON ?= python3.12
-VENV   ?= .venv
-PIP    := $(VENV)/bin/pip
-PY     := $(VENV)/bin/python
+.PHONY: install lock run test lint typecheck format docker-build docker-up docker-down clean
 
 install:
-	$(PYTHON) -m venv $(VENV)
-	$(PIP) install --upgrade pip
-	$(PIP) install -r requirements-dev.txt
-	$(VENV)/bin/pre-commit install
+	uv sync
+	uv run pre-commit install
+
+lock:
+	uv lock
 
 run:
-	$(PY) -m bot.main
+	uv run python -m bot.main
 
 test:
-	$(VENV)/bin/pytest
+	uv run pytest
 
 lint:
-	$(VENV)/bin/ruff check bot tests
+	uv run ruff check bot tests
 
 format:
-	$(VENV)/bin/ruff format bot tests
-	$(VENV)/bin/ruff check --fix bot tests
+	uv run ruff format bot tests
+	uv run ruff check --fix bot tests
 
 typecheck:
-	$(VENV)/bin/mypy bot
+	uv run mypy bot
 
 build:
 	docker compose build --no-cache
@@ -37,5 +33,5 @@ down:
 	docker compose down
 
 clean:
-	rm -rf $(VENV) .pytest_cache .mypy_cache .ruff_cache
+	rm -rf .venv .pytest_cache .mypy_cache .ruff_cache
 	find . -type d -name __pycache__ -exec rm -rf {} +

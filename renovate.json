@@ -32,7 +32,8 @@
     },
     {
       "description": "Automerge des dépendances de dev (patch/minor) une fois la CI verte",
-      "matchFileNames": ["requirements-dev.txt"],
+      "matchFileNames": ["pyproject.toml"],
+      "matchDepTypes": ["dependency-groups"],
       "matchUpdateTypes": ["minor", "patch"],
       "automerge": true
     },
@@ -43,8 +44,8 @@
     },
     {
       "description": "Geler la version Python (3.12) — pas de bump vers 3.14+",
-      "matchManagers": ["dockerfile", "github-actions"],
-      "matchPackagePatterns": ["python"],
+      "matchManagers": ["dockerfile", "github-actions", "pep621"],
+      "matchDepNames": ["python"],
       "enabled": false
     }
   ]
