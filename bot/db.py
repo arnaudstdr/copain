@@ -34,5 +34,5 @@ async def enable_wal_mode(engine: AsyncEngine) -> None:
     """
     async with engine.begin() as conn:
         result = await conn.execute(text("PRAGMA journal_mode=WAL"))
-        mode = result.scalar_one()
-    log.info("sqlite_journal_mode_set", mode=str(mode))
+        mode = str(result.scalar_one())
+    log.info("sqlite_journal_mode_set", mode=mode)
