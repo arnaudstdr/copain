@@ -29,7 +29,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # uv (binaire statique) : sert uniquement à installer le venv depuis le lock.
-COPY --from=ghcr.io/astral-sh/uv:0.10.9 /uv /uvx /bin/
+COPY --from=ghcr.io/astral-sh/uv:0.13.0 /uv /uvx /bin/
 
 # Dépendances figées : lock (dépendances directes + transitives), sans le
 # groupe dev, sans installer le projet lui-même. Reproductible (--frozen).
